@@ -1,0 +1,12 @@
+[package]
+name = "livecraft-gui"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+livecraft-core = { path = "../livecraft-core" }
+livecraft-dsp = { path = "../livecraft-dsp" }
+eframe.workspace = true
+egui.workspace = true
+log.workspace = true
+anyhow.workspace = true

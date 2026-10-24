@@ -1,0 +1,14 @@
+[package]
+name = "livecraft-dsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+livecraft-core = { path = "../livecraft-core" }
+cpal.workspace = true
+hound.workspace = true
+ringbuf.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+anyhow.workspace = true
+log.workspace = true

@@ -1,0 +1,20 @@
+[package]
+name = "livecraft-cli"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "livecraft"
+path = "src/main.rs"
+
+[dependencies]
+livecraft-core = { path = "../livecraft-core" }
+livecraft-dsp = { path = "../livecraft-dsp" }
+livecraft-gui = { path = "../livecraft-gui" }
+clap.workspace = true
+anyhow.workspace = true
+env_logger.workspace = true
+log.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+hound.workspace = true

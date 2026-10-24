@@ -1,0 +1,346 @@
+use crate::style::LivePalette;
+use crate::widgets::live_knob;
+use eframe::egui::{self, Color32, Pos2, Rounding, Stroke, Ui, Vec2};
+use livecraft_core::model::{Device, DeviceType, Track};
+
+pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &LivePalette) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+
+        if selected_track.device_chain.is_empty() {
+            ui.vertical_centered(|ui| {
+                ui.add_space(30.0);
+                ui.label(
+                    egui::RichText::new("Drop Audio Effects or Instruments here from the Browser")
+                        .size(12.0)
+                        .color(Color32::from_rgb(0x77, 0x77, 0x77)),
+                );
+            });
+            return;
+        }
+
+        let mut remove_idx = None;
+
+        for (dev_idx, dev) in selected_track.device_chain.iter_mut().enumerate() {
+            ui.vertical(|ui| {
+                let box_width = match dev.device_type {
+                    DeviceType::EqEight => 240.0,
+                    DeviceType::Operator => 260.0,
+                    _ => 160.0,
+                };
+                ui.set_width(box_width);
+
+                // Device Box Header
+                ui.horizontal(|ui| {
+                    // Power on/off switch
+                    let power_color = if dev.is_enabled {
+                        palette.amber
+                    } else {
+                        palette.control_disabled
+                    };
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("●").size(10.0).color(power_color),
+                            )
+                            .fill(palette.control_background)
+                            .rounding(Rounding::same(2.0)),
+                        )
+                        .clicked()
+                    {
+                        dev.is_enabled = !dev.is_enabled;
+                    }
+
+                    // Device Name
+                    ui.label(
+                        egui::RichText::new(&dev.name)
+                            .strong()
+                            .size(11.0)
+                            .color(palette.control_foreground),
+                    );
+
+                    // Close/Remove button on right
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("×")
+                                        .size(11.0)
+                                        .color(Color32::from_rgb(0x88, 0x88, 0x88)),
+                                )
+                                .fill(palette.control_background)
+                                .rounding(Rounding::same(2.0)),
+                            )
+                            .clicked()
+                        {
+                            remove_idx = Some(dev_idx);
+                        }
+                    });
+                });
+
+                // Device Box Body
+                let (body_rect, _) =
+                    ui.allocate_exact_size(Vec2::new(box_width, 120.0), egui::Sense::hover());
+                let painter = ui.painter();
+                painter.rect_filled(body_rect, Rounding::same(3.0), palette.control_background);
+                painter.rect_stroke(
+                    body_rect,
+                    Rounding::same(3.0),
+                    Stroke::new(1.0_f32, Color32::from_rgb(0x40, 0x40, 0x40)),
+                );
+
+                ui.allocate_new_ui(
+                    egui::UiBuilder::new().max_rect(body_rect.shrink(4.0)),
+                    |child_ui| match dev.device_type {
+                        DeviceType::EqEight => {
+                            render_eq_eight_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Compressor => {
+                            render_compressor_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Delay => {
+                            render_delay_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Reverb => {
+                            render_reverb_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Operator => {
+                            render_operator_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Utility => {
+                            render_utility_controls(child_ui, dev, palette);
+                        }
+                        _ => {
+                            child_ui.label(format!("Device: {}", dev.name));
+                        }
+                    },
+                );
+            });
+        }
+
+        if let Some(idx) = remove_idx {
+            selected_track.device_chain.remove(idx);
+        }
+    });
+}
+
+fn render_eq_eight_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.vertical(|ui| {
+        // Mini EQ curve visualizer
+        let (curve_rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 50.0), egui::Sense::hover());
+        let painter = ui.painter();
+        painter.rect_filled(
+            curve_rect,
+            Rounding::same(2.0),
+            Color32::from_rgb(0x10, 0x10, 0x10),
+        );
+        painter.rect_stroke(
+            curve_rect,
+            Rounding::same(2.0),
+            Stroke::new(0.5_f32, Color32::from_rgb(0x30, 0x30, 0x30)),
+        );
+
+        // Center 0 dB line
+        let center_y = curve_rect.center().y;
+        painter.line_segment(
+            [
+                Pos2::new(curve_rect.min.x, center_y),
+                Pos2::new(curve_rect.max.x, center_y),
+            ],
+            Stroke::new(0.5_f32, Color32::from_rgb(0x28, 0x28, 0x28)),
+        );
+
+        // Draw EQ curve points
+        let mut prev_pt = Pos2::new(curve_rect.min.x, center_y);
+        for x_step in 0..=30 {
+            let norm_x = x_step as f32 / 30.0;
+            let screen_x = curve_rect.min.x + norm_x * curve_rect.width();
+
+            // Approximate curve from bands
+            let mut total_gain = 0.0;
+            for i in 1..=4 {
+                let gain = dev.get_param(&format!("band_{}_gain", i));
+                let band_norm_x = (i as f32 - 0.5) / 4.0;
+                let dist = (norm_x - band_norm_x).abs();
+                total_gain += gain * (-dist * 6.0).exp();
+            }
+
+            let screen_y = center_y - (total_gain / 15.0) * (curve_rect.height() * 0.45);
+            let pt = Pos2::new(
+                screen_x,
+                screen_y.clamp(curve_rect.min.y + 2.0, curve_rect.max.y - 2.0),
+            );
+            painter.line_segment([prev_pt, pt], Stroke::new(1.5_f32, palette.amber));
+            prev_pt = pt;
+        }
+
+        ui.add_space(4.0);
+
+        // 4 Main Bands Knobs
+        ui.horizontal(|ui| {
+            for b in 1..=4 {
+                let mut gain = dev.get_param(&format!("band_{}_gain", b));
+                if live_knob(
+                    ui,
+                    &mut gain,
+                    -15.0,
+                    15.0,
+                    24.0,
+                    &format!("B{}", b),
+                    palette.amber,
+                )
+                .changed()
+                {
+                    dev.set_param(format!("band_{}_gain", b), gain);
+                }
+            }
+        });
+    });
+}
+
+fn render_compressor_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.horizontal(|ui| {
+        let mut thresh = dev.get_param("threshold_db");
+        if live_knob(ui, &mut thresh, -60.0, 0.0, 26.0, "Thresh", palette.amber).changed() {
+            dev.set_param("threshold_db", thresh);
+        }
+
+        let mut ratio = dev.get_param("ratio");
+        if live_knob(ui, &mut ratio, 1.0, 20.0, 26.0, "Ratio", palette.amber).changed() {
+            dev.set_param("ratio", ratio);
+        }
+
+        let mut attack = dev.get_param("attack_ms");
+        if live_knob(ui, &mut attack, 0.1, 100.0, 26.0, "Attack", palette.amber).changed() {
+            dev.set_param("attack_ms", attack);
+        }
+
+        let mut makeup = dev.get_param("makeup_gain_db");
+        if live_knob(ui, &mut makeup, 0.0, 24.0, 26.0, "Gain", palette.amber).changed() {
+            dev.set_param("makeup_gain_db", makeup);
+        }
+    });
+}
+
+fn render_delay_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.horizontal(|ui| {
+        let mut time = dev.get_param("time_ms");
+        if live_knob(ui, &mut time, 10.0, 1000.0, 26.0, "Time", palette.amber).changed() {
+            dev.set_param("time_ms", time);
+        }
+
+        let mut fb = dev.get_param("feedback");
+        if live_knob(ui, &mut fb, 0.0, 0.95, 26.0, "Feedback", palette.amber).changed() {
+            dev.set_param("feedback", fb);
+        }
+
+        let mut dry_wet = dev.get_param("dry_wet");
+        if live_knob(ui, &mut dry_wet, 0.0, 1.0, 26.0, "Dry/Wet", palette.cyan).changed() {
+            dev.set_param("dry_wet", dry_wet);
+        }
+    });
+}
+
+fn render_reverb_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.horizontal(|ui| {
+        let mut decay = dev.get_param("decay_time_sec");
+        if live_knob(ui, &mut decay, 0.2, 10.0, 26.0, "Decay", palette.amber).changed() {
+            dev.set_param("decay_time_sec", decay);
+        }
+
+        let mut size = dev.get_param("room_size");
+        if live_knob(ui, &mut size, 0.0, 1.0, 26.0, "Size", palette.amber).changed() {
+            dev.set_param("room_size", size);
+        }
+
+        let mut dry_wet = dev.get_param("dry_wet");
+        if live_knob(ui, &mut dry_wet, 0.0, 1.0, 26.0, "Dry/Wet", palette.cyan).changed() {
+            dev.set_param("dry_wet", dry_wet);
+        }
+    });
+}
+
+fn render_operator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            let osc1_wave = dev.get_param("osc1_waveform");
+            ui.label(
+                egui::RichText::new("Osc1:")
+                    .size(10.0)
+                    .color(palette.control_foreground),
+            );
+            if ui.selectable_label(osc1_wave == 0.0, "Sin").clicked() {
+                dev.set_param("osc1_waveform", 0.0);
+            }
+            if ui.selectable_label(osc1_wave == 1.0, "Saw").clicked() {
+                dev.set_param("osc1_waveform", 1.0);
+            }
+            if ui.selectable_label(osc1_wave == 2.0, "Sqr").clicked() {
+                dev.set_param("osc1_waveform", 2.0);
+            }
+
+            ui.separator();
+
+            let mut cutoff = dev.get_param("filter_cutoff");
+            if live_knob(
+                ui,
+                &mut cutoff,
+                100.0,
+                18000.0,
+                24.0,
+                "Cutoff",
+                palette.amber,
+            )
+            .changed()
+            {
+                dev.set_param("filter_cutoff", cutoff);
+            }
+
+            let mut reso = dev.get_param("filter_resonance");
+            if live_knob(ui, &mut reso, 0.1, 8.0, 24.0, "Reso", palette.amber).changed() {
+                dev.set_param("filter_resonance", reso);
+            }
+        });
+
+        ui.add_space(4.0);
+
+        // Envelope ADSR sliders
+        ui.horizontal(|ui| {
+            let mut atk = dev.get_param("attack_ms");
+            ui.add(
+                egui::Slider::new(&mut atk, 0.1..=1000.0)
+                    .text("A")
+                    .logarithmic(true),
+            );
+            dev.set_param("attack_ms", atk);
+
+            let mut rel = dev.get_param("release_ms");
+            ui.add(
+                egui::Slider::new(&mut rel, 10.0..=3000.0)
+                    .text("R")
+                    .logarithmic(true),
+            );
+            dev.set_param("release_ms", rel);
+        });
+    });
+}
+
+fn render_utility_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.horizontal(|ui| {
+        let mut gain = dev.get_param("gain_db");
+        if live_knob(ui, &mut gain, -35.0, 35.0, 26.0, "Gain", palette.amber).changed() {
+            dev.set_param("gain_db", gain);
+        }
+
+        let mut width = dev.get_param("width");
+        if live_knob(ui, &mut width, 0.0, 2.0, 26.0, "Width", palette.cyan).changed() {
+            dev.set_param("width", width);
+        }
+
+        let mut pan = dev.get_param("pan");
+        if live_knob(ui, &mut pan, -1.0, 1.0, 26.0, "Pan", palette.amber).changed() {
+            dev.set_param("pan", pan);
+        }
+    });
+}

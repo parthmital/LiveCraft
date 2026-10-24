@@ -1,0 +1,8 @@
+# LiveCraft - Native Rust Implementation of Ableton Live
+
+/target/
+/.agent-local/
+/.cache/
+/.venv/
+*.pdb
+*.exe
