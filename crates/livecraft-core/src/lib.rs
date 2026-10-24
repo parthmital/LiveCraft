@@ -245,6 +245,50 @@ mod tests {
         data.velocity_ramp(40, 120);
         assert_eq!(data.notes[0].velocity, 40);
         assert_eq!(data.notes[2].velocity, 120);
+
+        // Test Chop into 2 subdivisions
+        let mut chop_data = MidiClipData {
+            notes: vec![MidiNote::new(60, 0.0, 1.0, 100)],
+        };
+        chop_data.chop(2);
+        assert_eq!(chop_data.notes.len(), 2);
+        assert_eq!(chop_data.notes[0].duration_beats, 0.5);
+        assert_eq!(chop_data.notes[1].start_beat, 0.5);
+
+        // Test Span (legato)
+        let mut span_data = MidiClipData {
+            notes: vec![
+                MidiNote::new(60, 0.0, 0.5, 100),
+                MidiNote::new(62, 1.0, 0.5, 100),
+            ],
+        };
+        span_data.span();
+        assert_eq!(span_data.notes[0].duration_beats, 1.0);
+
+        // Test Euclidean rhythm (3 pulses over 8 steps)
+        let mut euc_data = MidiClipData { notes: Vec::new() };
+        euc_data.generate_euclidean(3, 8, 36, 4.0, 100);
+        assert_eq!(euc_data.notes.len(), 3);
+
+        // Test Stacks (Triad: 0, 4, 7)
+        let mut stack_data = MidiClipData { notes: Vec::new() };
+        stack_data.generate_stacks(&[0, 4, 7], 60, 2.0, 110, None);
+        assert_eq!(stack_data.notes.len(), 3);
+        assert_eq!(stack_data.notes[0].pitch, 60);
+        assert_eq!(stack_data.notes[1].pitch, 64);
+        assert_eq!(stack_data.notes[2].pitch, 67);
+    }
+
+    #[test]
+    fn test_tuning_system() {
+        let default_tuning = TuningSystem::default();
+        let f69 = default_tuning.note_to_freq(69);
+        assert!((f69 - 440.0).abs() < 1e-4);
+
+        let scl_text = "! pentatonic.scl\nSlendro 5-TET\n5\n240.0\n480.0\n720.0\n960.0\n1200.0\n";
+        let slendro = TuningSystem::from_scala(scl_text).expect("Failed to parse scala");
+        assert_eq!(slendro.degrees_cents.len(), 6);
+        assert!((slendro.degrees_cents[1] - 240.0).abs() < 1e-4);
     }
 
     #[test]

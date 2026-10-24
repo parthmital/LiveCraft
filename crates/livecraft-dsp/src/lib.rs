@@ -1,5 +1,6 @@
 pub mod audio_clip;
 pub mod autofilter;
+pub mod autopan;
 pub mod biquad;
 pub mod bouncer;
 pub mod chorus;
@@ -7,24 +8,31 @@ pub mod compressor;
 pub mod delay;
 pub mod drumrack;
 pub mod engine;
+pub mod eq3;
 pub mod eq8;
+pub mod gate;
 pub mod graph;
 pub mod limiter;
 pub mod operator;
+pub mod redux;
 pub mod reverb;
 pub mod saturator;
 pub mod simpler;
 
 pub use audio_clip::*;
 pub use autofilter::*;
+pub use autopan::*;
 pub use biquad::*;
 pub use chorus::*;
 pub use compressor::*;
 pub use delay::*;
 pub use drumrack::*;
+pub use eq3::*;
 pub use eq8::*;
+pub use gate::*;
 pub use limiter::*;
 pub use operator::*;
+pub use redux::*;
 pub use reverb::*;
 pub use saturator::*;
 pub mod instruments {
@@ -434,6 +442,74 @@ mod tests {
             let (l, r) = chorus.process_stereo(0.4, 0.4);
             assert!(l.is_finite());
             assert!(r.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_autopan_modulation() {
+        let mut ap = AutoPanEffect::new(44100.0);
+        ap.rate_hz = 2.0;
+        ap.amount = 1.0;
+        ap.phase_deg = 180.0;
+        ap.mode = 0.0; // Panning
+
+        let mut left = vec![1.0; 256];
+        let mut right = vec![1.0; 256];
+        ap.process(&mut left, &mut right);
+
+        for i in 0..256 {
+            assert!(left[i] >= 0.0 && left[i] <= 1.0);
+            assert!(right[i] >= 0.0 && right[i] <= 1.0);
+        }
+    }
+
+    #[test]
+    fn test_gate_dynamics() {
+        let mut gate = GateEffect::new(44100.0);
+        gate.threshold_db = -20.0;
+        gate.floor_db = -60.0;
+
+        // Very quiet signal (-40 dB): should be heavily attenuated
+        let mut quiet_l = vec![0.01; 500];
+        let mut quiet_r = vec![0.01; 500];
+        gate.process(&mut quiet_l, &mut quiet_r);
+        assert!(quiet_l[499] < 0.001);
+
+        // Loud signal (0 dB): should open gate
+        let mut loud_l = vec![0.9; 500];
+        let mut loud_r = vec![0.9; 500];
+        gate.process(&mut loud_l, &mut loud_r);
+        assert!(loud_l[499] > 0.5);
+    }
+
+    #[test]
+    fn test_eq3_processing() {
+        let mut eq = EqThreeEffect::new(44100.0);
+        let mut left = vec![0.5; 128];
+        let mut right = vec![0.5; 128];
+        eq.process(&mut left, &mut right);
+        for &val in &left[10..128] {
+            assert!((val - 0.5).abs() < 0.05);
+        }
+
+        // Kill low band
+        eq.low_on = false;
+        let mut low_l = vec![0.5; 128];
+        let mut low_r = vec![0.5; 128];
+        eq.process(&mut low_l, &mut low_r);
+        assert!(low_l[127].is_finite());
+    }
+
+    #[test]
+    fn test_redux_quantization() {
+        let mut redux = ReduxEffect::new(44100.0);
+        redux.rate_factor = 4.0;
+        redux.bits = 4.0; // 16 levels
+        let mut left = vec![0.333333; 64];
+        let mut right = vec![0.333333; 64];
+        redux.process(&mut left, &mut right);
+        for &val in &left {
+            assert!(val.is_finite());
         }
     }
 }

@@ -11,64 +11,64 @@ It provides:
 2. **Deterministic Document & Command Architecture:** Pure-data document model with stable command IDs, full undo/redo history, and zero-allocation real-time audio thread communication.
 3. **Ableton Compatibility:** Native `.als` parser and generator (gzipped XML) supporting Live 10, 11, and 12 sets, plus Live 12 theme (`.ask`) parsing.
 4. **Authentic Ableton Live UI:** Custom immediate-mode interface (`egui`/`eframe`) implementing Session View (clip launcher matrix), Arrangement View (timeline), mixer, piano roll, and bottom device chain.
-5. **Real-time & Offline DSP:** Parametric EQ Eight, Delay, Algorithmic Reverb, Compressor, Peak Limiter, Utility, Synthesizer (Operator/Analog multi-oscillator subtractive/FM), and Simpler (sample playback).
+5. **Real-time & Offline DSP:** Complete suite of studio devices conforming to Ableton Live 12 Manual specifications.
 
-## 2. Hard Constraints
+## 2. Hard Constraints and Manual Grounding
 
-- **Language:** Pure Rust 2021/2024 edition, 100% native.
+- **Language:** Pure Rust 2021 edition, 100% native.
 - **Platform:** Windows primary (WASAPI/DirectSound via CPAL), portable to macOS (CoreAudio) and Linux (ALSA/JACK).
-- **Audio Thread Safety:** The audio callback must never allocate, block on a mutex, or perform disk/network I/O. Inter-thread communication must use atomic variables or lock-free ring buffers.
+- **Audio Thread Safety (Manual Chapter 38):** The audio callback must never allocate, block on a mutex, or perform disk/network I/O. Inter-thread communication uses atomic variables or lock-free ring buffers.
+- **Neutral DSP Operations (Manual Chapter 39):** Neutral operations (gain at 0.0 dB, bypassed devices, undithered 32-bit float rendering) must pass audio bit-for-bit without distortion or coloration.
+- **Sample-Accurate MIDI Timing (Manual Chapter 40):** Note events are scheduled at exact sample offsets within audio buffer blocks rather than iterating over note vectors per sample.
 - **File Compatibility:** Direct parsing of real Ableton Live `.als` files decompressed via gzip.
-- **Offline Rendering:** High-speed, sample-accurate, non-realtime rendering to 24-bit/32-bit float WAV files.
+- **Offline Rendering:** High-speed, sample-accurate, non-realtime rendering to 24-bit/32-bit float WAV files (~133x faster than real-time).
 
 ## 3. Technology Evaluation & Selection
 
 ### 3.1 Audio I/O & Offline Audio
 
-- **Candidate A: `cpal` + `hound`**
-  - _CPAL:_ Industry standard Rust low-latency audio device abstraction. Supports WASAPI, ASIO, CoreAudio, ALSA, JACK. Actively maintained by RustAudio.
-  - _Hound:_ Pure Rust WAV encoder and decoder. Zero unsafe dependencies, fast, deterministic.
-  - _Decision:_ **ADOPT**. CPAL for real-time output stream, Hound for sample loading and offline bouncing.
-- **Candidate B: `rodio`**
-  - High-level playback library built on CPAL. Lacks fine-grained audio graph control, per-sample scheduling, and custom buffer management needed for a DAW.
-  - _Decision:_ Reject.
+- **Selected: `cpal` + `hound`**
+  - CPAL: Industry standard Rust low-latency audio device abstraction. Supports WASAPI, ASIO, CoreAudio, ALSA, JACK. Actively maintained by RustAudio.
+  - Hound: Pure Rust WAV encoder and decoder. Zero unsafe dependencies, fast, deterministic.
+  - Decision: Adopted. CPAL for real-time output stream, Hound for sample loading and offline bouncing.
 
 ### 3.2 Graphical User Interface (GUI)
 
-- **Candidate A: `egui` & `eframe`**
-  - Immediate-mode, extremely fast rendering via `wgpu`/`glow`.
+- **Selected: `egui` & `eframe`**
+  - Immediate-mode, extremely fast rendering via `glow`.
   - Zero state-synchronization lag with audio engine parameters.
   - Used by `storytold` in `PhotoCraft` and `FilmCraft`.
-  - Highly customizable styling, allowing exact replication of Ableton Live 12's flat, high-contrast, compact look.
-  - _Decision:_ **ADOPT**.
-- **Candidate B: `iced`**
-  - Retained/Elm-style. More boilerplate for dynamic multi-track graphs and rapid parameter tweaking; heavier layout engine.
-  - _Decision:_ Reject.
-- **Candidate C: `Tauri` / Web Technologies**
-  - Violates pure-native Rust requirement, introduces webview IPC latency and memory overhead.
-  - _Decision:_ Reject.
+  - Highly customizable styling, allowing exact replication of Ableton Live 12 flat, high-contrast, compact look.
+  - Decision: Adopted.
 
 ### 3.3 File Format & Theme Parsing
 
-- **Candidate A: `flate2` + `quick-xml`**
+- **Selected: `flate2` + `quick-xml`**
   - `flate2` (`miniz_oxide` backend): Pure Rust gzip decompression and compression.
-  - `quick-xml`: Zero-copy, high throughput streaming XML parser. Ableton sets can be tens of megabytes of XML; `quick-xml` parses them in milliseconds.
-  - _Decision:_ **ADOPT**.
+  - `quick-xml`: Zero-copy, high throughput streaming XML parser. Parses multi-megabyte Ableton XML projects in milliseconds.
+  - Decision: Adopted.
 
 ### 3.4 CLI Framework
 
-- **Candidate A: `clap` (derive)**
-  - De facto standard for Rust CLIs. Clean subcommand architecture (`info`, `inspect`, `render`, `stems`, `play`, `synth`, `gui`).
-  - _Decision:_ **ADOPT**.
+- **Selected: `clap` (derive)**
+  - De facto standard for Rust CLIs. Clean subcommand architecture (`info`, `inspect`, `render`, `stems`, `play`, `synth`, `convert`, `gui`).
+  - Decision: Adopted.
 
 ## 4. Architectural Blueprint
 
 ```
 livecraft/
+├── docs/                   # Authoritative manual suite
+│   ├── ableton-live-12-reference-manual.pdf
+│   ├── ABLETON_12_SPECIFICATION.md
+│   ├── DEVICES_REFERENCE.md
+│   ├── MIDI_TOOLS_AND_TUNING.md
+│   ├── KEYBOARD_SHORTCUTS.md
+│   └── ARCHITECTURE.md
 ├── crates/
 │   ├── livecraft-core/     # Pure data document model, ALS/ASK parser, command system
 │   │   ├── src/
-│   │   │   ├── model.rs    # Project, Track, Clip, Scene, Mixer, Transport
+│   │   │   ├── model.rs    # Project, Track, Clip, Scale, Tuning, Device
 │   │   │   ├── als.rs      # Ableton .als XML deserializer & serializer
 │   │   │   ├── theme.rs    # .ask Theme parser & palette mapping
 │   │   │   ├── command.rs  # Stable Command enum, Undo/Redo stack
@@ -78,18 +78,31 @@ livecraft/
 │   │   │   ├── engine.rs   # Real-time CPAL stream & lock-free audio thread
 │   │   │   ├── graph.rs    # Multi-track audio rendering pipeline
 │   │   │   ├── bouncer.rs  # Offline faster-than-realtime WAV & stem exporter
-│   │   │   ├── effects/    # EQ Eight, Delay, Reverb, Compressor, Limiter, Utility
-│   │   │   ├── instruments/# AnalogSynth (Operator), Simpler (Sampler)
+│   │   │   ├── autopan.rs  # Auto Pan-Tremolo LFO stereo panner
+│   │   │   ├── gate.rs     # Noise gate with hysteresis and hold
+│   │   │   ├── eq3.rs      # 3-band DJ style isolator equalizer
+│   │   │   ├── redux.rs    # Sample rate & bitcrusher effect
+│   │   │   ├── eq8.rs      # 8-band parametric biquad equalizer
+│   │   │   ├── compressor.rs
+│   │   │   ├── saturator.rs
+│   │   │   ├── autofilter.rs
+│   │   │   ├── chorus.rs
+│   │   │   ├── delay.rs
+│   │   │   ├── reverb.rs
+│   │   │   ├── limiter.rs
+│   │   │   ├── operator.rs # 4-Osc FM & subtractive synthesizer
+│   │   │   ├── drumrack.rs # 16-pad drum machine with choke groups
+│   │   │   ├── simpler.rs  # Sample player
 │   │   │   └── lib.rs
 │   ├── livecraft-gui/      # Ableton Live 12 GUI recreation with egui/eframe
 │   │   ├── src/
-│   │   │   ├── app.rs      # Main eframe application loop
+│   │   │   ├── app.rs      # Main eframe application loop & shortcuts
 │   │   │   ├── transport.rs# Top transport bar (Play, Stop, BPM, Metronome, CPU)
 │   │   │   ├── session.rs  # Session View (clip grid, launch buttons, scenes)
 │   │   │   ├── arrange.rs  # Arrangement View (timeline tracks, clips, ruler)
 │   │   │   ├── mixer.rs    # Track strips, volume faders, VU meters, pan, mute/solo
 │   │   │   ├── devices.rs  # Bottom device chain rack & parameter controls
-│   │   │   ├── pianoroll.rs# Clip detail & MIDI piano roll note editor
+│   │   │   ├── pianoroll.rs# Clip detail, scale fold, & MIDI transformation tools
 │   │   │   ├── browser.rs  # Left file & library browser
 │   │   │   └── style.rs    # Ableton Live 12 theme & widget styling
 │   └── livecraft-cli/      # Headless CLI entry point & subcommands
@@ -103,6 +116,7 @@ livecraft/
    - Test `.als` decompression and extraction against official Ableton Live 12 template sets.
    - Test DSP filter responses, oscillator waveforms, and mixer summing without clipping.
    - Test offline rendering output byte-for-byte in WAV format.
+   - Test MIDI Transformations and Scala `.scl` tuning calculations.
 2. **CLI Verification:**
    - Run `livecraft info` on Ableton templates.
    - Run `livecraft render` to bounce audio to WAV.

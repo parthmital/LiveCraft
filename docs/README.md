@@ -1,33 +1,56 @@
-# LiveCraft Documentation & Reference
+# LiveCraft Documentation Suite & Ableton Live 12 Reference
 
-## Ableton Live 12 Reference Manual
+LiveCraft is an open-source, native Rust implementation of Ableton Live 12. This directory contains the exhaustive reference documentation and single source of truth for the entire project.
 
-The single source of truth for all Ableton Live 12 specifications, features, DSP instruments, audio effects, MIDI tools, scale systems, and user interface behaviors is the official Ableton Live 12 Reference Manual:
+## Authoritative Reference Suite
 
-- **Path:** `docs/ableton-live-12-reference-manual.pdf` (108 MB, 1039 pages, 1069 sections)
+1. **[Ableton Live 12 Complete Specification](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/docs/ABLETON_12_SPECIFICATION.md)**
+   - Chapter-by-chapter mapping of all 43 chapters of the manual to LiveCraft architecture.
+   - Core concepts: Session View, Arrangement View, Browser taxonomy, Audio Warping, Routing, Mixing, and MPE.
+
+2. **[Live 12 Complete Devices Reference](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/docs/DEVICES_REFERENCE.md)**
+   - Comprehensive catalog of all 42 Audio Effects (Amp, Auto Filter, Auto Pan-Tremolo, Roar, Saturator, etc.).
+   - All 8 MIDI Effects (Arpeggiator, Chord, Scale, Velocity, etc.).
+   - All 13 Instruments (Operator, Simpler, Drum Rack, Meld, Wavetable, Drift, etc.).
+   - Parameter lists, DSP topologies, and implementation status.
+
+3. **[MIDI Tools, Scale Systems & Microtonal Tuning](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/docs/MIDI_TOOLS_AND_TUNING.md)**
+   - Live 12 MIDI Transformations (Quantize, Transpose, Chop, Strum, Humanize, Ornament, Span, Invert, Reverse, Time Warp).
+   - Generative Tools (Stacks, Euclidean rhythm generator, Rhythm, Seed).
+   - Scale engine (12 modes, pentatonics, blues, Fold to Scale).
+   - Microtonal Scala (`.scl`) tuning engine.
+
+4. **[Complete Keyboard Shortcuts Matrix](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/docs/KEYBOARD_SHORTCUTS.md)**
+   - Comprehensive shortcut reference from Chapter 42 across Windows and macOS.
+   - View navigation, editing, transport, session matrix, track operations, and computer MIDI keyboard.
+
+5. **[LiveCraft Architecture & Engineering Manual](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/docs/ARCHITECTURE.md)**
+   - Crate boundaries: `livecraft-core`, `livecraft-dsp`, `livecraft-gui`, `livecraft-cli`.
+   - Lock-free audio engine, DAG topological graph, and offline bouncer.
+   - Conformance to Chapters 38, 39, and 40 (lock-free safety, neutral operations, bit-transparency).
+
+## Ableton Live 12 Reference Manual PDF
+
+The primary source of truth for all LiveCraft specifications, formulas, and UI behaviors is:
+
+- **File:** `docs/ableton-live-12-reference-manual.pdf` (108 MB, 1039 pages, 1069 sections)
 - **Version:** Ableton Live 12 (Windows & macOS)
-- **Status:** Definitive source of truth for all LiveCraft engineering and agent tasks.
 
-> **Note:** The PDF file is ignored by Git (`.gitignore`) to keep the repository lightweight. It resides locally in `docs/` for all developers and AI agents.
+### Querying the Manual via CLI
 
-### Agent Access & CLI Query Tool
+Use the repository query script in `.agent-local/scripts/query_manual.py` to search or read the manual directly:
 
-Because the PDF exceeds standard 100 MB single-read limits, a dedicated query script is provided in `.agent-local/scripts/query_manual.py` for instant inspection:
+```bash
+# Filter Table of Contents
+python .agent-local/scripts/query_manual.py --filter-toc "Auto Pan"
 
-- **Filter Table of Contents:**
-  ```bash
-  python .agent-local/scripts/query_manual.py --filter-toc "Operator"
-  ```
-- **Read Specific Page or Range:**
-  ```bash
-  python .agent-local/scripts/query_manual.py --page 755
-  python .agent-local/scripts/query_manual.py --range 755-760
-  ```
-- **Search Keyword:**
-  ```bash
-  python .agent-local/scripts/query_manual.py --search "Saturator"
-  ```
-- **Extract Section by Title:**
-  ```bash
-  python .agent-local/scripts/query_manual.py --section "Operator"
-  ```
+# Read specific page or range
+python .agent-local/scripts/query_manual.py --page 562
+python .agent-local/scripts/query_manual.py --range 562-566
+
+# Search keyword across all 1039 pages
+python .agent-local/scripts/query_manual.py --search "Euclidean"
+
+# Extract full section by title
+python .agent-local/scripts/query_manual.py --section "Auto Pan-Tremolo"
+```

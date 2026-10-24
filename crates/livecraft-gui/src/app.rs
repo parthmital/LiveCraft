@@ -95,11 +95,65 @@ impl LiveCraftApp {
         }
 
         // Tab -> Toggle Session / Arrangement View
-        if ctx.input(|i| i.key_pressed(Key::Tab)) {
+        if ctx.input(|i| !i.modifiers.shift && i.key_pressed(Key::Tab)) {
             self.view_mode = match self.view_mode {
                 ViewMode::Session => ViewMode::Arrangement,
                 ViewMode::Arrangement => ViewMode::Session,
             };
+        }
+
+        // Shift+Tab or F12 -> Toggle Device View vs Clip View (Chapter 42.1)
+        if ctx.input(|i| (i.modifiers.shift && i.key_pressed(Key::Tab)) || i.key_pressed(Key::F12))
+        {
+            self.bottom_tab = if self.bottom_tab == 0 { 1 } else { 0 };
+        }
+
+        // Ctrl+T -> Insert Audio Track (Chapter 42.19)
+        if ctx.input(|i| {
+            i.modifiers.command && !i.modifiers.shift && !i.modifiers.alt && i.key_pressed(Key::T)
+        }) {
+            let next_id = self.project.tracks.len() as u64 + 1;
+            let name = format!("{}-Audio", next_id);
+            self.project
+                .tracks
+                .push(Track::new(next_id, name, TrackType::Audio, 8));
+            self.status_message = "Inserted Audio Track".to_string();
+        }
+
+        // Ctrl+Shift+T -> Insert MIDI Track (Chapter 42.19)
+        if ctx.input(|i| {
+            i.modifiers.command && i.modifiers.shift && !i.modifiers.alt && i.key_pressed(Key::T)
+        }) {
+            let next_id = self.project.tracks.len() as u64 + 1;
+            let name = format!("{}-MIDI", next_id);
+            self.project
+                .tracks
+                .push(Track::new(next_id, name, TrackType::Midi, 8));
+            self.status_message = "Inserted MIDI Track".to_string();
+        }
+
+        // 0 -> Toggle Mute / Track Activator on selected track (Chapter 42.19)
+        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::Num0)) {
+            if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
+                trk.is_muted = !trk.is_muted;
+                self.status_message = format!("Track {} muted: {}", trk.name, trk.is_muted);
+            }
+        }
+
+        // S -> Toggle Solo on selected track (Chapter 42.19)
+        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::S)) {
+            if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
+                trk.is_soloed = !trk.is_soloed;
+                self.status_message = format!("Track {} soloed: {}", trk.name, trk.is_soloed);
+            }
+        }
+
+        // C -> Toggle Arm on selected track (Chapter 42.19)
+        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::C)) {
+            if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
+                trk.is_armed = !trk.is_armed;
+                self.status_message = format!("Track {} armed: {}", trk.name, trk.is_armed);
+            }
         }
 
         // Ctrl+Z -> Undo

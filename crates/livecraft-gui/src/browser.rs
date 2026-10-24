@@ -153,6 +153,18 @@ impl LiveBrowser {
                             DeviceType::Chorus,
                             "Stereo modulated delay ensemble",
                         ),
+                        (
+                            "Auto Pan-Tremolo",
+                            DeviceType::AutoPan,
+                            "LFO stereo panner & tremolo",
+                        ),
+                        (
+                            "Gate",
+                            DeviceType::Gate,
+                            "Noise gate with hysteresis & hold",
+                        ),
+                        ("EQ Three", DeviceType::EqThree, "3-band DJ isolator EQ"),
+                        ("Redux", DeviceType::Redux, "Sample rate & bit crusher"),
                     ];
 
                     for (name, dtype, desc) in effects {

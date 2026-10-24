@@ -144,6 +144,41 @@ pub fn render_piano_roll(
             {
                 midi_data.velocity_ramp(50, 115);
             }
+            if ui.button(egui::RichText::new("Chop").size(10.0)).clicked() {
+                midi_data.chop(2);
+            }
+            if ui
+                .button(egui::RichText::new("Ornament").size(10.0))
+                .clicked()
+            {
+                midi_data.ornament(0.0625, 0.7);
+            }
+            if ui.button(egui::RichText::new("Span").size(10.0)).clicked() {
+                midi_data.span();
+            }
+            if ui
+                .button(egui::RichText::new("Euclid").size(10.0))
+                .clicked()
+            {
+                let p = if scale.is_active {
+                    scale.snap_to_scale(60)
+                } else {
+                    60
+                };
+                midi_data.generate_euclidean(3, 8, p, 4.0, 100);
+            }
+            if ui
+                .button(egui::RichText::new("Stacks").size(10.0))
+                .clicked()
+            {
+                midi_data.generate_stacks(
+                    &[0, 4, 7],
+                    60,
+                    2.0,
+                    100,
+                    if scale.is_active { Some(scale) } else { None },
+                );
+            }
         });
 
         ui.separator();

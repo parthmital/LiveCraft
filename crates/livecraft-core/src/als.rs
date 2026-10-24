@@ -180,6 +180,10 @@ impl AlsParser {
                                 "DrumRack" | "DrumGroupDevice" => DeviceType::DrumRack,
                                 "AutoFilter" => DeviceType::AutoFilter,
                                 "Chorus" => DeviceType::Chorus,
+                                "AutoPan" => DeviceType::AutoPan,
+                                "Gate" => DeviceType::Gate,
+                                "EqThree" => DeviceType::EqThree,
+                                "Redux" => DeviceType::Redux,
                                 other => DeviceType::Custom(other.to_string()),
                             };
                             current_device = Some(Device {
@@ -431,6 +435,7 @@ impl AlsParser {
             name: project_name.to_string(),
             transport,
             scale,
+            tuning: None,
             tracks,
             return_tracks,
             master_track,
@@ -529,6 +534,10 @@ impl AlsParser {
                     DeviceType::DrumRack => "DrumRack",
                     DeviceType::AutoFilter => "AutoFilter",
                     DeviceType::Chorus => "Chorus",
+                    DeviceType::AutoPan => "AutoPan",
+                    DeviceType::Gate => "Gate",
+                    DeviceType::EqThree => "EqThree",
+                    DeviceType::Redux => "Redux",
                     DeviceType::Custom(ref s) => s.as_str(),
                 };
                 let en_s = if dev.is_enabled { "true" } else { "false" };

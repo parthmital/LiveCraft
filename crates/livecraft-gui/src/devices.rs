@@ -126,6 +126,18 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                         DeviceType::DrumRack => {
                             render_drumrack_controls(child_ui, dev, palette);
                         }
+                        DeviceType::AutoPan => {
+                            render_autopan_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Gate => {
+                            render_gate_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::EqThree => {
+                            render_eq3_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Redux => {
+                            render_redux_controls(child_ui, dev, palette);
+                        }
                         _ => {
                             child_ui.label(format!("Device: {}", dev.name));
                         }
@@ -618,5 +630,219 @@ fn render_drumrack_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette
                 dev.set_param("gain_db", gain);
             }
         });
+    });
+}
+
+fn render_autopan_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            let mut amount = dev.get_param("amount");
+            if live_knob(ui, &mut amount, 0.0, 1.0, 24.0, "Amount", palette.amber).changed() {
+                dev.set_param("amount", amount);
+            }
+
+            let mut rate = dev.get_param("rate_hz");
+            if live_knob(
+                ui,
+                &mut rate,
+                0.05,
+                20.0,
+                24.0,
+                "Rate",
+                Color32::from_rgb(0x40, 0xd2, 0xff),
+            )
+            .changed()
+            {
+                dev.set_param("rate_hz", rate);
+            }
+
+            let mut phase = dev.get_param("phase_deg");
+            if live_knob(
+                ui,
+                &mut phase,
+                0.0,
+                360.0,
+                24.0,
+                "Phase",
+                Color32::from_rgb(0xff, 0x76, 0x4c),
+            )
+            .changed()
+            {
+                dev.set_param("phase_deg", phase);
+            }
+        });
+
+        ui.horizontal(|ui| {
+            let mode = dev.get_param("mode");
+            let is_trem = mode >= 0.5;
+            if ui.selectable_label(!is_trem, "Pan").clicked() {
+                dev.set_param("mode", 0.0);
+            }
+            if ui.selectable_label(is_trem, "Trem").clicked() {
+                dev.set_param("mode", 1.0);
+            }
+        });
+    });
+}
+
+fn render_gate_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            let mut thresh = dev.get_param("threshold_db");
+            if live_knob(ui, &mut thresh, -60.0, 0.0, 24.0, "Thresh", palette.amber).changed() {
+                dev.set_param("threshold_db", thresh);
+            }
+
+            let mut ret = dev.get_param("return_db");
+            if live_knob(
+                ui,
+                &mut ret,
+                0.0,
+                12.0,
+                24.0,
+                "Return",
+                Color32::from_rgb(0xff, 0xaa, 0x44),
+            )
+            .changed()
+            {
+                dev.set_param("return_db", ret);
+            }
+
+            let mut floor = dev.get_param("floor_db");
+            if live_knob(
+                ui,
+                &mut floor,
+                -80.0,
+                0.0,
+                24.0,
+                "Floor",
+                Color32::from_rgb(0x88, 0x88, 0x88),
+            )
+            .changed()
+            {
+                dev.set_param("floor_db", floor);
+            }
+        });
+
+        ui.horizontal(|ui| {
+            let mut att = dev.get_param("attack_ms");
+            if live_knob(
+                ui,
+                &mut att,
+                0.1,
+                50.0,
+                20.0,
+                "Att",
+                palette.control_foreground,
+            )
+            .changed()
+            {
+                dev.set_param("attack_ms", att);
+            }
+
+            let mut rel = dev.get_param("release_ms");
+            if live_knob(
+                ui,
+                &mut rel,
+                5.0,
+                500.0,
+                20.0,
+                "Rel",
+                palette.control_foreground,
+            )
+            .changed()
+            {
+                dev.set_param("release_ms", rel);
+            }
+        });
+    });
+}
+
+fn render_eq3_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.horizontal(|ui| {
+        // Low band
+        ui.vertical(|ui| {
+            let mut low = dev.get_param("low_gain_db");
+            if live_knob(ui, &mut low, -24.0, 6.0, 24.0, "Low", palette.amber).changed() {
+                dev.set_param("low_gain_db", low);
+            }
+            let low_on = dev.get_param("low_on") > 0.5;
+            if ui.selectable_label(low_on, "On").clicked() {
+                dev.set_param("low_on", if low_on { 0.0 } else { 1.0 });
+            }
+        });
+
+        // Mid band
+        ui.vertical(|ui| {
+            let mut mid = dev.get_param("mid_gain_db");
+            if live_knob(
+                ui,
+                &mut mid,
+                -24.0,
+                6.0,
+                24.0,
+                "Mid",
+                Color32::from_rgb(0x40, 0xd2, 0xff),
+            )
+            .changed()
+            {
+                dev.set_param("mid_gain_db", mid);
+            }
+            let mid_on = dev.get_param("mid_on") > 0.5;
+            if ui.selectable_label(mid_on, "On").clicked() {
+                dev.set_param("mid_on", if mid_on { 0.0 } else { 1.0 });
+            }
+        });
+
+        // High band
+        ui.vertical(|ui| {
+            let mut high = dev.get_param("high_gain_db");
+            if live_knob(
+                ui,
+                &mut high,
+                -24.0,
+                6.0,
+                24.0,
+                "High",
+                Color32::from_rgb(0xff, 0x4c, 0x99),
+            )
+            .changed()
+            {
+                dev.set_param("high_gain_db", high);
+            }
+            let high_on = dev.get_param("high_on") > 0.5;
+            if ui.selectable_label(high_on, "On").clicked() {
+                dev.set_param("high_on", if high_on { 0.0 } else { 1.0 });
+            }
+        });
+    });
+}
+
+fn render_redux_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.horizontal(|ui| {
+        let mut rate = dev.get_param("rate_factor");
+        if live_knob(ui, &mut rate, 1.0, 32.0, 24.0, "Down", palette.amber).changed() {
+            dev.set_param("rate_factor", rate);
+        }
+
+        let mut bits = dev.get_param("bits");
+        if live_knob(
+            ui,
+            &mut bits,
+            1.0,
+            16.0,
+            24.0,
+            "Bits",
+            Color32::from_rgb(0xff, 0x55, 0x59),
+        )
+        .changed()
+        {
+            dev.set_param("bits", bits);
+        }
+
+        let mut dw = dev.get_param("dry_wet");
+        if live_knob(ui, &mut dw, 0.0, 1.0, 24.0, "Dry/Wet", palette.play_green).changed() {
+            dev.set_param("dry_wet", dw);
+        }
     });
 }

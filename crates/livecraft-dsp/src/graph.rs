@@ -1,12 +1,16 @@
 use crate::audio_clip::AudioSampleCache;
 use crate::autofilter::AutoFilterEffect;
+use crate::autopan::AutoPanEffect;
 use crate::chorus::ChorusEffect;
 use crate::compressor::CompressorEffect;
 use crate::delay::DelayEffect;
 use crate::drumrack::DrumRackInstrument;
+use crate::eq3::EqThreeEffect;
 use crate::eq8::EqEight;
+use crate::gate::GateEffect;
 use crate::limiter::{LimiterEffect, UtilityEffect};
 use crate::operator::OperatorSynth;
+use crate::redux::ReduxEffect;
 use crate::reverb::ReverbEffect;
 use crate::saturator::SaturatorEffect;
 use crate::simpler::SimplerInstrument;
@@ -63,6 +67,10 @@ pub struct TrackDspState {
     pub saturator: Option<SaturatorEffect>,
     pub auto_filter: Option<AutoFilterEffect>,
     pub chorus: Option<ChorusEffect>,
+    pub auto_pan: Option<AutoPanEffect>,
+    pub gate: Option<GateEffect>,
+    pub eq3: Option<EqThreeEffect>,
+    pub redux: Option<ReduxEffect>,
     pub audio_sample_cache: AudioSampleCache,
     pub current_audio_in: (f32, f32),
     pub active_clip_slot: Option<usize>,
@@ -86,6 +94,10 @@ impl TrackDspState {
             saturator: None,
             auto_filter: None,
             chorus: None,
+            auto_pan: None,
+            gate: None,
+            eq3: None,
+            redux: None,
             audio_sample_cache: AudioSampleCache::new(),
             current_audio_in: (0.0, 0.0),
             active_clip_slot: None,
@@ -145,6 +157,18 @@ impl TrackDspState {
         }
         if !has_device(DeviceType::Chorus) {
             self.chorus = None;
+        }
+        if !has_device(DeviceType::AutoPan) {
+            self.auto_pan = None;
+        }
+        if !has_device(DeviceType::Gate) {
+            self.gate = None;
+        }
+        if !has_device(DeviceType::EqThree) {
+            self.eq3 = None;
+        }
+        if !has_device(DeviceType::Redux) {
+            self.redux = None;
         }
 
         for dev in &track.device_chain {
@@ -245,6 +269,57 @@ impl TrackDspState {
                         ch.update_from_device(dev);
                     }
                 }
+                DeviceType::AutoPan => {
+                    if self.auto_pan.is_none() {
+                        self.auto_pan = Some(AutoPanEffect::new(sample_rate));
+                    }
+                    if let Some(ref mut ap) = self.auto_pan {
+                        ap.amount = dev.get_param("amount");
+                        ap.rate_hz = dev.get_param("rate_hz");
+                        ap.phase_deg = dev.get_param("phase_deg");
+                        ap.shape = dev.get_param("shape");
+                        ap.mode = dev.get_param("mode");
+                    }
+                }
+                DeviceType::Gate => {
+                    if self.gate.is_none() {
+                        self.gate = Some(GateEffect::new(sample_rate));
+                    }
+                    if let Some(ref mut g) = self.gate {
+                        g.threshold_db = dev.get_param("threshold_db");
+                        g.return_db = dev.get_param("return_db");
+                        g.attack_ms = dev.get_param("attack_ms");
+                        g.hold_ms = dev.get_param("hold_ms");
+                        g.release_ms = dev.get_param("release_ms");
+                        g.floor_db = dev.get_param("floor_db");
+                    }
+                }
+                DeviceType::EqThree => {
+                    if self.eq3.is_none() {
+                        self.eq3 = Some(EqThreeEffect::new(sample_rate));
+                    }
+                    if let Some(ref mut eq) = self.eq3 {
+                        eq.low_gain_db = dev.get_param("low_gain_db");
+                        eq.mid_gain_db = dev.get_param("mid_gain_db");
+                        eq.high_gain_db = dev.get_param("high_gain_db");
+                        eq.low_freq = dev.get_param("low_freq");
+                        eq.high_freq = dev.get_param("high_freq");
+                        eq.low_on = dev.get_param("low_on") > 0.5;
+                        eq.mid_on = dev.get_param("mid_on") > 0.5;
+                        eq.high_on = dev.get_param("high_on") > 0.5;
+                    }
+                }
+                DeviceType::Redux => {
+                    if self.redux.is_none() {
+                        self.redux = Some(ReduxEffect::new(sample_rate));
+                    }
+                    if let Some(ref mut rd) = self.redux {
+                        rd.rate_factor = dev.get_param("rate_factor");
+                        rd.bits = dev.get_param("bits");
+                        rd.jitter = dev.get_param("jitter");
+                        rd.dry_wet = dev.get_param("dry_wet");
+                    }
+                }
                 _ => {}
             }
         }
@@ -292,6 +367,38 @@ impl TrackDspState {
             let (fl, fr) = af.process_stereo(l, r);
             l = fl;
             r = fr;
+        }
+
+        if let Some(ref mut eq) = self.eq3 {
+            let mut sl = [l];
+            let mut sr = [r];
+            eq.process(&mut sl, &mut sr);
+            l = sl[0];
+            r = sr[0];
+        }
+
+        if let Some(ref mut g) = self.gate {
+            let mut sl = [l];
+            let mut sr = [r];
+            g.process(&mut sl, &mut sr);
+            l = sl[0];
+            r = sr[0];
+        }
+
+        if let Some(ref mut rd) = self.redux {
+            let mut sl = [l];
+            let mut sr = [r];
+            rd.process(&mut sl, &mut sr);
+            l = sl[0];
+            r = sr[0];
+        }
+
+        if let Some(ref mut ap) = self.auto_pan {
+            let mut sl = [l];
+            let mut sr = [r];
+            ap.process(&mut sl, &mut sr);
+            l = sl[0];
+            r = sr[0];
         }
 
         if let Some(ref mut ch) = self.chorus {

@@ -115,3 +115,25 @@ fn test_cli_render_and_stem_pipeline() {
 
     let _ = fs::remove_dir_all(tmp_dir);
 }
+
+#[test]
+fn test_cli_midi_transformations_and_tuning() {
+    let mut project = Project::new_default("MidiToolTest");
+    let mut clip = Clip::new_midi(1, "Pattern", 4.0);
+    if let ClipPayload::Midi(ref mut m) = clip.payload {
+        m.generate_euclidean(4, 16, 60, 4.0, 100);
+        assert_eq!(m.notes.len(), 4);
+
+        m.chop(2);
+        assert_eq!(m.notes.len(), 8);
+    }
+    project.tracks[0].clip_slots[0].clip = Some(clip);
+
+    let tuning =
+        TuningSystem::from_scala("! slendro.scl\nSlendro\n5\n240.0\n480.0\n720.0\n960.0\n1200.0\n")
+            .expect("Failed to parse slendro tuning");
+    project.tuning = Some(tuning);
+
+    let xml = AlsParser::export_to_xml(&project).expect("Failed to export XML with tuning");
+    assert!(xml.contains("Pattern"));
+}
