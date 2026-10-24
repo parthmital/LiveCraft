@@ -317,6 +317,7 @@ impl AlsParser {
             creator,
             name: project_name.to_string(),
             transport,
+            scale: ScaleConfig::default(),
             tracks,
             return_tracks,
             master_track,

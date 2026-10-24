@@ -26,6 +26,7 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                 let box_width = match dev.device_type {
                     DeviceType::EqEight => 240.0,
                     DeviceType::Operator => 260.0,
+                    DeviceType::Saturator => 190.0,
                     _ => 160.0,
                 };
                 ui.set_width(box_width);
@@ -109,6 +110,9 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                         }
                         DeviceType::Utility => {
                             render_utility_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Saturator => {
+                            render_saturator_controls(child_ui, dev, palette);
                         }
                         _ => {
                             child_ui.label(format!("Device: {}", dev.name));
@@ -342,5 +346,118 @@ fn render_utility_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette)
         if live_knob(ui, &mut pan, -1.0, 1.0, 26.0, "Pan", palette.amber).changed() {
             dev.set_param("pan", pan);
         }
+    });
+}
+
+fn render_saturator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.vertical(|ui| {
+        let (curve_rect, _) =
+            ui.allocate_exact_size(Vec2::new(ui.available_width(), 44.0), egui::Sense::hover());
+        let painter = ui.painter();
+        painter.rect_filled(
+            curve_rect,
+            Rounding::same(2.0),
+            Color32::from_rgb(0x10, 0x10, 0x10),
+        );
+        painter.rect_stroke(
+            curve_rect,
+            Rounding::same(2.0),
+            Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x28)),
+        );
+
+        let c_y = curve_rect.center().y;
+        let c_x = curve_rect.center().x;
+        painter.line_segment(
+            [
+                Pos2::new(curve_rect.min.x, c_y),
+                Pos2::new(curve_rect.max.x, c_y),
+            ],
+            Stroke::new(0.5_f32, Color32::from_rgb(0x30, 0x30, 0x30)),
+        );
+        painter.line_segment(
+            [
+                Pos2::new(c_x, curve_rect.min.y),
+                Pos2::new(c_x, curve_rect.max.y),
+            ],
+            Stroke::new(0.5_f32, Color32::from_rgb(0x30, 0x30, 0x30)),
+        );
+
+        let drive_db = dev.get_param("drive_db");
+        let drive_lin = 10.0f32.powf(drive_db / 20.0);
+        let curve_type = dev.get_param("curve_type") as usize;
+
+        let num_points = 32;
+        let mut points = Vec::with_capacity(num_points);
+        for p in 0..num_points {
+            let norm_x = (p as f32 / (num_points - 1) as f32) * 2.0 - 1.0;
+            let driven = norm_x * drive_lin;
+            let sat_y = match curve_type {
+                1 => driven.clamp(-1.0, 1.0),
+                2 => (driven / (1.0 + driven.abs()) + 0.08 * (driven * driven).min(1.0))
+                    .clamp(-1.0, 1.0),
+                3 => {
+                    let mut v = driven;
+                    while v > 1.0 || v < -1.0 {
+                        if v > 1.0 {
+                            v = 2.0 - v;
+                        } else if v < -1.0 {
+                            v = -2.0 - v;
+                        }
+                    }
+                    v
+                }
+                _ => (driven.clamp(-2.0, 2.0) * std::f32::consts::FRAC_PI_2).sin(),
+            };
+            let px = curve_rect.min.x + (p as f32 / (num_points - 1) as f32) * curve_rect.width();
+            let py = c_y - sat_y * (curve_rect.height() * 0.42);
+            points.push(Pos2::new(px, py));
+        }
+
+        for i in 0..points.len() - 1 {
+            painter.line_segment(
+                [points[i], points[i + 1]],
+                Stroke::new(1.5_f32, palette.amber),
+            );
+        }
+
+        ui.add_space(3.0);
+
+        ui.horizontal(|ui| {
+            let mut drive = dev.get_param("drive_db");
+            if live_knob(ui, &mut drive, 0.0, 36.0, 24.0, "Drive", palette.amber).changed() {
+                dev.set_param("drive_db", drive);
+            }
+
+            let mut out_db = dev.get_param("output_db");
+            if live_knob(ui, &mut out_db, -24.0, 0.0, 24.0, "Out", palette.cyan).changed() {
+                dev.set_param("output_db", out_db);
+            }
+
+            let mut dry_wet = dev.get_param("dry_wet");
+            if live_knob(
+                ui,
+                &mut dry_wet,
+                0.0,
+                1.0,
+                24.0,
+                "Dry/Wet",
+                palette.play_green,
+            )
+            .changed()
+            {
+                dev.set_param("dry_wet", dry_wet);
+            }
+        });
+
+        ui.horizontal(|ui| {
+            let names = ["Soft", "Hard", "Warm", "Fold"];
+            let mut cur = dev.get_param("curve_type") as usize;
+            for (idx, &name) in names.iter().enumerate() {
+                if ui.selectable_label(cur == idx, name).clicked() {
+                    cur = idx;
+                    dev.set_param("curve_type", cur as f32);
+                }
+            }
+        });
     });
 }

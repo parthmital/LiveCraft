@@ -129,6 +129,11 @@ impl LiveBrowser {
                             DeviceType::Compressor,
                             "Dynamic range compressor",
                         ),
+                        (
+                            "Saturator",
+                            DeviceType::Saturator,
+                            "Harmonic drive & waveshaping",
+                        ),
                         ("Delay", DeviceType::Delay, "Stereo ping-pong delay"),
                         ("Reverb", DeviceType::Reverb, "Algorithmic room reverb"),
                         ("Limiter", DeviceType::Limiter, "Peak brickwall limiter"),

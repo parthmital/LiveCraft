@@ -179,13 +179,14 @@ pub fn render_arrangement_view(
                             );
                         }
 
-                        // Render clips in this lane (from clip slots)
-                        let mut current_beat = 0.0;
-                        for slot in &trk.clip_slots {
-                            if let Some(ref clip) = slot.clip {
-                                let clip_w = (clip.length_beats as f32 * pixels_per_beat).max(12.0);
-                                let clip_x =
-                                    lane_rect.min.x + (current_beat as f32 * pixels_per_beat);
+                        // Render clips in this lane (from arrangement timeline clips or clip slots fallback)
+                        if !trk.arrangement_clips.is_empty() {
+                            for arr_clip in &trk.arrangement_clips {
+                                let clip = &arr_clip.clip;
+                                let clip_w =
+                                    (arr_clip.length_beats as f32 * pixels_per_beat).max(12.0);
+                                let clip_x = lane_rect.min.x
+                                    + (arr_clip.start_beat as f32 * pixels_per_beat);
 
                                 let clip_rect = Rect::from_min_size(
                                     Pos2::new(clip_x, lane_rect.min.y + 2.0),
@@ -238,8 +239,71 @@ pub fn render_arrangement_view(
                                         }
                                     }
                                 }
+                            }
+                        } else {
+                            let mut current_beat = 0.0;
+                            for slot in &trk.clip_slots {
+                                if let Some(ref clip) = slot.clip {
+                                    let clip_w =
+                                        (clip.length_beats as f32 * pixels_per_beat).max(12.0);
+                                    let clip_x =
+                                        lane_rect.min.x + (current_beat as f32 * pixels_per_beat);
 
-                                current_beat += clip.length_beats;
+                                    let clip_rect = Rect::from_min_size(
+                                        Pos2::new(clip_x, lane_rect.min.y + 2.0),
+                                        Vec2::new(clip_w, lane_rect.height() - 4.0),
+                                    );
+
+                                    if clip_rect.max.x <= lane_rect.max.x {
+                                        let [cr, cg, cb, _] = parse_hex_color(&clip.color);
+                                        let clip_c = Color32::from_rgb(cr, cg, cb);
+
+                                        lane_painter.rect_filled(
+                                            clip_rect,
+                                            Rounding::same(3.0),
+                                            Color32::from_rgba_unmultiplied(cr, cg, cb, 180),
+                                        );
+                                        lane_painter.rect_stroke(
+                                            clip_rect,
+                                            Rounding::same(3.0),
+                                            Stroke::new(1.0_f32, clip_c),
+                                        );
+
+                                        // Clip Name
+                                        lane_painter.text(
+                                            Pos2::new(clip_rect.min.x + 4.0, clip_rect.min.y + 8.0),
+                                            egui::Align2::LEFT_CENTER,
+                                            &clip.name,
+                                            egui::FontId::proportional(10.0),
+                                            Color32::WHITE,
+                                        );
+
+                                        // Preview notes or waveform
+                                        if let ClipPayload::Midi(ref m) = clip.payload {
+                                            for n in &m.notes {
+                                                let n_x = clip_rect.min.x
+                                                    + (n.start_beat as f32 * pixels_per_beat);
+                                                let n_w = (n.duration_beats as f32
+                                                    * pixels_per_beat)
+                                                    .max(2.0);
+                                                let n_y = clip_rect.max.y
+                                                    - 4.0
+                                                    - ((n.pitch % 24) as f32 / 24.0)
+                                                        * (clip_rect.height() - 16.0);
+                                                lane_painter.rect_filled(
+                                                    Rect::from_min_size(
+                                                        Pos2::new(n_x, n_y),
+                                                        Vec2::new(n_w, 3.0),
+                                                    ),
+                                                    Rounding::ZERO,
+                                                    Color32::WHITE,
+                                                );
+                                            }
+                                        }
+                                    }
+
+                                    current_beat += clip.length_beats;
+                                }
                             }
                         }
 

@@ -15,15 +15,20 @@ LiveCraft is an open-source, high-performance Digital Audio Workstation (DAW) wr
 - **Built-in DSP Devices & Instruments:**
   - **Operator Synth:** Polyphonic 4-oscillator subtractive/FM synthesizer (Sine, Saw, Square, Triangle, Noise) with ADSR envelopes and resonant 24dB filters.
   - **Simpler:** Sample player with pitch tracking, looping, and filter envelopes.
+  - **Saturator:** Multi-curve waveshaping and harmonic saturation effect (Soft Sine, Hard Clip, Analog Warmth, Foldback) with interactive transfer-function curve.
   - **EQ Eight:** 8-band parametric biquad equalizer matching Ableton EQ Eight.
   - **Compressor:** Dynamic range compressor with threshold, ratio, attack, release, makeup gain, and gain-reduction metering.
   - **Delay:** Stereo ping-pong and tempo-synced delay line with feedback filtering.
   - **Reverb:** Algorithmic stereo Schroeder/Freeverb room reverb with damping, room size, and stereo width.
   - **Limiter:** Transparent lookahead brickwall peak limiter with ceiling control.
   - **Utility:** Gain (-inf to +35 dB), stereo width (0% mono to 400% wide), pan, and phase inversion.
+- **Ableton Live 12 Scale System & MIDI Tools:**
+  - **Keys and Scales Engine:** Full microtonal and diatonic scale integration across 12 roots and 12 modes (Major, Minor, Dorian, Phrygian, Lydian, Mixolydian, Locrian, Pentatonic, Blues).
+  - **Fold to Scale:** Piano roll filters non-scale rows on demand, with visual scale highlights and root markers.
+  - **MIDI Transformations:** Algorithmic clip transforms directly from UI or CLI (Quantize, Transpose, Strum, Humanize, Invert, Reverse, Velocity Ramp).
 - **Real-Time & Faster-Than-Realtime Audio:**
-  - Low-latency real-time stream using `cpal` (WASAPI on Windows, CoreAudio on macOS, ALSA/JACK on Linux).
-  - High-speed offline bounce to 16, 24, or 32-bit float WAV using `hound` (~23x faster than real-time).
+  - Allocation-free, lock-free real-time stream using `cpal` (WASAPI on Windows, CoreAudio on macOS, ALSA/JACK on Linux).
+  - High-speed offline bounce to 16, 24, or 32-bit float WAV using `hound` (~133x faster than real-time).
   - Stem export: one command bounces each track to an isolated stem file.
 
 ---
@@ -42,7 +47,9 @@ livecraft/
 │   ├── livecraft-dsp/      # Lock-free audio graph, DSP effects, synths, CPAL engine, bouncer
 │   ├── livecraft-gui/      # Ableton Live 12 desktop GUI (egui / eframe / glow)
 │   └── livecraft-cli/      # Headless CLI entry point & integration tests
+├── ROADMAP.md              # Living master roadmap (parity matrix, tasks, verification)
 ├── RESEARCH.md             # Research-driven development architecture dossier
+├── CONTRIBUTING.md         # Open-source developer & contributor guidelines
 └── Cargo.toml              # Cargo workspace configuration
 ```
 

@@ -248,10 +248,17 @@ impl eframe::App for LiveCraftApp {
                 } else {
                     // Clip View / Piano Roll
                     if let Some((t_idx, s_idx)) = self.selected_clip {
+                        let scale = &mut self.project.scale;
                         if let Some(trk) = self.project.tracks.get_mut(t_idx) {
                             if let Some(slot) = trk.clip_slots.get_mut(s_idx) {
                                 if let Some(ref mut clip) = slot.clip {
-                                    render_piano_roll(ui, clip, playhead_beats, &self.palette);
+                                    render_piano_roll(
+                                        ui,
+                                        clip,
+                                        scale,
+                                        playhead_beats,
+                                        &self.palette,
+                                    );
                                 } else {
                                     ui.label("Empty slot. Double-click in Session View to create a clip.");
                                 }

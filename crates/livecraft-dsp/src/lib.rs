@@ -8,6 +8,7 @@ pub mod graph;
 pub mod limiter;
 pub mod operator;
 pub mod reverb;
+pub mod saturator;
 pub mod simpler;
 
 pub use biquad::*;
@@ -17,6 +18,7 @@ pub use eq8::*;
 pub use limiter::*;
 pub use operator::*;
 pub use reverb::*;
+pub use saturator::*;
 pub mod instruments {
     pub use crate::operator::*;
     pub use crate::simpler::*;
@@ -63,6 +65,30 @@ mod tests {
         let (out_l, out_r) = eq.process_stereo(1.0, 1.0);
         assert!(out_l.is_finite());
         assert!(out_r.is_finite());
+    }
+
+    #[test]
+    fn test_saturator_processing() {
+        let mut sat = SaturatorEffect::new(44100.0);
+        sat.drive_db = 12.0;
+        let (out_l, out_r) = sat.process_stereo(0.5, -0.5);
+        assert!(out_l.is_finite());
+        assert!(out_r.is_finite());
+        assert!(out_l > 0.0);
+        assert!(out_r < 0.0);
+
+        // Test all curve modes
+        for &curve in &[
+            SaturatorCurve::SoftSine,
+            SaturatorCurve::HardClip,
+            SaturatorCurve::AnalogWarmth,
+            SaturatorCurve::Foldback,
+        ] {
+            sat.curve = curve;
+            let (l, r) = sat.process_stereo(1.5, -1.5);
+            assert!(l.is_finite());
+            assert!(r.is_finite());
+        }
     }
 
     #[test]

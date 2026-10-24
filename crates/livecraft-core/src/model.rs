@@ -64,6 +64,140 @@ pub struct MidiClipData {
     pub notes: Vec<MidiNote>,
 }
 
+impl MidiClipData {
+    pub fn quantize(&mut self, grid_division: f64) {
+        if grid_division <= 0.0 {
+            return;
+        }
+        for note in &mut self.notes {
+            note.start_beat = (note.start_beat / grid_division).round() * grid_division;
+            note.duration_beats =
+                ((note.duration_beats / grid_division).round() * grid_division).max(grid_division);
+        }
+    }
+
+    pub fn transpose(&mut self, semitones: i8, scale: Option<&ScaleConfig>) {
+        for note in &mut self.notes {
+            let mut new_pitch = (note.pitch as i16 + semitones as i16).clamp(0, 127) as u8;
+            if let Some(sc) = scale {
+                if sc.is_active {
+                    new_pitch = sc.snap_to_scale(new_pitch);
+                }
+            }
+            note.pitch = new_pitch;
+        }
+    }
+
+    pub fn strum(&mut self, spread_beats: f64, up: bool) {
+        if self.notes.len() < 2 {
+            return;
+        }
+        self.notes.sort_by(|a, b| {
+            a.start_beat
+                .partial_cmp(&b.start_beat)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then(a.pitch.cmp(&b.pitch))
+        });
+
+        let threshold = 0.03125;
+        let mut group_start = 0;
+        while group_start < self.notes.len() {
+            let base_time = self.notes[group_start].start_beat;
+            let mut group_end = group_start + 1;
+            while group_end < self.notes.len()
+                && (self.notes[group_end].start_beat - base_time).abs() < threshold
+            {
+                group_end += 1;
+            }
+
+            let group_len = group_end - group_start;
+            if group_len > 1 {
+                for i in 0..group_len {
+                    let idx = group_start + i;
+                    let offset = if up {
+                        i as f64 * (spread_beats / group_len as f64)
+                    } else {
+                        (group_len - 1 - i) as f64 * (spread_beats / group_len as f64)
+                    };
+                    self.notes[idx].start_beat += offset;
+                }
+            }
+            group_start = group_end;
+        }
+    }
+
+    pub fn humanize(&mut self, timing_spread_beats: f64, velocity_spread: i8, seed: u64) {
+        let mut state = seed.wrapping_add(1);
+        for note in &mut self.notes {
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let time_rand = ((state >> 33) as f64 / 2147483648.0) * 2.0 - 1.0;
+            note.start_beat = (note.start_beat + time_rand * timing_spread_beats).max(0.0);
+
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
+            let vel_rand = ((state >> 33) as f64 / 2147483648.0) * 2.0 - 1.0;
+            let delta_v = (vel_rand * velocity_spread as f64) as i16;
+            note.velocity = (note.velocity as i16 + delta_v).clamp(1, 127) as u8;
+        }
+    }
+
+    pub fn invert_pitches(&mut self) {
+        if self.notes.is_empty() {
+            return;
+        }
+        let sum: u32 = self.notes.iter().map(|n| n.pitch as u32).sum();
+        let avg_pitch = (sum / self.notes.len() as u32) as i16;
+        for note in &mut self.notes {
+            let diff = note.pitch as i16 - avg_pitch;
+            note.pitch = (avg_pitch - diff).clamp(0, 127) as u8;
+        }
+    }
+
+    pub fn reverse_time(&mut self, total_length_beats: f64) {
+        let max_time = total_length_beats.max(
+            self.notes
+                .iter()
+                .map(|n| n.start_beat + n.duration_beats)
+                .fold(0.0f64, f64::max),
+        );
+        for note in &mut self.notes {
+            let note_end = note.start_beat + note.duration_beats;
+            note.start_beat = (max_time - note_end).max(0.0);
+        }
+        self.notes.sort_by(|a, b| {
+            a.start_beat
+                .partial_cmp(&b.start_beat)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
+    }
+
+    pub fn velocity_ramp(&mut self, start_vel: u8, end_vel: u8) {
+        if self.notes.is_empty() {
+            return;
+        }
+        let min_start = self
+            .notes
+            .iter()
+            .map(|n| n.start_beat)
+            .fold(f64::INFINITY, f64::min);
+        let max_start = self
+            .notes
+            .iter()
+            .map(|n| n.start_beat)
+            .fold(0.0f64, f64::max);
+        let span = (max_start - min_start).max(0.001);
+
+        for note in &mut self.notes {
+            let norm = (note.start_beat - min_start) / span;
+            let vel = (start_vel as f64 + (end_vel as f64 - start_vel as f64) * norm).round();
+            note.velocity = (vel as i16).clamp(1, 127) as u8;
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioClipData {
     pub file_path: String,
@@ -170,6 +304,150 @@ impl ClipSlot {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ArrangementClip {
+    pub id: u64,
+    pub clip: Clip,
+    pub start_beat: f64,
+    pub length_beats: f64,
+}
+
+impl ArrangementClip {
+    pub fn new(id: u64, clip: Clip, start_beat: f64, length_beats: f64) -> Self {
+        Self {
+            id,
+            clip,
+            start_beat,
+            length_beats,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ScaleType {
+    Major,
+    Minor,
+    HarmonicMinor,
+    MelodicMinor,
+    Dorian,
+    Phrygian,
+    Lydian,
+    Mixolydian,
+    Locrian,
+    MajorPentatonic,
+    MinorPentatonic,
+    Blues,
+}
+
+impl ScaleType {
+    pub const ALL: &'static [ScaleType] = &[
+        ScaleType::Major,
+        ScaleType::Minor,
+        ScaleType::HarmonicMinor,
+        ScaleType::MelodicMinor,
+        ScaleType::Dorian,
+        ScaleType::Phrygian,
+        ScaleType::Lydian,
+        ScaleType::Mixolydian,
+        ScaleType::Locrian,
+        ScaleType::MajorPentatonic,
+        ScaleType::MinorPentatonic,
+        ScaleType::Blues,
+    ];
+
+    pub fn name(&self) -> &'static str {
+        match self {
+            ScaleType::Major => "Major",
+            ScaleType::Minor => "Minor",
+            ScaleType::HarmonicMinor => "Harmonic Minor",
+            ScaleType::MelodicMinor => "Melodic Minor",
+            ScaleType::Dorian => "Dorian",
+            ScaleType::Phrygian => "Phrygian",
+            ScaleType::Lydian => "Lydian",
+            ScaleType::Mixolydian => "Mixolydian",
+            ScaleType::Locrian => "Locrian",
+            ScaleType::MajorPentatonic => "Major Pentatonic",
+            ScaleType::MinorPentatonic => "Minor Pentatonic",
+            ScaleType::Blues => "Blues",
+        }
+    }
+
+    pub fn intervals(&self) -> &'static [u8] {
+        match self {
+            ScaleType::Major => &[0, 2, 4, 5, 7, 9, 11],
+            ScaleType::Minor => &[0, 2, 3, 5, 7, 8, 10],
+            ScaleType::HarmonicMinor => &[0, 2, 3, 5, 7, 8, 11],
+            ScaleType::MelodicMinor => &[0, 2, 3, 5, 7, 9, 11],
+            ScaleType::Dorian => &[0, 2, 3, 5, 7, 9, 10],
+            ScaleType::Phrygian => &[0, 1, 3, 5, 7, 8, 10],
+            ScaleType::Lydian => &[0, 2, 4, 6, 7, 9, 11],
+            ScaleType::Mixolydian => &[0, 2, 4, 5, 7, 9, 10],
+            ScaleType::Locrian => &[0, 1, 3, 5, 6, 8, 10],
+            ScaleType::MajorPentatonic => &[0, 2, 4, 7, 9],
+            ScaleType::MinorPentatonic => &[0, 3, 5, 7, 10],
+            ScaleType::Blues => &[0, 3, 5, 6, 7, 10],
+        }
+    }
+}
+
+pub const NOTE_NAMES: &[&str] = &[
+    "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
+];
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScaleConfig {
+    pub root_note: u8, // 0 = C, 1 = C#, ..., 11 = B
+    pub scale_type: ScaleType,
+    pub is_active: bool,
+}
+
+impl Default for ScaleConfig {
+    fn default() -> Self {
+        Self {
+            root_note: 0, // C
+            scale_type: ScaleType::Minor,
+            is_active: false,
+        }
+    }
+}
+
+impl ScaleConfig {
+    pub fn new(root_note: u8, scale_type: ScaleType) -> Self {
+        Self {
+            root_note: root_note % 12,
+            scale_type,
+            is_active: true,
+        }
+    }
+
+    pub fn is_in_scale(&self, pitch: u8) -> bool {
+        if !self.is_active {
+            return true;
+        }
+        let semitone_from_root = (pitch + 12 - (self.root_note % 12)) % 12;
+        self.scale_type.intervals().contains(&semitone_from_root)
+    }
+
+    pub fn snap_to_scale(&self, pitch: u8) -> u8 {
+        if !self.is_active || self.is_in_scale(pitch) {
+            return pitch;
+        }
+        let semitone_from_root = (pitch + 12 - (self.root_note % 12)) % 12;
+        let intervals = self.scale_type.intervals();
+        let mut min_diff = 127;
+        let mut best_interval = intervals[0];
+        for &int in intervals {
+            let diff = (semitone_from_root as i16 - int as i16).abs();
+            if diff < min_diff {
+                min_diff = diff;
+                best_interval = int;
+            }
+        }
+        let octave = (pitch as i16 - semitone_from_root as i16) / 12;
+        (octave * 12 + self.root_note as i16 + best_interval as i16).clamp(0, 127) as u8
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum DeviceType {
     EqEight,
     Delay,
@@ -179,6 +457,7 @@ pub enum DeviceType {
     Utility,
     Operator,
     Simpler,
+    Saturator,
     DrumRack,
     Custom(String),
 }
@@ -259,6 +538,13 @@ impl Device {
                 parameters.insert("release_ms".to_string(), 100.0);
                 parameters.insert("filter_cutoff".to_string(), 20000.0);
             }
+            DeviceType::Saturator => {
+                parameters.insert("drive_db".to_string(), 6.0);
+                parameters.insert("curve_type".to_string(), 0.0); // 0=Soft Sine, 1=Hard Clip, 2=Analog Warmth, 3=Foldback
+                parameters.insert("output_db".to_string(), -2.0);
+                parameters.insert("dry_wet".to_string(), 1.0);
+                parameters.insert("tone".to_string(), 0.5);
+            }
             _ => {}
         }
 
@@ -293,6 +579,8 @@ pub struct Track {
     pub is_armed: bool,
     pub sends: Vec<f32>, // Send levels to Return tracks (0.0 to 1.0)
     pub clip_slots: Vec<ClipSlot>,
+    #[serde(default)]
+    pub arrangement_clips: Vec<ArrangementClip>,
     pub device_chain: Vec<Device>,
 }
 
@@ -321,6 +609,7 @@ impl Track {
             is_armed: false,
             sends: vec![0.0, 0.0], // Sends A and B
             clip_slots,
+            arrangement_clips: Vec::new(),
             device_chain: Vec::new(),
         }
     }
@@ -382,6 +671,8 @@ pub struct Project {
     pub creator: String,
     pub name: String,
     pub transport: Transport,
+    #[serde(default)]
+    pub scale: ScaleConfig,
     pub tracks: Vec<Track>,
     pub return_tracks: Vec<Track>,
     pub master_track: Track,
@@ -436,6 +727,7 @@ impl Project {
             creator: "LiveCraft Engine".to_string(),
             name: name.into(),
             transport: Transport::default(),
+            scale: ScaleConfig::default(),
             tracks,
             return_tracks,
             master_track,

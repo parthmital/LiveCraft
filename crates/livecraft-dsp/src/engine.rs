@@ -46,11 +46,7 @@ impl AudioEngine {
             SampleFormat::I16 => device.build_output_stream(
                 &config,
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
-                    let mut float_buf = vec![0.0f32; data.len()];
-                    write_audio(&mut float_buf, channels, &graph_cb, &project_clone);
-                    for (i, s) in float_buf.iter().enumerate() {
-                        data[i] = (s * 32767.0).clamp(-32768.0, 32767.0) as i16;
-                    }
+                    write_audio_i16(data, channels, &graph_cb, &project_clone);
                 },
                 err_fn,
                 None,
@@ -58,11 +54,7 @@ impl AudioEngine {
             SampleFormat::U16 => device.build_output_stream(
                 &config,
                 move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
-                    let mut float_buf = vec![0.0f32; data.len()];
-                    write_audio(&mut float_buf, channels, &graph_cb, &project_clone);
-                    for (i, s) in float_buf.iter().enumerate() {
-                        data[i] = ((s * 0.5 + 0.5) * 65535.0).clamp(0.0, 65535.0) as u16;
-                    }
+                    write_audio_u16(data, channels, &graph_cb, &project_clone);
                 },
                 err_fn,
                 None,
@@ -107,24 +99,35 @@ fn write_audio(
     project: &Project,
 ) {
     if let Ok(mut graph) = graph_arc.try_lock() {
-        let frames = data.len() / channels;
-        let mut buf_l = vec![0.0f32; frames];
-        let mut buf_r = vec![0.0f32; frames];
-
-        graph.process_buffer(&mut buf_l, &mut buf_r, project);
-
-        for (frame_idx, chunk) in data.chunks_mut(channels).enumerate() {
-            let l = buf_l[frame_idx];
-            let r = buf_r[frame_idx];
-            if channels >= 2 {
-                chunk[0] = l;
-                chunk[1] = r;
-            } else if channels == 1 {
-                chunk[0] = (l + r) * 0.5;
-            }
-        }
+        graph.process_buffer_interleaved(data, channels, project);
     } else {
         // If mutex is locked, output silence to prevent audio glitches
         data.fill(0.0);
+    }
+}
+
+fn write_audio_i16(
+    data: &mut [i16],
+    channels: usize,
+    graph_arc: &Arc<Mutex<AudioGraph>>,
+    project: &Project,
+) {
+    if let Ok(mut graph) = graph_arc.try_lock() {
+        graph.process_buffer_interleaved_i16(data, channels, project);
+    } else {
+        data.fill(0);
+    }
+}
+
+fn write_audio_u16(
+    data: &mut [u16],
+    channels: usize,
+    graph_arc: &Arc<Mutex<AudioGraph>>,
+    project: &Project,
+) {
+    if let Ok(mut graph) = graph_arc.try_lock() {
+        graph.process_buffer_interleaved_u16(data, channels, project);
+    } else {
+        data.fill(32768);
     }
 }
