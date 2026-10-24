@@ -1,3 +1,5 @@
+use livecraft_core::model::Device;
+
 // Freeverb Comb and All-Pass tuning constants (at 44100 Hz, scaled to sample_rate)
 const COMB_TUNINGS_L: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
 const COMB_TUNINGS_R: [usize; 8] = [1139, 1211, 1300, 1379, 1445, 1514, 1580, 1640];
@@ -114,6 +116,15 @@ impl ReverbEffect {
         self.damping = damping.clamp(0.0, 1.0);
         self.dry_wet = dry_wet.clamp(0.0, 1.0);
         self.update_params();
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        let room_size = dev.get_param("room_size");
+        let damping = dev.get_param("damping");
+        let dry_wet = dev.get_param("dry_wet");
+        self.stereo_width = dev.get_param("stereo_width").clamp(0.0, 1.0);
+        self.set_params(room_size, damping, dry_wet);
     }
 
     fn update_params(&mut self) {

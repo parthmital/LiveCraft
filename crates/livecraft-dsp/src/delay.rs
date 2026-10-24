@@ -1,4 +1,5 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use livecraft_core::model::Device;
 
 #[derive(Debug, Clone)]
 pub struct DelayEffect {
@@ -41,6 +42,14 @@ impl DelayEffect {
         // e.g. subdivision 0.5 = 1/8th note
         let beat_sec = 60.0 / bpm.max(20.0);
         self.delay_time_ms = (beat_sec * subdivision * 1000.0).clamp(1.0, 1900.0);
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        self.delay_time_ms = dev.get_param("time_ms").clamp(1.0, 1900.0);
+        self.feedback = dev.get_param("feedback").clamp(0.0, 0.98);
+        self.dry_wet = dev.get_param("dry_wet").clamp(0.0, 1.0);
+        self.ping_pong = dev.get_param("ping_pong") > 0.5;
     }
 
     pub fn process_stereo(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {

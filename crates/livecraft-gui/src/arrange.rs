@@ -6,6 +6,7 @@ use livecraft_core::theme::parse_hex_color;
 pub struct ArrangementAction {
     pub set_playhead: Option<f64>,
     pub select_track: Option<usize>,
+    pub select_clip: Option<usize>,
 }
 
 pub fn render_arrangement_view(
@@ -18,6 +19,7 @@ pub fn render_arrangement_view(
     let mut action = ArrangementAction {
         set_playhead: None,
         select_track: None,
+        select_clip: None,
     };
 
     let total_bars = 32;
@@ -181,7 +183,11 @@ pub fn render_arrangement_view(
 
                         // Render clips in this lane (from arrangement timeline clips or clip slots fallback)
                         if !trk.arrangement_clips.is_empty() {
-                            for arr_clip in &trk.arrangement_clips {
+                            let mut to_duplicate = None;
+                            let mut to_delete = None;
+                            let mut to_split = None;
+
+                            for (c_idx, arr_clip) in trk.arrangement_clips.iter_mut().enumerate() {
                                 let clip = &arr_clip.clip;
                                 let clip_w =
                                     (arr_clip.length_beats as f32 * pixels_per_beat).max(12.0);
@@ -194,6 +200,46 @@ pub fn render_arrangement_view(
                                 );
 
                                 if clip_rect.max.x <= lane_rect.max.x {
+                                    let clip_resp = ui.interact(
+                                        clip_rect,
+                                        ui.id().with((trk_idx, c_idx)),
+                                        Sense::click_and_drag(),
+                                    );
+
+                                    if clip_resp.dragged() {
+                                        let delta =
+                                            (clip_resp.drag_delta().x / pixels_per_beat) as f64;
+                                        arr_clip.start_beat =
+                                            (arr_clip.start_beat + delta).max(0.0);
+                                    }
+                                    if clip_resp.drag_stopped() {
+                                        arr_clip.start_beat =
+                                            (arr_clip.start_beat * 4.0).round() / 4.0;
+                                    }
+                                    if clip_resp.clicked() {
+                                        action.select_track = Some(trk_idx);
+                                        action.select_clip = Some(c_idx);
+                                    }
+
+                                    if clip_resp.hovered() {
+                                        if ui.input(|i| {
+                                            i.modifiers.command && i.key_pressed(egui::Key::D)
+                                        }) {
+                                            to_duplicate = Some(c_idx);
+                                        }
+                                        if ui.input(|i| {
+                                            i.key_pressed(egui::Key::Delete)
+                                                || i.key_pressed(egui::Key::Backspace)
+                                        }) {
+                                            to_delete = Some(c_idx);
+                                        }
+                                        if ui.input(|i| {
+                                            i.modifiers.command && i.key_pressed(egui::Key::E)
+                                        }) {
+                                            to_split = Some((c_idx, playhead_beats));
+                                        }
+                                    }
+
                                     let [cr, cg, cb, _] = parse_hex_color(&clip.color);
                                     let clip_c = Color32::from_rgb(cr, cg, cb);
 
@@ -202,10 +248,15 @@ pub fn render_arrangement_view(
                                         Rounding::same(3.0),
                                         Color32::from_rgba_unmultiplied(cr, cg, cb, 180),
                                     );
+                                    let border_color = if clip_resp.hovered() {
+                                        Color32::WHITE
+                                    } else {
+                                        clip_c
+                                    };
                                     lane_painter.rect_stroke(
                                         clip_rect,
                                         Rounding::same(3.0),
-                                        Stroke::new(1.0_f32, clip_c),
+                                        Stroke::new(1.0_f32, border_color),
                                     );
 
                                     // Clip Name
@@ -238,6 +289,42 @@ pub fn render_arrangement_view(
                                             );
                                         }
                                     }
+                                }
+                            }
+
+                            if let Some(c_idx) = to_duplicate {
+                                let orig = &trk.arrangement_clips[c_idx];
+                                let new_id = orig.id + 1000;
+                                let new_start = orig.start_beat + orig.length_beats;
+                                let dup = livecraft_core::model::ArrangementClip::new(
+                                    new_id,
+                                    orig.clip.clone(),
+                                    new_start,
+                                    orig.length_beats,
+                                );
+                                trk.arrangement_clips.push(dup);
+                            }
+                            if let Some((c_idx, split_at)) = to_split {
+                                let orig = &trk.arrangement_clips[c_idx];
+                                if split_at > orig.start_beat
+                                    && split_at < orig.start_beat + orig.length_beats
+                                {
+                                    let left_len = split_at - orig.start_beat;
+                                    let right_len = orig.length_beats - left_len;
+                                    let right_clip = orig.clip.clone();
+                                    let right_arr = livecraft_core::model::ArrangementClip::new(
+                                        orig.id + 2000,
+                                        right_clip,
+                                        split_at,
+                                        right_len,
+                                    );
+                                    trk.arrangement_clips[c_idx].length_beats = left_len;
+                                    trk.arrangement_clips.push(right_arr);
+                                }
+                            }
+                            if let Some(c_idx) = to_delete {
+                                if c_idx < trk.arrangement_clips.len() {
+                                    trk.arrangement_clips.remove(c_idx);
                                 }
                             }
                         } else {

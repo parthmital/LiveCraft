@@ -1,4 +1,5 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use livecraft_core::model::Device;
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -108,6 +109,37 @@ impl OperatorSynth {
             filter_resonance: 1.5,
             is_enabled: true,
         }
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        let w1 = dev.get_param("osc1_waveform").round() as i32;
+        self.osc1_wave = match w1 {
+            0 => Waveform::Sine,
+            1 => Waveform::Sawtooth,
+            2 => Waveform::Square,
+            3 => Waveform::Triangle,
+            4 => Waveform::Noise,
+            _ => Waveform::Sine,
+        };
+        self.osc1_level = dev.get_param("osc1_level").clamp(0.0, 2.0);
+        let w2 = dev.get_param("osc2_waveform").round() as i32;
+        self.osc2_wave = match w2 {
+            0 => Waveform::Sine,
+            1 => Waveform::Sawtooth,
+            2 => Waveform::Square,
+            3 => Waveform::Triangle,
+            4 => Waveform::Noise,
+            _ => Waveform::Sawtooth,
+        };
+        self.osc2_level = dev.get_param("osc2_level").clamp(0.0, 2.0);
+        self.osc2_coarse = dev.get_param("osc2_coarse").clamp(0.25, 16.0);
+        self.filter_cutoff = dev.get_param("filter_cutoff").clamp(20.0, 20000.0);
+        self.filter_resonance = dev.get_param("filter_resonance").clamp(0.1, 10.0);
+        self.envelope.attack_sec = (dev.get_param("attack_ms") * 0.001).clamp(0.001, 10.0);
+        self.envelope.decay_sec = (dev.get_param("decay_ms") * 0.001).clamp(0.001, 10.0);
+        self.envelope.sustain_level = dev.get_param("sustain").clamp(0.0, 1.0);
+        self.envelope.release_sec = (dev.get_param("release_ms") * 0.001).clamp(0.001, 10.0);
     }
 
     pub fn note_on(&mut self, note: u8, _velocity: u8) {

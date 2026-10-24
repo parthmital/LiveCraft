@@ -1,7 +1,11 @@
+pub mod audio_clip;
+pub mod autofilter;
 pub mod biquad;
 pub mod bouncer;
+pub mod chorus;
 pub mod compressor;
 pub mod delay;
+pub mod drumrack;
 pub mod engine;
 pub mod eq8;
 pub mod graph;
@@ -11,15 +15,20 @@ pub mod reverb;
 pub mod saturator;
 pub mod simpler;
 
+pub use audio_clip::*;
+pub use autofilter::*;
 pub use biquad::*;
+pub use chorus::*;
 pub use compressor::*;
 pub use delay::*;
+pub use drumrack::*;
 pub use eq8::*;
 pub use limiter::*;
 pub use operator::*;
 pub use reverb::*;
 pub use saturator::*;
 pub mod instruments {
+    pub use crate::drumrack::*;
     pub use crate::operator::*;
     pub use crate::simpler::*;
 }
@@ -283,5 +292,148 @@ mod tests {
         }
 
         let _ = std::fs::remove_dir_all(out_dir);
+    }
+
+    #[test]
+    fn test_device_parameter_synchronization() {
+        let mut track = Track::new(1, "Synth", TrackType::Midi, 4);
+        let mut comp = Device::new(101, "Compressor", DeviceType::Compressor);
+        comp.set_param("threshold_db", -30.0);
+        comp.set_param("ratio", 8.0);
+        track.device_chain.push(comp);
+
+        let mut state = TrackDspState::new(&track, 44100.0);
+        assert!(state.compressor.is_some());
+        let c = state.compressor.as_ref().unwrap();
+        assert_eq!(c.threshold_db, -30.0);
+        assert_eq!(c.ratio, 8.0);
+
+        // Update parameter in device
+        track.device_chain[0].set_param("threshold_db", -12.0);
+        track.device_chain[0].set_param("ratio", 2.0);
+        state.sync_devices(&track, 44100.0);
+
+        let c_updated = state.compressor.as_ref().unwrap();
+        assert_eq!(c_updated.threshold_db, -12.0);
+        assert_eq!(c_updated.ratio, 2.0);
+    }
+
+    #[test]
+    fn test_arrangement_timeline_playback() {
+        let mut project = Project::new_default("ArrangementTest");
+        let mut clip = Clip::new_midi(201, "Arrangement Melody", 4.0);
+        if let ClipPayload::Midi(ref mut mdata) = clip.payload {
+            mdata.notes.push(MidiNote::new(60, 0.0, 1.0, 100)); // Beat 0-1
+            mdata.notes.push(MidiNote::new(64, 2.0, 1.0, 100)); // Beat 2-3
+        }
+
+        // Place on timeline starting at beat 4.0
+        let arr_clip = ArrangementClip::new(301, clip, 4.0, 4.0);
+        project.tracks[0].arrangement_clips.push(arr_clip);
+
+        let mut graph = AudioGraph::new(&project, 44100.0);
+        graph.is_playing = true;
+
+        // At beat 0, track 0 should have no notes active
+        let mut buf_l = [0.0f32; 64];
+        let mut buf_r = [0.0f32; 64];
+        graph.process_buffer(&mut buf_l, &mut buf_r, &project);
+        assert!(graph.track_states[0].synth.as_ref().unwrap().is_enabled);
+
+        // Jump playhead to beat 4.5 (inside note 60: 4.0 + 0.0..1.0)
+        graph.playhead_beats = 4.5;
+        graph.process_buffer(&mut buf_l, &mut buf_r, &project);
+
+        // Active note 60 should be on
+        assert!(graph.track_states[0].synth.is_some());
+    }
+
+    #[test]
+    fn test_graph_dynamic_track_sync() {
+        let mut project = Project::new_default("SyncTest");
+        let mut graph = AudioGraph::new(&project, 44100.0);
+        assert_eq!(graph.track_states.len(), 4);
+
+        // Add 2 new tracks
+        project
+            .tracks
+            .push(Track::new(5, "Track 5", TrackType::Audio, 4));
+        project
+            .tracks
+            .push(Track::new(6, "Track 6", TrackType::Midi, 4));
+        graph.sync_project(&project);
+        assert_eq!(graph.track_states.len(), 6);
+
+        // Remove a track
+        project.tracks.pop();
+        graph.sync_project(&project);
+        assert_eq!(graph.track_states.len(), 5);
+    }
+
+    #[test]
+    fn test_drum_rack_synthesis_and_choke() {
+        let mut dr = DrumRackInstrument::new(44100.0);
+        assert_eq!(dr.pads.len(), 16);
+
+        // Trigger Kick (note 36)
+        dr.note_on(36, 110);
+        let mut kick_energy = 0.0f32;
+        for _ in 0..100 {
+            let (l, r) = dr.process_sample();
+            kick_energy += l.abs() + r.abs();
+        }
+        assert!(kick_energy > 0.0);
+
+        // Trigger Open Hi-Hat (note 46, choke group 1)
+        dr.note_on(46, 100);
+        let open_hh = dr.pads.iter().find(|p| p.note == 46).unwrap();
+        assert!(open_hh.amp_env > 0.0);
+
+        // Trigger Closed Hi-Hat (note 42, choke group 1) -> should choke Open Hi-Hat
+        dr.note_on(42, 100);
+        let open_hh_after = dr.pads.iter().find(|p| p.note == 46).unwrap();
+        assert!(!open_hh_after.is_active);
+        assert_eq!(open_hh_after.amp_env, 0.0);
+    }
+
+    #[test]
+    fn test_autofilter_modulation() {
+        let mut af = AutoFilterEffect::new(44100.0);
+        af.cutoff = 1000.0;
+        af.lfo_rate = 2.0;
+        af.lfo_depth = 0.5;
+
+        for _ in 0..200 {
+            let (l, r) = af.process_stereo(0.3, -0.3);
+            assert!(l.is_finite());
+            assert!(r.is_finite());
+        }
+
+        // Test all filter modes
+        for mode in &[
+            AutoFilterMode::LowPass,
+            AutoFilterMode::HighPass,
+            AutoFilterMode::BandPass,
+            AutoFilterMode::Notch,
+        ] {
+            af.mode = *mode;
+            let (l, r) = af.process_stereo(0.5, 0.5);
+            assert!(l.is_finite());
+            assert!(r.is_finite());
+        }
+    }
+
+    #[test]
+    fn test_chorus_processing() {
+        let mut chorus = ChorusEffect::new(44100.0);
+        chorus.rate_hz = 1.5;
+        chorus.depth = 0.7;
+        chorus.dry_wet = 0.5;
+
+        for _ in 0..500 {
+            let (l, r) = chorus.process_stereo(0.4, 0.4);
+            assert!(l.is_finite());
+            assert!(r.is_finite());
+        }
     }
 }

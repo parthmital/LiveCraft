@@ -1,3 +1,5 @@
+use livecraft_core::model::Device;
+
 #[derive(Debug, Clone)]
 pub struct LimiterEffect {
     pub ceiling_db: f32,
@@ -18,6 +20,13 @@ impl LimiterEffect {
             sample_rate,
             envelope: 1.0,
         }
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        self.ceiling_db = dev.get_param("ceiling_db");
+        self.gain_db = dev.get_param("gain_db");
+        self.release_ms = dev.get_param("release_ms").clamp(1.0, 1000.0);
     }
 
     pub fn process_stereo(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {
@@ -73,6 +82,14 @@ impl UtilityEffect {
             invert_r: false,
             is_enabled: true,
         }
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        self.gain_db = dev.get_param("gain_db");
+        self.pan = dev.get_param("pan").clamp(-1.0, 1.0);
+        self.width = dev.get_param("width").clamp(0.0, 4.0);
+        self.mute = dev.get_param("mute") > 0.5;
     }
 
     pub fn process_stereo(&self, in_l: f32, in_r: f32) -> (f32, f32) {

@@ -1,5 +1,6 @@
 use crate::biquad::{BiquadFilter, FilterType};
 use crate::operator::AdsrEnvelope;
+use livecraft_core::model::Device;
 use std::path::Path;
 
 #[derive(Debug, Clone)]
@@ -16,7 +17,7 @@ pub struct SimplerInstrument {
     sample_rate: f32,
     playhead: f64,
     speed: f64,
-    is_active: bool,
+    pub is_active: bool,
     pub envelope: AdsrEnvelope,
     filter: BiquadFilter,
     pub filter_cutoff: f32,
@@ -40,6 +41,15 @@ impl SimplerInstrument {
             is_looping: false,
             is_enabled: true,
         }
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        self.filter_cutoff = dev.get_param("filter_cutoff").clamp(20.0, 20000.0);
+        self.envelope.attack_sec = (dev.get_param("attack_ms") * 0.001).clamp(0.001, 10.0);
+        self.envelope.decay_sec = (dev.get_param("decay_ms") * 0.001).clamp(0.001, 10.0);
+        self.envelope.sustain_level = dev.get_param("sustain").clamp(0.0, 1.0);
+        self.envelope.release_sec = (dev.get_param("release_ms") * 0.001).clamp(0.001, 10.0);
     }
 
     pub fn load_wav<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {
@@ -116,6 +126,11 @@ impl SimplerInstrument {
         } else {
             self.is_active = false;
         }
+    }
+
+    pub fn all_notes_off(&mut self) {
+        self.is_active = false;
+        self.playhead = 0.0;
     }
 
     pub fn process_sample(&mut self) -> (f32, f32) {

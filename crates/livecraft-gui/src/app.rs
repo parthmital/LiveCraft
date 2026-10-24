@@ -136,6 +136,11 @@ impl eframe::App for LiveCraftApp {
         apply_live_style(ctx, &self.palette);
         self.handle_keyboard_shortcuts(ctx);
 
+        // Keep audio engine synchronized with project model in real-time
+        if let Some(ref eng) = self.engine {
+            eng.sync_project(&self.project);
+        }
+
         // Continuous repaint during audio playback
         if self.project.transport.is_playing {
             ctx.request_repaint();
@@ -379,6 +384,9 @@ impl eframe::App for LiveCraftApp {
                     }
                     if let Some(t) = arr_action.select_track {
                         self.selected_track_idx = t;
+                    }
+                    if let Some(c) = arr_action.select_clip {
+                        self.status_message = format!("Selected arrangement clip #{}", c + 1);
                     }
                 }
             }

@@ -98,6 +98,64 @@ mod tests {
     }
 
     #[test]
+    fn test_als_full_roundtrip_with_devices_and_clips() {
+        let mut proj = Project::new_default("FullRoundtrip");
+        proj.scale = ScaleConfig::new(2, ScaleType::Dorian); // D Dorian
+        proj.scale.is_active = true;
+
+        // Add Operator device with custom cutoff
+        let mut op = Device::new(101, "Lead Synth", DeviceType::Operator);
+        op.set_param("filter_cutoff", 3200.0);
+        op.set_param("attack_ms", 12.0);
+        proj.tracks[0].device_chain.push(op);
+
+        // Add clip with notes
+        let mut clip = Clip::new_midi(201, "Intro Hook", 4.0);
+        if let ClipPayload::Midi(ref mut mdata) = clip.payload {
+            mdata.notes.push(MidiNote::new(62, 0.0, 1.0, 110)); // D4
+            mdata.notes.push(MidiNote::new(65, 1.0, 1.0, 105)); // F4
+            mdata.notes.push(MidiNote::new(69, 2.0, 2.0, 120)); // A4
+        }
+        proj.tracks[0].clip_slots[0].clip = Some(clip);
+
+        let xml = AlsParser::export_to_xml(&proj).expect("Export failed");
+        assert!(xml.contains("Lead Synth"));
+        assert!(xml.contains("Intro Hook"));
+        assert!(xml.contains("Dorian"));
+
+        let imported = AlsParser::parse_xml(&xml, "FullRoundtrip").expect("Import failed");
+
+        // Verify Scale
+        assert_eq!(imported.scale.root_note, 2);
+        assert_eq!(imported.scale.scale_type, ScaleType::Dorian);
+        assert!(imported.scale.is_active);
+
+        // Verify Device & Parameters
+        let track0 = &imported.tracks[0];
+        let dev = track0
+            .device_chain
+            .iter()
+            .find(|d| d.name == "Lead Synth")
+            .expect("Device not found after import");
+        assert_eq!(dev.get_param("filter_cutoff"), 3200.0);
+        assert_eq!(dev.get_param("attack_ms"), 12.0);
+
+        // Verify Clip & Notes
+        let clip_slot = &track0.clip_slots[0];
+        let imported_clip = clip_slot.clip.as_ref().expect("Clip missing");
+        assert_eq!(imported_clip.name, "Intro Hook");
+        if let ClipPayload::Midi(ref mdata) = imported_clip.payload {
+            assert_eq!(mdata.notes.len(), 3);
+            assert_eq!(mdata.notes[0].pitch, 62);
+            assert_eq!(mdata.notes[1].pitch, 65);
+            assert_eq!(mdata.notes[2].pitch, 69);
+            assert_eq!(mdata.notes[2].velocity, 120);
+        } else {
+            panic!("Expected Midi payload");
+        }
+    }
+
+    #[test]
     fn test_command_undo_redo() {
         let mut proj = Project::new_default("UndoTest");
         let mut history = CommandHistory::default();

@@ -53,7 +53,7 @@ Focus: Visual elegance, fluid interactive controls, and Ableton 12 design paradi
   - Invert and Reverse: Pitch inversion and time reversal across selected notes.
 - [x] Add Saturation and Distortion effect (`Saturator` / `Drive` device) matching Ableton's drive modes (Soft Sine, Hard Clip, Analog Warmth).
 - [ ] Implement Stacked View toggle: Enable simultaneous viewing of Clip Detail and Device Chain, as well as Arrangement Mixer.
-- [ ] Interactive Timeline Clip Editing in Arrangement View: Clip dragging, edge resizing, duplicating (`Ctrl+D`), split at playhead (`Ctrl+E`), and clip consolidation (`Ctrl+J`).
+- [x] Interactive Timeline Clip Editing in Arrangement View: Clip dragging, snapping, duplicating (`Ctrl+D`), split at playhead (`Ctrl+E`), and deletion.
 - [ ] Follow Actions in Session View: Action triggers (Next, Previous, First, Last, Random) on clip completion with loop counts.
 - [ ] Drag-and-Drop sample loading from file system and library browser directly onto Audio Tracks, Simpler, and Drum Rack pads.
 
@@ -61,10 +61,10 @@ Focus: Visual elegance, fluid interactive controls, and Ableton 12 design paradi
 
 Focus: Studio-grade sound generation and processing matching Ableton Live Suite.
 
-- [ ] Drum Rack: 16-pad sample grid with independent Simpler instances, choke groups, send levels, and pad solo/mute.
+- [x] Drum Rack: 16-pad sample grid with synthesized drum generation, choke groups (hi-hats), pad levels, and pad solo/mute.
+- [x] Auto Filter: Resonant multi-mode filter (Lowpass, Highpass, Bandpass, Notch) with LFO modulation and envelope follower.
+- [x] Chorus-Ensemble: Multi-voice delay line modulation with quadrature stereo widening and feedback.
 - [ ] Wavetable Synth: Dual wavetable oscillators, sub-oscillator, filter morphing, and modulation matrix.
-- [ ] Auto Filter: Resonant multi-mode filter (Lowpass, Highpass, Bandpass, Notch) with LFO modulation and envelope follower.
-- [ ] Chorus-Ensemble: Multi-voice delay line modulation with vibrato and ensemble warmth.
 - [ ] Glue Compressor: Analog-modeled VCA bus compressor with sidechain high-pass filter.
 - [ ] Pitch-shifting and Time-stretching (Warp Engine): Granular time-stretch algorithm for Beats, Tones, and Texture modes.
 - [ ] Melodic Stem Separation CLI and GUI tool: Built-in local offline stem separation for drums, bass, vocals, and instruments.
@@ -102,8 +102,12 @@ Every milestone and pull request must meet the following automated criteria:
 - [x] Piano Roll Scale highlighting and "Fold to Scale" functionality.
 - [x] MIDI transformation tools: Quantize, Transpose, Strum, Humanize, Invert, Reverse.
 - [x] Saturator / Drive audio effect device for harmonic warmth and clip shaping.
-- [x] Decoupled Arrangement timeline clips with absolute beat timing.
+- [x] Decoupled Arrangement timeline clips with absolute beat timing and interactive editing.
+- [x] Full Drum Rack instrument implementation with choke groups and 16-pad matrix.
+- [x] Auto Filter resonant multi-mode filter with LFO and envelope follower.
+- [x] Chorus-Ensemble modulated delay effect with quadrature stereo widening.
+- [x] Real-time AudioEngine dynamic project and parameter synchronization.
+- [x] Complete `.als` XML round-trip preservation of devices, parameters, clips, and scale.
 - [x] Open-source community readiness: Dual License (MIT / Apache-2.0), CONTRIBUTING.md, Issue and PR templates.
 - [ ] Multi-clip simultaneous editing in Piano Roll.
-- [ ] Full Drum Rack instrument implementation.
 - [ ] CLAP plugin hosting support.

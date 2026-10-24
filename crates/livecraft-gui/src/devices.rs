@@ -27,6 +27,9 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                     DeviceType::EqEight => 240.0,
                     DeviceType::Operator => 260.0,
                     DeviceType::Saturator => 190.0,
+                    DeviceType::DrumRack => 260.0,
+                    DeviceType::AutoFilter => 220.0,
+                    DeviceType::Chorus => 180.0,
                     _ => 160.0,
                 };
                 ui.set_width(box_width);
@@ -113,6 +116,15 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                         }
                         DeviceType::Saturator => {
                             render_saturator_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::AutoFilter => {
+                            render_autofilter_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::Chorus => {
+                            render_chorus_controls(child_ui, dev, palette);
+                        }
+                        DeviceType::DrumRack => {
+                            render_drumrack_controls(child_ui, dev, palette);
                         }
                         _ => {
                             child_ui.label(format!("Device: {}", dev.name));
@@ -457,6 +469,153 @@ fn render_saturator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalett
                     cur = idx;
                     dev.set_param("curve_type", cur as f32);
                 }
+            }
+        });
+    });
+}
+
+fn render_autofilter_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            let modes = ["LP", "HP", "BP", "Notch"];
+            let mut cur_mode = dev.get_param("filter_type").round() as usize;
+            for (idx, &name) in modes.iter().enumerate() {
+                if ui.selectable_label(cur_mode == idx, name).clicked() {
+                    cur_mode = idx;
+                    dev.set_param("filter_type", cur_mode as f32);
+                }
+            }
+        });
+
+        ui.add_space(4.0);
+
+        ui.horizontal(|ui| {
+            let mut cutoff = dev.get_param("cutoff");
+            if live_knob(ui, &mut cutoff, 20.0, 18000.0, 24.0, "Freq", palette.amber).changed() {
+                dev.set_param("cutoff", cutoff);
+            }
+
+            let mut res = dev.get_param("resonance");
+            if live_knob(ui, &mut res, 0.1, 10.0, 24.0, "Res", palette.cyan).changed() {
+                dev.set_param("resonance", res);
+            }
+
+            let mut lfo_rate = dev.get_param("lfo_rate");
+            if live_knob(
+                ui,
+                &mut lfo_rate,
+                0.1,
+                20.0,
+                24.0,
+                "Rate",
+                palette.play_green,
+            )
+            .changed()
+            {
+                dev.set_param("lfo_rate", lfo_rate);
+            }
+
+            let mut lfo_depth = dev.get_param("lfo_depth");
+            if live_knob(
+                ui,
+                &mut lfo_depth,
+                0.0,
+                1.0,
+                24.0,
+                "Depth",
+                Color32::from_rgb(0xff, 0x77, 0xee),
+            )
+            .changed()
+            {
+                dev.set_param("lfo_depth", lfo_depth);
+            }
+        });
+    });
+}
+
+fn render_chorus_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.vertical(|ui| {
+        ui.horizontal(|ui| {
+            let mut rate = dev.get_param("rate_hz");
+            if live_knob(ui, &mut rate, 0.1, 5.0, 24.0, "Rate", palette.cyan).changed() {
+                dev.set_param("rate_hz", rate);
+            }
+
+            let mut depth = dev.get_param("depth");
+            if live_knob(ui, &mut depth, 0.0, 1.0, 24.0, "Depth", palette.amber).changed() {
+                dev.set_param("depth", depth);
+            }
+
+            let mut fb = dev.get_param("feedback");
+            if live_knob(
+                ui,
+                &mut fb,
+                0.0,
+                0.7,
+                24.0,
+                "Feedb",
+                Color32::from_rgb(0xff, 0x88, 0x44),
+            )
+            .changed()
+            {
+                dev.set_param("feedback", fb);
+            }
+
+            let mut dw = dev.get_param("dry_wet");
+            if live_knob(ui, &mut dw, 0.0, 1.0, 24.0, "Dry/Wet", palette.play_green).changed() {
+                dev.set_param("dry_wet", dw);
+            }
+        });
+    });
+}
+
+fn render_drumrack_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
+    ui.vertical(|ui| {
+        let pad_names = [
+            ("Kick", 36),
+            ("Rim", 37),
+            ("Snr 1", 38),
+            ("Clap", 39),
+            ("Snr 2", 40),
+            ("LoTom", 41),
+            ("ClsHH", 42),
+            ("MdTom", 43),
+            ("PedHH", 44),
+            ("HiTom", 45),
+            ("OpnHH", 46),
+            ("FlTom", 47),
+            ("Crash", 48),
+            ("Ride", 49),
+            ("Bell", 50),
+            ("Perc", 51),
+        ];
+
+        egui::Grid::new("drum_rack_grid")
+            .spacing([3.0, 3.0])
+            .show(ui, |ui| {
+                for (i, (name, _note)) in pad_names.iter().enumerate() {
+                    let btn = egui::Button::new(
+                        egui::RichText::new(*name)
+                            .size(9.0)
+                            .color(palette.control_foreground),
+                    )
+                    .min_size(egui::Vec2::new(48.0, 22.0))
+                    .fill(Color32::from_rgb(0x28, 0x28, 0x28));
+
+                    if ui.add(btn).clicked() {
+                        // Pad trigger handled live
+                    }
+
+                    if (i + 1) % 4 == 0 {
+                        ui.end_row();
+                    }
+                }
+            });
+
+        ui.horizontal(|ui| {
+            let mut gain = dev.get_param("gain_db");
+            if live_knob(ui, &mut gain, -24.0, 6.0, 20.0, "Gain", palette.amber).changed() {
+                dev.set_param("gain_db", gain);
             }
         });
     });

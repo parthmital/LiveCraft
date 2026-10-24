@@ -1,3 +1,5 @@
+use livecraft_core::model::Device;
+
 #[derive(Debug, Clone)]
 pub struct CompressorEffect {
     pub threshold_db: f32,
@@ -26,6 +28,15 @@ impl CompressorEffect {
             envelope: 0.0,
             gain_reduction_db: 0.0,
         }
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        self.threshold_db = dev.get_param("threshold_db");
+        self.ratio = dev.get_param("ratio").max(1.0);
+        self.attack_ms = dev.get_param("attack_ms").max(0.1);
+        self.release_ms = dev.get_param("release_ms").max(1.0);
+        self.makeup_gain_db = dev.get_param("makeup_gain_db");
     }
 
     pub fn process_stereo(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {

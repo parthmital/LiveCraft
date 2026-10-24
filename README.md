@@ -14,8 +14,11 @@ LiveCraft is an open-source, high-performance Digital Audio Workstation (DAW) wr
 - **Dual Control Surfaces (CLI & GUI):** Everything executable from the desktop UI is available from the headless CLI, enabling automated audio rendering, stem generation, inspection, format conversion, and terminal playback.
 - **Built-in DSP Devices & Instruments:**
   - **Operator Synth:** Polyphonic 4-oscillator subtractive/FM synthesizer (Sine, Saw, Square, Triangle, Noise) with ADSR envelopes and resonant 24dB filters.
+  - **Drum Rack:** 16-pad sample & synth drum machine with pad solo/mute, levels, and choke group cutoffs (e.g. open/closed hi-hats).
   - **Simpler:** Sample player with pitch tracking, looping, and filter envelopes.
   - **Saturator:** Multi-curve waveshaping and harmonic saturation effect (Soft Sine, Hard Clip, Analog Warmth, Foldback) with interactive transfer-function curve.
+  - **Auto Filter:** Resonant multi-mode filter (Lowpass, Highpass, Bandpass, Notch) with LFO modulation and dynamic envelope follower.
+  - **Chorus-Ensemble:** Modulated stereo delay ensemble with quadrature phase widening and shimmer feedback.
   - **EQ Eight:** 8-band parametric biquad equalizer matching Ableton EQ Eight.
   - **Compressor:** Dynamic range compressor with threshold, ratio, attack, release, makeup gain, and gain-reduction metering.
   - **Delay:** Stereo ping-pong and tempo-synced delay line with feedback filtering.

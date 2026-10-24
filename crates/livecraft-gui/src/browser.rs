@@ -88,6 +88,11 @@ impl LiveBrowser {
                             "4-Osc FM & Subtractive Synth",
                         ),
                         ("Simpler", DeviceType::Simpler, "Polyphonic Sample Player"),
+                        (
+                            "Drum Rack",
+                            DeviceType::DrumRack,
+                            "16-Pad Sample & Synth Drum Machine",
+                        ),
                     ];
 
                     for (name, dtype, desc) in instruments {
@@ -138,6 +143,16 @@ impl LiveBrowser {
                         ("Reverb", DeviceType::Reverb, "Algorithmic room reverb"),
                         ("Limiter", DeviceType::Limiter, "Peak brickwall limiter"),
                         ("Utility", DeviceType::Utility, "Gain, stereo width & pan"),
+                        (
+                            "Auto Filter",
+                            DeviceType::AutoFilter,
+                            "Multi-mode resonant filter with LFO",
+                        ),
+                        (
+                            "Chorus-Ensemble",
+                            DeviceType::Chorus,
+                            "Stereo modulated delay ensemble",
+                        ),
                     ];
 
                     for (name, dtype, desc) in effects {

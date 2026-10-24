@@ -1,4 +1,5 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use livecraft_core::model::Device;
 
 #[derive(Debug, Clone)]
 pub struct EqEightBand {
@@ -50,6 +51,20 @@ impl EqEight {
             bands,
             sample_rate,
             is_enabled: true,
+        }
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        for i in 1..=8 {
+            let freq = dev.get_param(&format!("band_{}_freq", i));
+            let gain = dev.get_param(&format!("band_{}_gain", i));
+            let q = dev.get_param(&format!("band_{}_q", i));
+            let en = dev.get_param(&format!("band_{}_enabled", i)) > 0.5;
+            if freq > 0.0 {
+                self.set_band_params(i - 1, freq, gain, q);
+            }
+            self.set_band_enabled(i - 1, en);
         }
     }
 

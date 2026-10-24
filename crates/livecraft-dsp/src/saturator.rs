@@ -1,4 +1,5 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use livecraft_core::model::Device;
 use std::f32::consts::FRAC_PI_2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,6 +30,21 @@ impl SaturatorEffect {
             tone_filter: BiquadFilter::new(FilterType::LowPass, sample_rate, 12000.0, 0.0, 0.707),
             is_enabled: true,
         }
+    }
+
+    pub fn update_from_device(&mut self, dev: &Device) {
+        self.is_enabled = dev.is_enabled;
+        self.drive_db = dev.get_param("drive_db");
+        let c = dev.get_param("curve_type").round() as i32;
+        self.curve = match c {
+            0 => SaturatorCurve::SoftSine,
+            1 => SaturatorCurve::HardClip,
+            2 => SaturatorCurve::AnalogWarmth,
+            3 => SaturatorCurve::Foldback,
+            _ => SaturatorCurve::SoftSine,
+        };
+        self.output_db = dev.get_param("output_db");
+        self.dry_wet = dev.get_param("dry_wet").clamp(0.0, 1.0);
     }
 
     pub fn process_stereo(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {

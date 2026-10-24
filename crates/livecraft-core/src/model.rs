@@ -447,7 +447,7 @@ impl ScaleConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DeviceType {
     EqEight,
     Delay,
@@ -459,6 +459,8 @@ pub enum DeviceType {
     Simpler,
     Saturator,
     DrumRack,
+    AutoFilter,
+    Chorus,
     Custom(String),
 }
 
@@ -544,6 +546,20 @@ impl Device {
                 parameters.insert("output_db".to_string(), -2.0);
                 parameters.insert("dry_wet".to_string(), 1.0);
                 parameters.insert("tone".to_string(), 0.5);
+            }
+            DeviceType::AutoFilter => {
+                parameters.insert("filter_type".to_string(), 0.0); // 0=LP, 1=HP, 2=BP, 3=Notch
+                parameters.insert("cutoff".to_string(), 1200.0);
+                parameters.insert("resonance".to_string(), 1.5);
+                parameters.insert("lfo_rate".to_string(), 1.0);
+                parameters.insert("lfo_depth".to_string(), 0.4);
+                parameters.insert("envelope_amount".to_string(), 0.3);
+            }
+            DeviceType::Chorus => {
+                parameters.insert("rate_hz".to_string(), 1.2);
+                parameters.insert("depth".to_string(), 0.5);
+                parameters.insert("feedback".to_string(), 0.2);
+                parameters.insert("dry_wet".to_string(), 0.5);
             }
             _ => {}
         }
