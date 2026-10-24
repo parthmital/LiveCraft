@@ -6,3 +6,7 @@
 /.venv/
 *.pdb
 *.exe
+
+# Documentation binaries (Ableton Live 12 Reference Manual)
+*.pdf
+/docs/*.pdf
