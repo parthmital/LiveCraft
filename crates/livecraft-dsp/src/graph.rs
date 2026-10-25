@@ -5,6 +5,7 @@ use crate::chorus::ChorusEffect;
 use crate::compressor::CompressorEffect;
 use crate::delay::DelayEffect;
 use crate::drumrack::DrumRackInstrument;
+use crate::engine::AudioParamMsg;
 use crate::eq3::EqThreeEffect;
 use crate::eq8::EqEight;
 use crate::gate::GateEffect;
@@ -55,6 +56,14 @@ impl TrackMeter {
 
 pub struct TrackDspState {
     pub track_id: u64,
+    pub volume_db: f32,
+    pub pan: f32,
+    pub is_muted: bool,
+    pub is_soloed: bool,
+    pub sends: Vec<f32>,
+    pub clip_slots: Vec<ClipSlot>,
+    pub arrangement_clips: Vec<ArrangementClip>,
+    pub device_chain: Vec<Device>,
     pub synth: Option<OperatorSynth>,
     pub simpler: Option<SimplerInstrument>,
     pub drum_rack: Option<DrumRackInstrument>,
@@ -82,6 +91,14 @@ impl TrackDspState {
     pub fn new(track: &Track, sample_rate: f32) -> Self {
         let mut state = Self {
             track_id: track.id,
+            volume_db: track.volume_db,
+            pan: track.pan,
+            is_muted: track.is_muted,
+            is_soloed: track.is_soloed,
+            sends: track.sends.clone(),
+            clip_slots: track.clip_slots.clone(),
+            arrangement_clips: track.arrangement_clips.clone(),
+            device_chain: track.device_chain.clone(),
             synth: None,
             simpler: None,
             drum_rack: None,
@@ -109,6 +126,16 @@ impl TrackDspState {
     }
 
     pub fn sync_devices(&mut self, track: &Track, sample_rate: f32) {
+        self.track_id = track.id;
+        self.volume_db = track.volume_db;
+        self.pan = track.pan;
+        self.is_muted = track.is_muted;
+        self.is_soloed = track.is_soloed;
+        self.sends = track.sends.clone();
+        self.clip_slots = track.clip_slots.clone();
+        self.arrangement_clips = track.arrangement_clips.clone();
+        self.device_chain = track.device_chain.clone();
+
         let has_device =
             |dtype: DeviceType| track.device_chain.iter().any(|d| d.device_type == dtype);
 
@@ -172,156 +199,178 @@ impl TrackDspState {
         }
 
         for dev in &track.device_chain {
-            match dev.device_type {
-                DeviceType::Operator => {
-                    if self.synth.is_none() {
-                        self.synth = Some(OperatorSynth::new(sample_rate));
-                    }
-                    if let Some(ref mut s) = self.synth {
-                        s.update_from_device(dev);
-                    }
+            self.sync_single_device(dev, sample_rate);
+        }
+    }
+
+    pub fn set_device_param(
+        &mut self,
+        device_id: u64,
+        param_key: &str,
+        value: f32,
+        sample_rate: f32,
+    ) {
+        if let Some(dev) = self
+            .device_chain
+            .iter_mut()
+            .find(|d| d.id == device_id || device_id == 0)
+        {
+            dev.set_param(param_key, value);
+            let dev_clone = dev.clone();
+            self.sync_single_device(&dev_clone, sample_rate);
+        }
+    }
+
+    pub fn sync_single_device(&mut self, dev: &Device, sample_rate: f32) {
+        match dev.device_type {
+            DeviceType::Operator => {
+                if self.synth.is_none() {
+                    self.synth = Some(OperatorSynth::new(sample_rate));
                 }
-                DeviceType::Simpler => {
-                    if self.simpler.is_none() {
-                        self.simpler = Some(SimplerInstrument::new(sample_rate));
-                    }
-                    if let Some(ref mut sm) = self.simpler {
-                        sm.update_from_device(dev);
-                    }
+                if let Some(ref mut s) = self.synth {
+                    s.update_from_device(dev);
                 }
-                DeviceType::DrumRack => {
-                    if self.drum_rack.is_none() {
-                        self.drum_rack = Some(DrumRackInstrument::new(sample_rate));
-                    }
-                    if let Some(ref mut dr) = self.drum_rack {
-                        dr.update_from_device(dev);
-                    }
-                }
-                DeviceType::EqEight => {
-                    if self.eq8.is_none() {
-                        self.eq8 = Some(EqEight::new(sample_rate));
-                    }
-                    if let Some(ref mut eq) = self.eq8 {
-                        eq.update_from_device(dev);
-                    }
-                }
-                DeviceType::Compressor => {
-                    if self.compressor.is_none() {
-                        self.compressor = Some(CompressorEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut c) = self.compressor {
-                        c.update_from_device(dev);
-                    }
-                }
-                DeviceType::Delay => {
-                    if self.delay.is_none() {
-                        self.delay = Some(DelayEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut d) = self.delay {
-                        d.update_from_device(dev);
-                    }
-                }
-                DeviceType::Reverb => {
-                    if self.reverb.is_none() {
-                        self.reverb = Some(ReverbEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut r) = self.reverb {
-                        r.update_from_device(dev);
-                    }
-                }
-                DeviceType::Limiter => {
-                    if self.limiter.is_none() {
-                        self.limiter = Some(LimiterEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut l) = self.limiter {
-                        l.update_from_device(dev);
-                    }
-                }
-                DeviceType::Utility => {
-                    if self.utility.is_none() {
-                        self.utility = Some(UtilityEffect::new());
-                    }
-                    if let Some(ref mut u) = self.utility {
-                        u.update_from_device(dev);
-                    }
-                }
-                DeviceType::Saturator => {
-                    if self.saturator.is_none() {
-                        self.saturator = Some(SaturatorEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut sat) = self.saturator {
-                        sat.update_from_device(dev);
-                    }
-                }
-                DeviceType::AutoFilter => {
-                    if self.auto_filter.is_none() {
-                        self.auto_filter = Some(AutoFilterEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut af) = self.auto_filter {
-                        af.update_from_device(dev);
-                    }
-                }
-                DeviceType::Chorus => {
-                    if self.chorus.is_none() {
-                        self.chorus = Some(ChorusEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut ch) = self.chorus {
-                        ch.update_from_device(dev);
-                    }
-                }
-                DeviceType::AutoPan => {
-                    if self.auto_pan.is_none() {
-                        self.auto_pan = Some(AutoPanEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut ap) = self.auto_pan {
-                        ap.amount = dev.get_param("amount");
-                        ap.rate_hz = dev.get_param("rate_hz");
-                        ap.phase_deg = dev.get_param("phase_deg");
-                        ap.shape = dev.get_param("shape");
-                        ap.mode = dev.get_param("mode");
-                    }
-                }
-                DeviceType::Gate => {
-                    if self.gate.is_none() {
-                        self.gate = Some(GateEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut g) = self.gate {
-                        g.threshold_db = dev.get_param("threshold_db");
-                        g.return_db = dev.get_param("return_db");
-                        g.attack_ms = dev.get_param("attack_ms");
-                        g.hold_ms = dev.get_param("hold_ms");
-                        g.release_ms = dev.get_param("release_ms");
-                        g.floor_db = dev.get_param("floor_db");
-                    }
-                }
-                DeviceType::EqThree => {
-                    if self.eq3.is_none() {
-                        self.eq3 = Some(EqThreeEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut eq) = self.eq3 {
-                        eq.low_gain_db = dev.get_param("low_gain_db");
-                        eq.mid_gain_db = dev.get_param("mid_gain_db");
-                        eq.high_gain_db = dev.get_param("high_gain_db");
-                        eq.low_freq = dev.get_param("low_freq");
-                        eq.high_freq = dev.get_param("high_freq");
-                        eq.low_on = dev.get_param("low_on") > 0.5;
-                        eq.mid_on = dev.get_param("mid_on") > 0.5;
-                        eq.high_on = dev.get_param("high_on") > 0.5;
-                    }
-                }
-                DeviceType::Redux => {
-                    if self.redux.is_none() {
-                        self.redux = Some(ReduxEffect::new(sample_rate));
-                    }
-                    if let Some(ref mut rd) = self.redux {
-                        rd.rate_factor = dev.get_param("rate_factor");
-                        rd.bits = dev.get_param("bits");
-                        rd.jitter = dev.get_param("jitter");
-                        rd.dry_wet = dev.get_param("dry_wet");
-                    }
-                }
-                _ => {}
             }
+            DeviceType::Simpler => {
+                if self.simpler.is_none() {
+                    self.simpler = Some(SimplerInstrument::new(sample_rate));
+                }
+                if let Some(ref mut sm) = self.simpler {
+                    sm.update_from_device(dev);
+                }
+            }
+            DeviceType::DrumRack => {
+                if self.drum_rack.is_none() {
+                    self.drum_rack = Some(DrumRackInstrument::new(sample_rate));
+                }
+                if let Some(ref mut dr) = self.drum_rack {
+                    dr.update_from_device(dev);
+                }
+            }
+            DeviceType::EqEight => {
+                if self.eq8.is_none() {
+                    self.eq8 = Some(EqEight::new(sample_rate));
+                }
+                if let Some(ref mut eq) = self.eq8 {
+                    eq.update_from_device(dev);
+                }
+            }
+            DeviceType::Compressor => {
+                if self.compressor.is_none() {
+                    self.compressor = Some(CompressorEffect::new(sample_rate));
+                }
+                if let Some(ref mut c) = self.compressor {
+                    c.update_from_device(dev);
+                }
+            }
+            DeviceType::Delay => {
+                if self.delay.is_none() {
+                    self.delay = Some(DelayEffect::new(sample_rate));
+                }
+                if let Some(ref mut d) = self.delay {
+                    d.update_from_device(dev);
+                }
+            }
+            DeviceType::Reverb => {
+                if self.reverb.is_none() {
+                    self.reverb = Some(ReverbEffect::new(sample_rate));
+                }
+                if let Some(ref mut r) = self.reverb {
+                    r.update_from_device(dev);
+                }
+            }
+            DeviceType::Limiter => {
+                if self.limiter.is_none() {
+                    self.limiter = Some(LimiterEffect::new(sample_rate));
+                }
+                if let Some(ref mut l) = self.limiter {
+                    l.update_from_device(dev);
+                }
+            }
+            DeviceType::Utility => {
+                if self.utility.is_none() {
+                    self.utility = Some(UtilityEffect::new());
+                }
+                if let Some(ref mut u) = self.utility {
+                    u.update_from_device(dev);
+                }
+            }
+            DeviceType::Saturator => {
+                if self.saturator.is_none() {
+                    self.saturator = Some(SaturatorEffect::new(sample_rate));
+                }
+                if let Some(ref mut sat) = self.saturator {
+                    sat.update_from_device(dev);
+                }
+            }
+            DeviceType::AutoFilter => {
+                if self.auto_filter.is_none() {
+                    self.auto_filter = Some(AutoFilterEffect::new(sample_rate));
+                }
+                if let Some(ref mut af) = self.auto_filter {
+                    af.update_from_device(dev);
+                }
+            }
+            DeviceType::Chorus => {
+                if self.chorus.is_none() {
+                    self.chorus = Some(ChorusEffect::new(sample_rate));
+                }
+                if let Some(ref mut ch) = self.chorus {
+                    ch.update_from_device(dev);
+                }
+            }
+            DeviceType::AutoPan => {
+                if self.auto_pan.is_none() {
+                    self.auto_pan = Some(AutoPanEffect::new(sample_rate));
+                }
+                if let Some(ref mut ap) = self.auto_pan {
+                    ap.amount = dev.get_param("amount");
+                    ap.rate_hz = dev.get_param("rate_hz");
+                    ap.phase_deg = dev.get_param("phase_deg");
+                    ap.shape = dev.get_param("shape");
+                    ap.mode = dev.get_param("mode");
+                }
+            }
+            DeviceType::Gate => {
+                if self.gate.is_none() {
+                    self.gate = Some(GateEffect::new(sample_rate));
+                }
+                if let Some(ref mut g) = self.gate {
+                    g.threshold_db = dev.get_param("threshold_db");
+                    g.return_db = dev.get_param("return_db");
+                    g.attack_ms = dev.get_param("attack_ms");
+                    g.hold_ms = dev.get_param("hold_ms");
+                    g.release_ms = dev.get_param("release_ms");
+                    g.floor_db = dev.get_param("floor_db");
+                }
+            }
+            DeviceType::EqThree => {
+                if self.eq3.is_none() {
+                    self.eq3 = Some(EqThreeEffect::new(sample_rate));
+                }
+                if let Some(ref mut eq) = self.eq3 {
+                    eq.low_gain_db = dev.get_param("low_gain_db");
+                    eq.mid_gain_db = dev.get_param("mid_gain_db");
+                    eq.high_gain_db = dev.get_param("high_gain_db");
+                    eq.low_freq = dev.get_param("low_freq");
+                    eq.high_freq = dev.get_param("high_freq");
+                    eq.low_on = dev.get_param("low_on") > 0.5;
+                    eq.mid_on = dev.get_param("mid_on") > 0.5;
+                    eq.high_on = dev.get_param("high_on") > 0.5;
+                }
+            }
+            DeviceType::Redux => {
+                if self.redux.is_none() {
+                    self.redux = Some(ReduxEffect::new(sample_rate));
+                }
+                if let Some(ref mut rd) = self.redux {
+                    rd.rate_factor = dev.get_param("rate_factor");
+                    rd.bits = dev.get_param("bits");
+                    rd.jitter = dev.get_param("jitter");
+                    rd.dry_wet = dev.get_param("dry_wet");
+                }
+            }
+            _ => {}
         }
     }
 
@@ -517,10 +566,97 @@ impl AudioGraph {
         }
     }
 
-    pub fn trigger_scene(&mut self, scene_idx: usize, project: &Project) {
-        for (trk_idx, trk) in project.tracks.iter().enumerate() {
-            if scene_idx < trk.clip_slots.len() && trk.clip_slots[scene_idx].clip.is_some() {
-                self.trigger_clip(trk_idx, scene_idx);
+    pub fn trigger_scene(&mut self, scene_idx: usize) {
+        for state in self.track_states.iter_mut() {
+            if scene_idx < state.clip_slots.len() && state.clip_slots[scene_idx].clip.is_some() {
+                state.trigger_clip(scene_idx);
+            }
+        }
+    }
+
+    pub fn apply_param_msg(&mut self, msg: AudioParamMsg) {
+        match msg {
+            AudioParamMsg::SetTempo(bpm) => {
+                self.bpm = bpm;
+            }
+            AudioParamMsg::SetTrackVolume {
+                track_idx,
+                volume_db,
+            } => {
+                if let Some(state) = self.track_states.get_mut(track_idx) {
+                    state.volume_db = volume_db;
+                }
+            }
+            AudioParamMsg::SetTrackPan { track_idx, pan } => {
+                if let Some(state) = self.track_states.get_mut(track_idx) {
+                    state.pan = pan;
+                }
+            }
+            AudioParamMsg::SetTrackMute { track_idx, muted } => {
+                if let Some(state) = self.track_states.get_mut(track_idx) {
+                    state.is_muted = muted;
+                }
+            }
+            AudioParamMsg::SetTrackSolo { track_idx, soloed } => {
+                if let Some(state) = self.track_states.get_mut(track_idx) {
+                    state.is_soloed = soloed;
+                }
+            }
+            AudioParamMsg::SetTrackSend {
+                track_idx,
+                send_idx,
+                amount,
+            } => {
+                if let Some(state) = self.track_states.get_mut(track_idx) {
+                    while state.sends.len() <= send_idx {
+                        state.sends.push(0.0);
+                    }
+                    state.sends[send_idx] = amount;
+                }
+            }
+            AudioParamMsg::SetMasterVolume { volume_db } => {
+                self.master_state.volume_db = volume_db;
+            }
+            AudioParamMsg::SetMasterPan { pan } => {
+                self.master_state.pan = pan;
+            }
+            AudioParamMsg::SetDeviceParam {
+                track_idx,
+                device_id,
+                param_key,
+                value,
+            } => {
+                if track_idx == usize::MAX {
+                    self.master_state.set_device_param(
+                        device_id,
+                        &param_key,
+                        value,
+                        self.sample_rate,
+                    );
+                } else if let Some(state) = self.track_states.get_mut(track_idx) {
+                    state.set_device_param(device_id, &param_key, value, self.sample_rate);
+                }
+            }
+            AudioParamMsg::TriggerClip {
+                track_idx,
+                slot_idx,
+            } => {
+                self.trigger_clip(track_idx, slot_idx);
+            }
+            AudioParamMsg::StopClip { track_idx } => {
+                self.stop_clip(track_idx);
+            }
+            AudioParamMsg::TriggerScene { scene_idx } => {
+                self.trigger_scene(scene_idx);
+            }
+            AudioParamMsg::StopAll => {
+                self.stop_all();
+            }
+            AudioParamMsg::SetPlayhead(beats) => {
+                self.playhead_beats = beats;
+            }
+            AudioParamMsg::SetPlaying(playing) => {
+                self.is_playing = playing;
             }
         }
     }
@@ -575,12 +711,7 @@ impl AudioGraph {
             .sync_devices(&project.master_track, self.sample_rate);
     }
 
-    pub fn process_buffer_interleaved(
-        &mut self,
-        data: &mut [f32],
-        channels: usize,
-        project: &Project,
-    ) {
+    pub fn process_buffer_interleaved(&mut self, data: &mut [f32], channels: usize) {
         let frames = data.len() / channels;
         let mut scratch_l = std::mem::take(&mut self.scratch_l);
         let mut scratch_r = std::mem::take(&mut self.scratch_r);
@@ -588,7 +719,7 @@ impl AudioGraph {
             scratch_l.resize(frames, 0.0);
             scratch_r.resize(frames, 0.0);
         }
-        self.process_buffer(&mut scratch_l[..frames], &mut scratch_r[..frames], project);
+        self.process_buffer(&mut scratch_l[..frames], &mut scratch_r[..frames]);
 
         for (frame_idx, chunk) in data.chunks_mut(channels).enumerate() {
             let l = scratch_l[frame_idx];
@@ -605,12 +736,7 @@ impl AudioGraph {
         self.scratch_r = scratch_r;
     }
 
-    pub fn process_buffer_interleaved_i16(
-        &mut self,
-        data: &mut [i16],
-        channels: usize,
-        project: &Project,
-    ) {
+    pub fn process_buffer_interleaved_i16(&mut self, data: &mut [i16], channels: usize) {
         let frames = data.len() / channels;
         let mut scratch_l = std::mem::take(&mut self.scratch_l);
         let mut scratch_r = std::mem::take(&mut self.scratch_r);
@@ -618,7 +744,7 @@ impl AudioGraph {
             scratch_l.resize(frames, 0.0);
             scratch_r.resize(frames, 0.0);
         }
-        self.process_buffer(&mut scratch_l[..frames], &mut scratch_r[..frames], project);
+        self.process_buffer(&mut scratch_l[..frames], &mut scratch_r[..frames]);
 
         for (frame_idx, chunk) in data.chunks_mut(channels).enumerate() {
             let l = scratch_l[frame_idx];
@@ -637,12 +763,7 @@ impl AudioGraph {
         self.scratch_r = scratch_r;
     }
 
-    pub fn process_buffer_interleaved_u16(
-        &mut self,
-        data: &mut [u16],
-        channels: usize,
-        project: &Project,
-    ) {
+    pub fn process_buffer_interleaved_u16(&mut self, data: &mut [u16], channels: usize) {
         let frames = data.len() / channels;
         let mut scratch_l = std::mem::take(&mut self.scratch_l);
         let mut scratch_r = std::mem::take(&mut self.scratch_r);
@@ -650,7 +771,7 @@ impl AudioGraph {
             scratch_l.resize(frames, 0.0);
             scratch_r.resize(frames, 0.0);
         }
-        self.process_buffer(&mut scratch_l[..frames], &mut scratch_r[..frames], project);
+        self.process_buffer(&mut scratch_l[..frames], &mut scratch_r[..frames]);
 
         for (frame_idx, chunk) in data.chunks_mut(channels).enumerate() {
             let l = scratch_l[frame_idx];
@@ -669,12 +790,7 @@ impl AudioGraph {
         self.scratch_r = scratch_r;
     }
 
-    pub fn process_buffer(
-        &mut self,
-        buffer_l: &mut [f32],
-        buffer_r: &mut [f32],
-        project: &Project,
-    ) {
+    pub fn process_buffer(&mut self, buffer_l: &mut [f32], buffer_r: &mut [f32]) {
         let num_samples = buffer_l.len();
         let dt_beats = if self.is_playing {
             (self.bpm as f64 / 60.0) / (self.sample_rate as f64)
@@ -689,11 +805,11 @@ impl AudioGraph {
             let block_len = block_end - s_idx;
 
             if self.is_playing {
-                self.dispatch_clip_events(project);
+                self.dispatch_clip_events();
                 self.playhead_beats += dt_beats * block_len as f64;
             }
 
-            let any_solo = project.tracks.iter().any(|t| t.is_soloed);
+            let any_solo = self.track_states.iter().any(|t| t.is_soloed);
 
             for i in s_idx..block_end {
                 let mut master_l = 0.0f32;
@@ -703,45 +819,43 @@ impl AudioGraph {
                 let mut send_b_l = 0.0f32;
                 let mut send_b_r = 0.0f32;
 
-                for (idx, trk) in project.tracks.iter().enumerate() {
-                    if let Some(state) = self.track_states.get_mut(idx) {
-                        let (raw_l, raw_r) = state
-                            .process_sample(state.current_audio_in.0, state.current_audio_in.1);
+                for state in self.track_states.iter_mut() {
+                    let (raw_l, raw_r) =
+                        state.process_sample(state.current_audio_in.0, state.current_audio_in.1);
 
-                        // Skip muted tracks or un-soloed tracks if someone is soloed
-                        if trk.is_muted || (any_solo && !trk.is_soloed) {
-                            continue;
-                        }
+                    // Skip muted tracks or un-soloed tracks if someone is soloed
+                    if state.is_muted || (any_solo && !state.is_soloed) {
+                        continue;
+                    }
 
-                        // Volume (dB to linear)
-                        let vol_lin = if trk.volume_db <= -59.0 {
-                            0.0
-                        } else {
-                            10.0f32.powf(trk.volume_db / 20.0)
-                        };
+                    // Volume (dB to linear)
+                    let vol_lin = if state.volume_db <= -59.0 {
+                        0.0
+                    } else {
+                        10.0f32.powf(state.volume_db / 20.0)
+                    };
 
-                        // Pan (constant power)
-                        let pan_norm = (trk.pan.clamp(-1.0, 1.0) + 1.0) * 0.5;
-                        let angle = pan_norm * std::f32::consts::FRAC_PI_2;
-                        let pan_l = angle.cos();
-                        let pan_r = angle.sin();
+                    // Pan (constant power)
+                    let pan_norm = (state.pan.clamp(-1.0, 1.0) + 1.0) * 0.5;
+                    let angle = pan_norm * std::f32::consts::FRAC_PI_2;
+                    let pan_l = angle.cos();
+                    let pan_r = angle.sin();
 
-                        let track_out_l = raw_l * vol_lin * pan_l;
-                        let track_out_r = raw_r * vol_lin * pan_r;
+                    let track_out_l = raw_l * vol_lin * pan_l;
+                    let track_out_r = raw_r * vol_lin * pan_r;
 
-                        // Accumulate to Master
-                        master_l += track_out_l;
-                        master_r += track_out_r;
+                    // Accumulate to Master
+                    master_l += track_out_l;
+                    master_r += track_out_r;
 
-                        // Sends
-                        if let Some(&send_a) = trk.sends.first() {
-                            send_a_l += track_out_l * send_a;
-                            send_a_r += track_out_r * send_a;
-                        }
-                        if let Some(&send_b) = trk.sends.get(1) {
-                            send_b_l += track_out_l * send_b;
-                            send_b_r += track_out_r * send_b;
-                        }
+                    // Sends
+                    if let Some(&send_a) = state.sends.first() {
+                        send_a_l += track_out_l * send_a;
+                        send_a_r += track_out_r * send_a;
+                    }
+                    if let Some(&send_b) = state.sends.get(1) {
+                        send_b_l += track_out_l * send_b;
+                        send_b_r += track_out_r * send_b;
                     }
                 }
 
@@ -761,70 +875,79 @@ impl AudioGraph {
 
                 // Master channel processing
                 let (final_l, final_r) = self.master_state.process_sample(master_l, master_r);
-                self.master_meter.update(final_l, final_r);
+                let master_vol = if self.master_state.volume_db <= -59.0 {
+                    0.0
+                } else {
+                    10.0f32.powf(self.master_state.volume_db / 20.0)
+                };
+                let out_l = final_l * master_vol;
+                let out_r = final_r * master_vol;
+                self.master_meter.update(out_l, out_r);
 
-                buffer_l[i] = final_l;
-                buffer_r[i] = final_r;
+                buffer_l[i] = out_l;
+                buffer_r[i] = out_r;
             }
             s_idx = block_end;
         }
     }
 
-    fn dispatch_clip_events(&mut self, project: &Project) {
-        let bpm = project.transport.bpm;
-        for (trk_idx, trk) in project.tracks.iter().enumerate() {
-            if let Some(state) = self.track_states.get_mut(trk_idx) {
-                if let Some(slot_idx) = state.active_clip_slot {
-                    if let Some(slot) = trk.clip_slots.get(slot_idx) {
-                        if let Some(ref clip) = slot.clip {
-                            let clip_len = clip.length_beats.max(1.0);
-                            let clip_pos = (self.playhead_beats % clip_len).abs();
-                            Self::process_clip_payload(state, clip, clip_pos, bpm);
-                        }
+    fn dispatch_clip_events(&mut self) {
+        let bpm = self.bpm;
+        for state in self.track_states.iter_mut() {
+            if let Some(slot_idx) = state.active_clip_slot {
+                let maybe_clip = state.clip_slots.get(slot_idx).and_then(|s| s.clip.clone());
+                if let Some(clip) = maybe_clip {
+                    let clip_len = clip.length_beats.max(1.0);
+                    let clip_pos = (self.playhead_beats % clip_len).abs();
+                    Self::process_clip_payload(state, &clip, clip_pos, bpm);
+                }
+            } else if !state.arrangement_clips.is_empty() {
+                let mut matched_clip = None;
+                for arr_clip in &state.arrangement_clips {
+                    let c_start = arr_clip.start_beat;
+                    let c_end = arr_clip.start_beat + arr_clip.length_beats;
+                    if self.playhead_beats >= c_start && self.playhead_beats < c_end {
+                        let rel_beat = self.playhead_beats - c_start;
+                        let clip_len = arr_clip.clip.length_beats.max(1.0);
+                        let clip_pos = if arr_clip.clip.is_looping {
+                            rel_beat % clip_len
+                        } else {
+                            rel_beat
+                        };
+                        matched_clip = Some((arr_clip.clip.clone(), clip_pos));
+                        break;
                     }
-                } else if !trk.arrangement_clips.is_empty() {
-                    let mut clip_found = false;
-                    for arr_clip in &trk.arrangement_clips {
-                        let c_start = arr_clip.start_beat;
-                        let c_end = arr_clip.start_beat + arr_clip.length_beats;
-                        if self.playhead_beats >= c_start && self.playhead_beats < c_end {
-                            clip_found = true;
-                            let rel_beat = self.playhead_beats - c_start;
-                            let clip_len = arr_clip.clip.length_beats.max(1.0);
-                            let clip_pos = if arr_clip.clip.is_looping {
-                                rel_beat % clip_len
-                            } else {
-                                rel_beat
-                            };
-                            Self::process_clip_payload(state, &arr_clip.clip, clip_pos, bpm);
-                        }
-                    }
-                    if !clip_found {
-                        state.stop_all_notes();
-                        state.current_audio_in = (0.0, 0.0);
-                    }
+                }
+                if let Some((clip, clip_pos)) = matched_clip {
+                    Self::process_clip_payload(state, &clip, clip_pos, bpm);
                 } else {
-                    let mut current_beat = 0.0;
-                    let mut clip_found = false;
-                    for slot in &trk.clip_slots {
-                        if let Some(ref clip) = slot.clip {
-                            let c_start = current_beat;
-                            let c_end = current_beat + clip.length_beats;
-                            if self.playhead_beats >= c_start && self.playhead_beats < c_end {
-                                clip_found = true;
-                                let clip_pos = self.playhead_beats - c_start;
-                                Self::process_clip_payload(state, clip, clip_pos, bpm);
-                                break;
-                            }
-                            current_beat += clip.length_beats;
+                    state.stop_all_notes();
+                    state.current_audio_in = (0.0, 0.0);
+                }
+            } else {
+                let mut current_beat = 0.0;
+                let mut matched_clip = None;
+                let mut has_clips = false;
+                for slot in &state.clip_slots {
+                    if let Some(ref clip) = slot.clip {
+                        has_clips = true;
+                        let c_start = current_beat;
+                        let c_end = current_beat + clip.length_beats;
+                        if self.playhead_beats >= c_start && self.playhead_beats < c_end {
+                            let clip_pos = self.playhead_beats - c_start;
+                            matched_clip = Some((clip.clone(), clip_pos));
+                            break;
                         }
+                        current_beat += clip.length_beats;
                     }
-                    if !clip_found {
-                        if current_beat > 0.0 {
-                            state.stop_all_notes();
-                        }
-                        state.current_audio_in = (0.0, 0.0);
+                }
+                if let Some((clip, clip_pos)) = matched_clip {
+                    Self::process_clip_payload(state, &clip, clip_pos, bpm);
+                } else {
+                    if has_clips {
+                        state.stop_all_notes();
                     }
+                    state.current_audio_in = (0.0, 0.0);
                 }
             }
         }

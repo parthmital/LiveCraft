@@ -14,6 +14,15 @@ use livecraft_dsp::engine::AudioEngine;
 use livecraft_dsp::graph::TrackMeter;
 use std::path::{Path, PathBuf};
 
+#[derive(Clone, PartialEq)]
+struct TrackParamSnapshot {
+    volume_db: f32,
+    pan: f32,
+    is_muted: bool,
+    is_soloed: bool,
+    sends: Vec<f32>,
+}
+
 pub struct LiveCraftApp {
     pub project: Project,
     pub project_path: Option<PathBuf>,
@@ -29,6 +38,10 @@ pub struct LiveCraftApp {
     pub screenshot_path: Option<PathBuf>,
     pub frame_counter: u32,
     pub browser_visible: bool,
+    last_bpm: f32,
+    last_master_vol: f32,
+    last_master_pan: f32,
+    last_tracks_snapshot: Vec<TrackParamSnapshot>,
 }
 
 impl LiveCraftApp {
@@ -65,6 +78,21 @@ impl LiveCraftApp {
 
         let bottom_tab = options.initial_tab.unwrap_or(0);
 
+        let last_bpm = project.transport.bpm;
+        let last_master_vol = project.master_track.volume_db;
+        let last_master_pan = project.master_track.pan;
+        let last_tracks_snapshot = project
+            .tracks
+            .iter()
+            .map(|t| TrackParamSnapshot {
+                volume_db: t.volume_db,
+                pan: t.pan,
+                is_muted: t.is_muted,
+                is_soloed: t.is_soloed,
+                sends: t.sends.clone(),
+            })
+            .collect();
+
         Self {
             project,
             project_path: path_buf,
@@ -80,6 +108,10 @@ impl LiveCraftApp {
             screenshot_path: options.screenshot_path,
             frame_counter: 0,
             browser_visible: true,
+            last_bpm,
+            last_master_vol,
+            last_master_pan,
+            last_tracks_snapshot,
         }
     }
 
@@ -206,6 +238,77 @@ impl LiveCraftApp {
             }
         }
     }
+
+    fn sync_audio_parameters(&mut self) {
+        if let Some(ref eng) = self.engine {
+            if self.project.tracks.len() != self.last_tracks_snapshot.len() {
+                eng.sync_project(&self.project);
+                self.last_tracks_snapshot = self
+                    .project
+                    .tracks
+                    .iter()
+                    .map(|t| TrackParamSnapshot {
+                        volume_db: t.volume_db,
+                        pan: t.pan,
+                        is_muted: t.is_muted,
+                        is_soloed: t.is_soloed,
+                        sends: t.sends.clone(),
+                    })
+                    .collect();
+                self.last_bpm = self.project.transport.bpm;
+                self.last_master_vol = self.project.master_track.volume_db;
+                self.last_master_pan = self.project.master_track.pan;
+                return;
+            }
+
+            if (self.project.transport.bpm - self.last_bpm).abs() > 0.001 {
+                eng.set_tempo(self.project.transport.bpm);
+                self.last_bpm = self.project.transport.bpm;
+            }
+
+            if (self.project.master_track.volume_db - self.last_master_vol).abs() > 0.01 {
+                eng.set_master_volume(self.project.master_track.volume_db);
+                self.last_master_vol = self.project.master_track.volume_db;
+            }
+
+            if (self.project.master_track.pan - self.last_master_pan).abs() > 0.01 {
+                eng.set_master_pan(self.project.master_track.pan);
+                self.last_master_pan = self.project.master_track.pan;
+            }
+
+            for (idx, trk) in self.project.tracks.iter().enumerate() {
+                if let Some(snap) = self.last_tracks_snapshot.get_mut(idx) {
+                    if (trk.volume_db - snap.volume_db).abs() > 0.01 {
+                        eng.set_track_volume(idx, trk.volume_db);
+                        snap.volume_db = trk.volume_db;
+                    }
+                    if (trk.pan - snap.pan).abs() > 0.01 {
+                        eng.set_track_pan(idx, trk.pan);
+                        snap.pan = trk.pan;
+                    }
+                    if trk.is_muted != snap.is_muted {
+                        eng.set_track_mute(idx, trk.is_muted);
+                        snap.is_muted = trk.is_muted;
+                    }
+                    if trk.is_soloed != snap.is_soloed {
+                        eng.set_track_solo(idx, trk.is_soloed);
+                        snap.is_soloed = trk.is_soloed;
+                    }
+                    for (s_idx, &send_val) in trk.sends.iter().enumerate() {
+                        let prev_val = snap.sends.get(s_idx).copied().unwrap_or(0.0);
+                        if (send_val - prev_val).abs() > 0.01 {
+                            eng.set_track_send(idx, s_idx, send_val);
+                            if s_idx < snap.sends.len() {
+                                snap.sends[s_idx] = send_val;
+                            } else {
+                                snap.sends.push(send_val);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl eframe::App for LiveCraftApp {
@@ -255,10 +358,8 @@ impl eframe::App for LiveCraftApp {
         apply_live_style(ctx, &self.palette);
         self.handle_keyboard_shortcuts(ctx);
 
-        // Keep audio engine synchronized with project model in real-time
-        if let Some(ref eng) = self.engine {
-            eng.sync_project(&self.project);
-        }
+        // Dispatch discrete audio parameter changes lock-free to the audio engine
+        self.sync_audio_parameters();
 
         // Continuous repaint during audio playback
         if self.project.transport.is_playing {
@@ -269,7 +370,7 @@ impl eframe::App for LiveCraftApp {
         let (playhead_beats, track_meters, master_meter, active_slots) = if let Some(ref eng) =
             self.engine
         {
-            if let Ok(g) = eng.graph.lock() {
+            if let Ok(g) = eng.graph.try_lock() {
                 let t_meters = g.track_states.iter().map(|s| s.meter.clone()).collect();
                 let m_meter = g.master_meter.clone();
                 let a_slots: Vec<_> = g.track_states.iter().map(|s| s.active_clip_slot).collect();
@@ -488,17 +589,13 @@ impl eframe::App for LiveCraftApp {
                         }
                         if let Some(t) = sess_action.stop_clip {
                             if let Some(ref eng) = self.engine {
-                                if let Ok(mut g) = eng.graph.lock() {
-                                    g.stop_clip(t);
-                                }
+                                eng.stop_clip(t);
                             }
                         }
                         if let Some(sc) = sess_action.trigger_scene {
                             if let Some(ref eng) = self.engine {
-                                if let Ok(mut g) = eng.graph.lock() {
-                                    g.trigger_scene(sc, &self.project);
-                                    g.is_playing = true;
-                                }
+                                eng.trigger_scene(sc);
+                                eng.play();
                             }
                         }
                         if sess_action.stop_all_clips {
@@ -537,9 +634,7 @@ impl eframe::App for LiveCraftApp {
 
                     if let Some(beats) = arr_action.set_playhead {
                         if let Some(ref eng) = self.engine {
-                            if let Ok(mut g) = eng.graph.lock() {
-                                g.playhead_beats = beats;
-                            }
+                            eng.set_playhead(beats);
                         }
                     }
                     if let Some(t) = arr_action.select_track {
@@ -551,5 +646,8 @@ impl eframe::App for LiveCraftApp {
                 }
             }
         });
+
+        // Dispatch any updates from CentralPanel / Mixer interaction
+        self.sync_audio_parameters();
     }
 }

@@ -227,7 +227,6 @@ mod tests {
     #[test]
     fn test_audio_graph_summing() {
         let mut project = Project::new_default("SummingTest");
-        let mut graph = AudioGraph::new(&project, 44100.0);
 
         // Put active notes on track 0
         let mut clip = Clip::new_midi(1, "Test", 4.0);
@@ -235,12 +234,14 @@ mod tests {
             mdata.notes.push(MidiNote::new(60, 0.0, 4.0, 100));
         }
         project.tracks[0].clip_slots[0].clip = Some(clip);
+
+        let mut graph = AudioGraph::new(&project, 44100.0);
         graph.trigger_clip(0, 0);
         graph.is_playing = true;
 
         let mut buf_l = vec![0.0f32; 256];
         let mut buf_r = vec![0.0f32; 256];
-        graph.process_buffer(&mut buf_l, &mut buf_r, &project);
+        graph.process_buffer(&mut buf_l, &mut buf_r);
 
         let energy: f32 = buf_l.iter().map(|s| s.abs()).sum();
         assert!(energy > 0.01);
@@ -345,12 +346,12 @@ mod tests {
         // At beat 0, track 0 should have no notes active
         let mut buf_l = [0.0f32; 64];
         let mut buf_r = [0.0f32; 64];
-        graph.process_buffer(&mut buf_l, &mut buf_r, &project);
+        graph.process_buffer(&mut buf_l, &mut buf_r);
         assert!(graph.track_states[0].synth.as_ref().unwrap().is_enabled);
 
         // Jump playhead to beat 4.5 (inside note 60: 4.0 + 0.0..1.0)
         graph.playhead_beats = 4.5;
-        graph.process_buffer(&mut buf_l, &mut buf_r, &project);
+        graph.process_buffer(&mut buf_l, &mut buf_r);
 
         // Active note 60 should be on
         assert!(graph.track_states[0].synth.is_some());
@@ -511,5 +512,46 @@ mod tests {
         for &val in &left {
             assert!(val.is_finite());
         }
+    }
+
+    #[test]
+    fn test_lock_free_param_queue_dispatch() {
+        let project = Project::new_default("LockFreeTest");
+        let mut graph = AudioGraph::new(&project, 44100.0);
+
+        // Verify initial state
+        assert_eq!(graph.bpm, 120.0);
+        assert_eq!(graph.track_states[0].volume_db, 0.0);
+        assert_eq!(graph.track_states[0].pan, 0.0);
+        assert!(!graph.track_states[0].is_muted);
+        assert!(!graph.track_states[0].is_soloed);
+
+        // Apply parameter updates
+        graph.apply_param_msg(crate::engine::AudioParamMsg::SetTempo(135.0));
+        graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackVolume {
+            track_idx: 0,
+            volume_db: -6.5,
+        });
+        graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackPan {
+            track_idx: 0,
+            pan: -0.4,
+        });
+        graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackMute {
+            track_idx: 0,
+            muted: true,
+        });
+        graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackSolo {
+            track_idx: 0,
+            soloed: true,
+        });
+        graph.apply_param_msg(crate::engine::AudioParamMsg::SetMasterVolume { volume_db: -3.0 });
+
+        // Verify updated state
+        assert_eq!(graph.bpm, 135.0);
+        assert_eq!(graph.track_states[0].volume_db, -6.5);
+        assert_eq!(graph.track_states[0].pan, -0.4);
+        assert!(graph.track_states[0].is_muted);
+        assert!(graph.track_states[0].is_soloed);
+        assert_eq!(graph.master_state.volume_db, -3.0);
     }
 }

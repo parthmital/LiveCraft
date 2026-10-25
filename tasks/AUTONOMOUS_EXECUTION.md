@@ -28,8 +28,12 @@ flowchart TD
     F --> G["Step 5: Run 'python scripts/task_runner.py verify task-XXX'"]
     G --> H{"Did verification pass?"}
     H -- No --> I["Diagnose compiler/test errors & fix"] --> G
-    H -- Yes --> J["Step 6: Run 'python scripts/task_runner.py complete task-XXX'"]
-    J --> A
+    H -- Yes --> J["Step 6: Run Full Local CI (fmt, clippy, workspace tests, build)"]
+    J --> K["Step 7: Update CI pipeline (.github/workflows/ci.yml) if needed"]
+    K --> L["Step 8: Commit & Push to main following git-commit-and-push"]
+    L --> M["Step 9: Run 'python scripts/task_runner.py complete task-XXX'"]
+    M --> N["Step 10: Clear/compact conversation context to free resources"]
+    N --> A
 ```
 
 ### Detailed Execution Protocol:
@@ -57,7 +61,7 @@ flowchart TD
    Apply the edits specified in **"Step-by-Step Implementation Instructions"**.
    Write the minimal, clean, robust code needed to satisfy the acceptance criteria.
 
-5. **Step 5: Execute Automated Verification**
+5. **Step 5: Execute Task Verification**
    Run:
 
    ```bash
@@ -68,13 +72,31 @@ flowchart TD
    - If tests fail, diagnose the compiler error or test failure, apply the fix, and re-run verification.
    - Do NOT mark a task complete if verification fails.
 
-6. **Step 6: Mark Task Complete and Loop**
-   Once verification succeeds with code 0:
+6. **Step 6: Run Full Local CI Pipeline**
+   Before committing, run the full test and verification suite locally:
+   - `cargo fmt --all -- --check`
+   - `cargo clippy --workspace --all-targets -- -D warnings`
+   - `cargo test --workspace --verbose`
+   - `cargo build --release --workspace`
+
+7. **Step 7: Update CI Pipeline if Necessary**
+   If dependencies, target platforms, or test harnesses were modified, update `.github/workflows/ci.yml` in the same task to maintain CI green status.
+
+8. **Step 8: Commit & Push to main**
+   Stage the task changes and `.gitignore` updates, commit using the strict hyphenated body format, and push directly to `origin/main`:
    ```bash
-   python scripts/task_runner.py complete <task_id>
+   git push origin main
    ```
-   This automatically records the task in `tasks/state.json`, updates `tasks/manifest.json`, and queues the next task.
-   **Immediately continue to Step 1 without stopping or asking the user for confirmation.**
+
+9. **Step 9: Mark Task Complete**
+   Once pushed cleanly:
+   ```bash
+   python scripts/task_runner.py complete <task_id> --skip-verify
+   ```
+   (Since full verification and CI already ran in Steps 5 and 6).
+
+10. **Step 10: Clear Conversation Resources & Continue**
+    Compact context via `/compact` or proceed with minimal prompt overhead to keep context small, then immediately loop to Step 1.
 
 ---
 

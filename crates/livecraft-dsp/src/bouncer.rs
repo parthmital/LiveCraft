@@ -70,7 +70,7 @@ impl OfflineBouncer {
             let active_l = &mut buf_l[..to_render];
             let active_r = &mut buf_r[..to_render];
 
-            graph.process_buffer(active_l, active_r, project);
+            graph.process_buffer(active_l, active_r);
 
             for i in 0..to_render {
                 let s_l = active_l[i].clamp(-1.0, 1.0);
