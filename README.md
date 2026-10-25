@@ -69,6 +69,13 @@ livecraft/
 │   ├── livecraft-dsp/      # Lock-free audio graph, DSP effects, synths, CPAL engine, bouncer
 │   ├── livecraft-gui/      # Ableton Live 12 desktop GUI (egui / eframe / glow)
 │   └── livecraft-cli/      # Headless CLI entry point & integration tests
+├── tasks/                  # Autonomous implementation tasks, manifest & specifications
+│   ├── manifest.json       # 28-task machine-readable registry
+│   ├── state.json          # Living execution state tracker
+│   ├── AUTONOMOUS_EXECUTION.md # Single-prompt execution guide
+│   └── specs/              # Task specifications (task-001.md to task-028.md)
+├── scripts/
+│   └── task_runner.py      # Autonomous task orchestrator and test verifier
 ├── ROADMAP.md              # Living master roadmap (parity matrix, tasks, verification)
 ├── RESEARCH.md             # Research-driven development architecture dossier
 ├── CONTRIBUTING.md         # Open-source developer & contributor guidelines
