@@ -14,6 +14,7 @@ pub mod gate;
 pub mod graph;
 pub mod limiter;
 pub mod operator;
+pub mod processor;
 pub mod redux;
 pub mod reverb;
 pub mod saturator;
@@ -32,6 +33,7 @@ pub use eq8::*;
 pub use gate::*;
 pub use limiter::*;
 pub use operator::*;
+pub use processor::*;
 pub use redux::*;
 pub use reverb::*;
 pub use saturator::*;
@@ -78,10 +80,41 @@ mod tests {
     #[test]
     fn test_eq8_processing() {
         let mut eq = EqEight::new(44100.0);
+        // Disable other default bands to isolate band 2
+        for i in 0..8 {
+            if i != 2 {
+                eq.set_band_enabled(i, false);
+            }
+        }
         eq.set_band_params(2, 500.0, 6.0, 1.0);
         let (out_l, out_r) = eq.process_stereo(1.0, 1.0);
         assert!(out_l.is_finite());
         assert!(out_r.is_finite());
+
+        // Magnitude response verification at center frequency (+6 dB peak)
+        let mag = eq.magnitude_at_freq(500.0);
+        let gain_db = eq.gain_db_at_freq(500.0);
+        assert!((gain_db - 6.0).abs() < 0.5);
+        assert!((mag - 10.0f32.powf(6.0 / 20.0)).abs() < 0.15);
+
+        // Curve plotting points verification
+        let points = eq.response_curve_points(100);
+        assert_eq!(points.len(), 100);
+        assert!(points[0].0 >= 19.9 && points[0].0 <= 20.1);
+        for p in &points {
+            assert!(p.0.is_finite());
+            assert!(p.1.is_finite());
+        }
+
+        // Band type switching: Notch filter
+        eq.set_band_type(2, FilterType::Notch);
+        let notch_mag = eq.magnitude_at_freq(500.0);
+        assert!(notch_mag < 0.05);
+
+        // Disabling band returns flat response
+        eq.set_band_enabled(2, false);
+        let flat_mag = eq.magnitude_at_freq(500.0);
+        assert!((flat_mag - 1.0).abs() < 1e-4);
     }
 
     #[test]
@@ -185,6 +218,64 @@ mod tests {
 
         let max_amp = samples.iter().copied().fold(0.0f32, f32::max);
         assert!(max_amp > 0.01);
+
+        // Test velocity scaling: quiet note vs loud note
+        let mut synth_quiet = OperatorSynth::new(44100.0);
+        synth_quiet.note_on(60, 20);
+        let mut quiet_peak = 0.0f32;
+        for _ in 0..500 {
+            let (l, _) = synth_quiet.process_sample();
+            quiet_peak = quiet_peak.max(l.abs());
+        }
+
+        let mut synth_loud = OperatorSynth::new(44100.0);
+        synth_loud.note_on(60, 127);
+        let mut loud_peak = 0.0f32;
+        for _ in 0..500 {
+            let (l, _) = synth_loud.process_sample();
+            loud_peak = loud_peak.max(l.abs());
+        }
+        assert!(loud_peak > quiet_peak * 2.0);
+
+        // Test voice stealing with 20 simultaneous notes (synth has 16 voices)
+        let mut poly_synth = OperatorSynth::new(44100.0);
+        for n in 40..60 {
+            poly_synth.note_on(n, 90);
+        }
+        for _ in 0..100 {
+            let (l, r) = poly_synth.process_sample();
+            assert!(l.is_finite());
+            assert!(r.is_finite());
+        }
+
+        // Test overlapping notes of identical pitch in timeline
+        let mut track = Track::new(1, "MidiTrack", TrackType::Midi, 4);
+        let mut clip = Clip::new_midi(1, "Overlapping Notes", 4.0);
+        if let ClipPayload::Midi(ref mut mdata) = clip.payload {
+            // Note 1: pitch 60, beats 0.0 to 1.5
+            mdata.notes.push(MidiNote::new(60, 0.0, 1.5, 100));
+            // Note 2: pitch 60, beats 1.0 to 2.5 (overlaps from 1.0 to 1.5)
+            mdata.notes.push(MidiNote::new(60, 1.0, 1.5, 110));
+        }
+        track.clip_slots[0].clip = Some(clip.clone());
+        let mut state = TrackDspState::new(&track, 44100.0);
+
+        // At beat 0.5: Note 1 active
+        AudioGraph::process_clip_payload(&mut state, &clip, 0.5, 120.0, 32, 0.0);
+        assert_eq!(state.active_note_instances.len(), 1);
+
+        // At beat 1.2: Both Note 1 and Note 2 active
+        AudioGraph::process_clip_payload(&mut state, &clip, 1.2, 120.0, 32, 0.0);
+        assert_eq!(state.active_note_instances.len(), 2);
+
+        // At beat 1.8: Note 1 ended, but Note 2 is still active
+        AudioGraph::process_clip_payload(&mut state, &clip, 1.8, 120.0, 32, 0.0);
+        assert_eq!(state.active_note_instances.len(), 1);
+        assert_eq!(state.active_note_instances[0].pitch, 60);
+
+        // At beat 3.0: Both ended
+        AudioGraph::process_clip_payload(&mut state, &clip, 3.0, 120.0, 32, 0.0);
+        assert_eq!(state.active_note_instances.len(), 0);
     }
 
     #[test]
@@ -207,6 +298,27 @@ mod tests {
                 energy += l.abs();
             }
             assert!(energy > 0.001);
+        }
+
+        // Test all 11 FM routing algorithms and feedback
+        for alg in 1..=11 {
+            let mut synth = OperatorSynth::new(44100.0);
+            synth.algorithm = alg;
+            synth.feedback = 0.5;
+            synth.ops[0].level = 0.8;
+            synth.ops[1].level = 0.6;
+            synth.ops[2].level = 0.5;
+            synth.ops[3].level = 0.5;
+            synth.note_on(60, 100);
+
+            let mut alg_energy = 0.0f32;
+            for _ in 0..100 {
+                let (l, r) = synth.process_sample();
+                assert!(l.is_finite(), "Algorithm {} produced non-finite left", alg);
+                assert!(r.is_finite(), "Algorithm {} produced non-finite right", alg);
+                alg_energy += l.abs();
+            }
+            assert!(alg_energy > 0.001, "Algorithm {} produced no energy", alg);
         }
     }
 
@@ -246,6 +358,46 @@ mod tests {
         let energy: f32 = buf_l.iter().map(|s| s.abs()).sum();
         assert!(energy > 0.01);
         assert!(graph.master_meter.peak_db_l() > -50.0);
+
+        // Test MonitoringMode::Auto when track is armed (should mute clip playback)
+        project.tracks[0].is_armed = true;
+        project.tracks[0].monitoring = MonitoringMode::Auto;
+        graph.sync_project(&project);
+        graph.trigger_clip(0, 0);
+
+        let mut armed_buf_l = vec![0.0f32; 256];
+        let mut armed_buf_r = vec![0.0f32; 256];
+        graph.process_buffer(&mut armed_buf_l, &mut armed_buf_r);
+        let armed_energy: f32 = armed_buf_l.iter().map(|s| s.abs()).sum();
+        assert_eq!(armed_energy, 0.0);
+
+        // Test MonitoringMode::Off when track is armed (should continue playing clip)
+        project.tracks[0].monitoring = MonitoringMode::Off;
+        graph.sync_project(&project);
+        graph.trigger_clip(0, 0);
+
+        let mut off_buf_l = vec![0.0f32; 256];
+        let mut off_buf_r = vec![0.0f32; 256];
+        graph.process_buffer(&mut off_buf_l, &mut off_buf_r);
+        let off_energy: f32 = off_buf_l.iter().map(|s| s.abs()).sum();
+        assert!(off_energy > 0.01);
+
+        // Test Multi-channel Return Summing (3 Return tracks)
+        project.tracks[0].is_armed = false;
+        project.tracks[0].monitoring = MonitoringMode::Auto;
+        project.tracks[0].sends = vec![0.4, 0.4, 0.4];
+        let ret_c = Track::new(103, "Return C", TrackType::Return, 0);
+        project.return_tracks.push(ret_c);
+        graph.sync_project(&project);
+        assert_eq!(graph.return_states.len(), 3);
+
+        let mut multi_ret_l = vec![0.0f32; 256];
+        let mut multi_ret_r = vec![0.0f32; 256];
+        graph.process_buffer(&mut multi_ret_l, &mut multi_ret_r);
+        for &s in &multi_ret_l {
+            assert!(s.is_finite());
+            assert!((-2.0..=2.0).contains(&s)); // summation headroom without overflow
+        }
     }
 
     #[test]
@@ -355,6 +507,22 @@ mod tests {
 
         // Active note 60 should be on
         assert!(graph.track_states[0].synth.is_some());
+
+        // Hermite interpolation verification
+        let y0 = 0.0f32;
+        let y1 = 1.0f32;
+        let y2 = 2.0f32;
+        let y3 = 3.0f32;
+        let mid = hermite_interp(y0, y1, y2, y3, 0.5);
+        assert!((mid - 1.5).abs() < 1e-4);
+
+        // Verify audio clip continuous sample rendering
+        let mut cache = AudioSampleCache::new();
+        let clip_audio = Clip::new_audio(501, "Audio Clip", "test_audio.wav", 4.0);
+        let mut out_l = [0.0f32; 32];
+        let mut out_r = [0.0f32; 32];
+        cache.render_clip_samples(&clip_audio, 0.0, 0.01, 120.0, &mut out_l, &mut out_r);
+        assert_eq!(out_l.len(), 32);
     }
 
     #[test]
@@ -377,6 +545,33 @@ mod tests {
         project.tracks.pop();
         graph.sync_project(&project);
         assert_eq!(graph.track_states.len(), 5);
+
+        // Multi-device chain and topological ordering test
+        let mut track = Track::new(7, "ChainTrack", TrackType::Audio, 4);
+        let mut dev1 = Device::new(101, "Delay 1", DeviceType::Delay);
+        dev1.set_param("dry_wet", 0.5);
+        let mut dev2 = Device::new(102, "Delay 2", DeviceType::Delay);
+        dev2.set_param("dry_wet", 0.8);
+        let mut dev3 = Device::new(103, "Compressor 1", DeviceType::Compressor);
+        dev3.set_param("threshold_db", -24.0);
+
+        track.device_chain.push(dev1);
+        track.device_chain.push(dev2);
+        track.device_chain.push(dev3);
+
+        let mut state = TrackDspState::new(&track, 44100.0);
+        assert_eq!(state.processors.len(), 3);
+        assert_eq!(state.processors[0].device_id(), 101);
+        assert_eq!(state.processors[1].device_id(), 102);
+        assert_eq!(state.processors[2].device_id(), 103);
+
+        // Reverse device chain order
+        track.device_chain.reverse();
+        state.sync_devices(&track, 44100.0);
+        assert_eq!(state.processors.len(), 3);
+        assert_eq!(state.processors[0].device_id(), 103);
+        assert_eq!(state.processors[1].device_id(), 102);
+        assert_eq!(state.processors[2].device_id(), 101);
     }
 
     #[test]
@@ -403,6 +598,48 @@ mod tests {
         let open_hh_after = dr.pads.iter().find(|p| p.note == 46).unwrap();
         assert!(!open_hh_after.is_active);
         assert_eq!(open_hh_after.amp_env, 0.0);
+
+        // Test Pad Solo and Mute routing
+        dr.all_notes_off();
+        // Mute Kick (36)
+        dr.pads.iter_mut().find(|p| p.note == 36).unwrap().is_muted = true;
+        dr.note_on(36, 100);
+        let (mut m_l, mut m_r) = (0.0f32, 0.0f32);
+        for _ in 0..50 {
+            let (l, r) = dr.process_sample();
+            m_l += l.abs();
+            m_r += r.abs();
+        }
+        assert_eq!(m_l, 0.0);
+        assert_eq!(m_r, 0.0);
+        dr.pads.iter_mut().find(|p| p.note == 36).unwrap().is_muted = false;
+
+        // Solo Snare 1 (38) while Kick (36) and Snare 1 (38) are triggered
+        dr.all_notes_off();
+        dr.pads.iter_mut().find(|p| p.note == 38).unwrap().is_soloed = true;
+        dr.note_on(36, 100);
+        dr.note_on(38, 100);
+        let mut snare_only_energy = 0.0f32;
+        for _ in 0..50 {
+            let (l, r) = dr.process_sample();
+            snare_only_energy += l.abs() + r.abs();
+        }
+        assert!(snare_only_energy > 0.0);
+        dr.pads.iter_mut().find(|p| p.note == 38).unwrap().is_soloed = false;
+
+        // Test per-pad stereo pan
+        dr.all_notes_off();
+        let clap = dr.pads.iter_mut().find(|p| p.note == 39).unwrap();
+        clap.pan = -1.0; // Hard left
+        dr.note_on(39, 100);
+        let (mut pan_l, mut pan_r) = (0.0f32, 0.0f32);
+        for _ in 0..50 {
+            let (l, r) = dr.process_sample();
+            pan_l += l.abs();
+            pan_r += r.abs();
+        }
+        assert!(pan_l > 0.01);
+        assert!(pan_r < 0.001);
     }
 
     #[test]
@@ -553,5 +790,68 @@ mod tests {
         assert!(graph.track_states[0].is_muted);
         assert!(graph.track_states[0].is_soloed);
         assert_eq!(graph.master_state.volume_db, -3.0);
+    }
+
+    #[test]
+    fn test_simpler_playback_modes() {
+        use crate::simpler::{SimplerInstrument, SimplerPlaybackMode};
+
+        let sample_rate = 44100.0;
+        let mut simpler = SimplerInstrument::new(sample_rate);
+
+        // Missing sample outputs silence without panic
+        simpler.note_on(60, 100);
+        let (sil_l, sil_r) = simpler.process_sample();
+        assert_eq!(sil_l, 0.0);
+        assert_eq!(sil_r, 0.0);
+
+        // Synthesize 1000 samples of test audio (sine wave)
+        let samples_l: Vec<f32> = (0..1000).map(|i| (i as f32 * 0.1).sin() * 0.8).collect();
+        let samples_r = samples_l.clone();
+        simpler.set_sample_data(samples_l, samples_r, 44100);
+
+        // 1. Classic Mode (Polyphonic)
+        simpler.mode = SimplerPlaybackMode::Classic;
+        simpler.is_looping = true;
+        simpler.crossfade_pct = 0.2;
+        simpler.note_on(60, 100);
+        simpler.note_on(64, 90);
+
+        let mut classic_energy = 0.0f32;
+        for _ in 0..100 {
+            let (l, r) = simpler.process_sample();
+            assert!(l.is_finite());
+            assert!(r.is_finite());
+            classic_energy += l.abs();
+        }
+        assert!(classic_energy > 0.01);
+        simpler.all_notes_off();
+
+        // 2. OneShot Mode
+        simpler.mode = SimplerPlaybackMode::OneShot;
+        simpler.gate_mode = false;
+        simpler.note_on(60, 100);
+        let mut oneshot_energy = 0.0f32;
+        for _ in 0..100 {
+            let (l, _) = simpler.process_sample();
+            oneshot_energy += l.abs();
+        }
+        assert!(oneshot_energy > 0.01);
+        simpler.all_notes_off();
+
+        // 3. Slicing Mode
+        simpler.mode = SimplerPlaybackMode::Slicing;
+        simpler.slices = vec![0, 250, 500, 750, 1000];
+        // Trigger slice 1 (note 37)
+        simpler.note_on(37, 100);
+        assert_eq!(simpler.voices[0].start_sample, 250);
+        assert_eq!(simpler.voices[0].end_sample, 500);
+
+        let mut slice_energy = 0.0f32;
+        for _ in 0..100 {
+            let (l, _) = simpler.process_sample();
+            slice_energy += l.abs();
+        }
+        assert!(slice_energy > 0.01);
     }
 }

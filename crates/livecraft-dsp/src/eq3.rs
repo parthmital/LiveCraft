@@ -3,6 +3,8 @@ use crate::biquad::{BiquadFilter, FilterType};
 /// Live 12 EQ Three effect
 /// 3-band DJ style isolator equalizer with Low, Mid, High band gains and kills
 pub struct EqThreeEffect {
+    pub device_id: u64,
+    pub is_enabled: bool,
     pub sample_rate: f32,
     pub low_gain_db: f32,
     pub mid_gain_db: f32,
@@ -22,6 +24,8 @@ impl EqThreeEffect {
         let low_f = 250.0;
         let high_f = 2500.0;
         Self {
+            device_id: 0,
+            is_enabled: true,
             sample_rate: sr,
             low_gain_db: 0.0,
             mid_gain_db: 0.0,
@@ -49,6 +53,9 @@ impl EqThreeEffect {
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        if !self.is_enabled {
+            return;
+        }
         self.update_filters();
 
         let g_low = if self.low_on {

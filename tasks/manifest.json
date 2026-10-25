@@ -19,152 +19,137 @@
       "phase": "Phase 1: Real-Time Audio Engine & DSP Architecture Hardening",
       "title": "Dynamic Modular DSP Processor Chain & Topological Order",
       "spec_file": "tasks/specs/task-002.md",
-      "dependencies": [
-        "task-001"
-      ],
+      "dependencies": ["task-001"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_graph_dynamic_track_sync",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T21:52:55"
     },
     {
       "id": "task-003",
       "phase": "Phase 1: Real-Time Audio Engine & DSP Architecture Hardening",
       "title": "Sample-Accurate Voice Allocation & Polyphonic Note Lifecycle",
       "spec_file": "tasks/specs/task-003.md",
-      "dependencies": [
-        "task-002"
-      ],
+      "dependencies": ["task-002"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_operator_synth_note",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T21:57:11"
     },
     {
       "id": "task-004",
       "phase": "Phase 1: Real-Time Audio Engine & DSP Architecture Hardening",
       "title": "Audio Clip Continuous Sample Streaming & Hermite Interpolation",
       "spec_file": "tasks/specs/task-004.md",
-      "dependencies": [
-        "task-003"
-      ],
+      "dependencies": ["task-003"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_arrangement_timeline_playback",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:00:59"
     },
     {
       "id": "task-005",
       "phase": "Phase 1: Real-Time Audio Engine & DSP Architecture Hardening",
       "title": "In/Auto/Off Monitoring Logic & Multi-Channel Return Summing",
       "spec_file": "tasks/specs/task-005.md",
-      "dependencies": [
-        "task-004"
-      ],
+      "dependencies": ["task-004"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_audio_graph_summing",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:04:32"
     },
     {
       "id": "task-006",
       "phase": "Phase 2: Core Data Model & Authentic Ableton 12 Compatibility",
       "title": "Authentic Ableton Live 12 XML Schema Mapping (.als Parser)",
       "spec_file": "tasks/specs/task-006.md",
-      "dependencies": [
-        "task-005"
-      ],
+      "dependencies": ["task-005"],
       "verification_command": "cargo test -p livecraft-core --lib tests::test_als_xml_export_and_import",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:09:09"
     },
     {
       "id": "task-007",
       "phase": "Phase 2: Core Data Model & Authentic Ableton 12 Compatibility",
       "title": "Authentic Ableton Live 12 Set Serializer (.als Exporter)",
       "spec_file": "tasks/specs/task-007.md",
-      "dependencies": [
-        "task-006"
-      ],
+      "dependencies": ["task-006"],
       "verification_command": "cargo test -p livecraft-core --lib tests::test_als_full_roundtrip_with_devices_and_clips",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:15:55"
     },
     {
       "id": "task-008",
       "phase": "Phase 2: Core Data Model & Authentic Ableton 12 Compatibility",
       "title": "Timeline Automation Envelopes & Breakpoint Curve Model",
       "spec_file": "tasks/specs/task-008.md",
-      "dependencies": [
-        "task-007"
-      ],
+      "dependencies": ["task-007"],
       "verification_command": "cargo test -p livecraft-core --lib tests::test_command_undo_redo",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:19:26"
     },
     {
       "id": "task-009",
       "phase": "Phase 2: Core Data Model & Authentic Ableton 12 Compatibility",
       "title": "Arrangement Clip Non-Destructive Editing (Split, Duplicate, Trim)",
       "spec_file": "tasks/specs/task-009.md",
-      "dependencies": [
-        "task-008"
-      ],
+      "dependencies": ["task-008"],
       "verification_command": "cargo test -p livecraft-core --lib tests::test_clip_slot_and_payload_manipulation",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:21:03"
     },
     {
       "id": "task-010",
       "phase": "Phase 2: Core Data Model & Authentic Ableton 12 Compatibility",
       "title": "Scala .scl Microtonal Engine Integration Across Synthesizers",
       "spec_file": "tasks/specs/task-010.md",
-      "dependencies": [
-        "task-009"
-      ],
+      "dependencies": ["task-009"],
       "verification_command": "cargo test -p livecraft-core --lib tests::test_tuning_system",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:28:04"
     },
     {
       "id": "task-011",
       "phase": "Phase 3: DSP Device Suite Completion & Studio-Grade Modeling",
       "title": "Operator 4-Operator FM Synthesizer with 11 Routing Algorithms",
       "spec_file": "tasks/specs/task-011.md",
-      "dependencies": [
-        "task-010"
-      ],
+      "dependencies": ["task-010"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_operator_all_waveforms",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:31:41"
     },
     {
       "id": "task-012",
       "phase": "Phase 3: DSP Device Suite Completion & Studio-Grade Modeling",
       "title": "Simpler Polyphonic Sampler (Classic, 1-Shot, Slicing)",
       "spec_file": "tasks/specs/task-012.md",
-      "dependencies": [
-        "task-011"
-      ],
+      "dependencies": ["task-011"],
       "verification_command": "cargo test -p livecraft-dsp --lib",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:33:39"
     },
     {
       "id": "task-013",
       "phase": "Phase 3: DSP Device Suite Completion & Studio-Grade Modeling",
       "title": "Drum Rack 16-Pad Matrix, Choke Groups & Solo/Mute Routing",
       "spec_file": "tasks/specs/task-013.md",
-      "dependencies": [
-        "task-012"
-      ],
+      "dependencies": ["task-012"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_drum_rack_synthesis_and_choke",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:35:35"
     },
     {
       "id": "task-014",
       "phase": "Phase 3: DSP Device Suite Completion & Studio-Grade Modeling",
       "title": "EQ Eight 8-Band Parametric Filter & Frequency Response Curve",
       "spec_file": "tasks/specs/task-014.md",
-      "dependencies": [
-        "task-013"
-      ],
+      "dependencies": ["task-013"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_eq8_processing",
-      "status": "pending"
+      "status": "completed",
+      "verified_at": "2026-10-25T22:38:03"
     },
     {
       "id": "task-015",
       "phase": "Phase 3: DSP Device Suite Completion & Studio-Grade Modeling",
       "title": "Dynamics Suite (Compressor Knee, Brickwall Limiter, Gate Hysteresis)",
       "spec_file": "tasks/specs/task-015.md",
-      "dependencies": [
-        "task-014"
-      ],
+      "dependencies": ["task-014"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_compressor_gain_reduction",
       "status": "pending"
     },
@@ -173,9 +158,7 @@
       "phase": "Phase 3: DSP Device Suite Completion & Studio-Grade Modeling",
       "title": "Modulation & Space Effects (Delay, Reverb, Chorus, Saturator, Redux)",
       "spec_file": "tasks/specs/task-016.md",
-      "dependencies": [
-        "task-015"
-      ],
+      "dependencies": ["task-015"],
       "verification_command": "cargo test -p livecraft-dsp --lib tests::test_saturator_processing",
       "status": "pending"
     },
@@ -184,9 +167,7 @@
       "phase": "Phase 4: Ableton Live 12 Desktop Interface Parity",
       "title": "Ableton Live 12 Control Bar 9-Section Micro-Architectural Rebuild",
       "spec_file": "tasks/specs/task-017.md",
-      "dependencies": [
-        "task-016"
-      ],
+      "dependencies": ["task-016"],
       "verification_command": "cargo test -p livecraft-gui",
       "status": "pending"
     },
@@ -195,9 +176,7 @@
       "phase": "Phase 4: Ableton Live 12 Desktop Interface Parity",
       "title": "Session View Clip Matrix & Track Width Resizing Dynamics",
       "spec_file": "tasks/specs/task-018.md",
-      "dependencies": [
-        "task-017"
-      ],
+      "dependencies": ["task-017"],
       "verification_command": "cargo test -p livecraft-gui",
       "status": "pending"
     },
@@ -206,9 +185,7 @@
       "phase": "Phase 4: Ableton Live 12 Desktop Interface Parity",
       "title": "Mixer Channel Strips & Calibrated 24-Segment Peak/RMS VU Meters",
       "spec_file": "tasks/specs/task-019.md",
-      "dependencies": [
-        "task-018"
-      ],
+      "dependencies": ["task-018"],
       "verification_command": "cargo test -p livecraft-gui",
       "status": "pending"
     },
@@ -217,9 +194,7 @@
       "phase": "Phase 4: Ableton Live 12 Desktop Interface Parity",
       "title": "Arrangement View Interactive Timeline & Real Audio Waveform Rendering",
       "spec_file": "tasks/specs/task-020.md",
-      "dependencies": [
-        "task-019"
-      ],
+      "dependencies": ["task-019"],
       "verification_command": "cargo test -p livecraft-gui",
       "status": "pending"
     },
@@ -228,9 +203,7 @@
       "phase": "Phase 4: Ableton Live 12 Desktop Interface Parity",
       "title": "Full 128-Note Piano Roll with Zoom/Scroll & Scale/Fold Mode",
       "spec_file": "tasks/specs/task-021.md",
-      "dependencies": [
-        "task-020"
-      ],
+      "dependencies": ["task-020"],
       "verification_command": "cargo test -p livecraft-gui",
       "status": "pending"
     },
@@ -239,9 +212,7 @@
       "phase": "Phase 4: Ableton Live 12 Desktop Interface Parity",
       "title": "Live 12 MIDI Transformations & Generative Tools Inspector Panel",
       "spec_file": "tasks/specs/task-022.md",
-      "dependencies": [
-        "task-021"
-      ],
+      "dependencies": ["task-021"],
       "verification_command": "cargo test -p livecraft-gui",
       "status": "pending"
     },
@@ -250,9 +221,7 @@
       "phase": "Phase 4: Ableton Live 12 Desktop Interface Parity",
       "title": "Modular Device Rack Cards & Live 12 Stacked View Architecture",
       "spec_file": "tasks/specs/task-023.md",
-      "dependencies": [
-        "task-022"
-      ],
+      "dependencies": ["task-022"],
       "verification_command": "cargo test -p livecraft-gui",
       "status": "pending"
     },
@@ -261,9 +230,7 @@
       "phase": "Phase 4: Ableton Live 12 Desktop Interface Parity",
       "title": "Complete Left Browser Taxonomy & Asset Hot-Swapping System",
       "spec_file": "tasks/specs/task-024.md",
-      "dependencies": [
-        "task-023"
-      ],
+      "dependencies": ["task-023"],
       "verification_command": "cargo test -p livecraft-gui",
       "status": "pending"
     },
@@ -272,9 +239,7 @@
       "phase": "Phase 5: Headless Workflows, Testing, CI & Documentation",
       "title": "Headless CLI Subcommand Polish & Faster-Than-Realtime Bouncer",
       "spec_file": "tasks/specs/task-025.md",
-      "dependencies": [
-        "task-024"
-      ],
+      "dependencies": ["task-024"],
       "verification_command": "cargo test -p livecraft-cli --test cli_tests",
       "status": "pending"
     },
@@ -283,9 +248,7 @@
       "phase": "Phase 5: Headless Workflows, Testing, CI & Documentation",
       "title": "Automated Visual Regression Test Harness & Screenshot Diffing",
       "spec_file": "tasks/specs/task-026.md",
-      "dependencies": [
-        "task-025"
-      ],
+      "dependencies": ["task-025"],
       "verification_command": "cargo run --bin livecraft -- gui --screenshot target/test_shot.png --view session",
       "status": "pending"
     },
@@ -294,9 +257,7 @@
       "phase": "Phase 5: Headless Workflows, Testing, CI & Documentation",
       "title": "Zero Audio Allocations Assertion & Full CI Suite Pass",
       "spec_file": "tasks/specs/task-027.md",
-      "dependencies": [
-        "task-026"
-      ],
+      "dependencies": ["task-026"],
       "verification_command": "cargo clippy --workspace --all-targets -- -D warnings",
       "status": "pending"
     },
@@ -305,9 +266,7 @@
       "phase": "Phase 5: Headless Workflows, Testing, CI & Documentation",
       "title": "Authoritative Documentation Suite & Manual Parity Audit",
       "spec_file": "tasks/specs/task-028.md",
-      "dependencies": [
-        "task-027"
-      ],
+      "dependencies": ["task-027"],
       "verification_command": "cargo test --workspace",
       "status": "pending"
     }

@@ -84,6 +84,23 @@ impl BiquadFilter {
         self.y2_r = 0.0;
     }
 
+    pub fn magnitude_response(&self, freq_hz: f32) -> f32 {
+        let omega = 2.0 * PI * freq_hz / self.sample_rate;
+        let cos1 = omega.cos();
+        let cos2 = (2.0 * omega).cos();
+        let sin1 = omega.sin();
+        let sin2 = (2.0 * omega).sin();
+
+        let num_re = self.b0 + self.b1 * cos1 + self.b2 * cos2;
+        let num_im = -self.b1 * sin1 - self.b2 * sin2;
+        let den_re = 1.0 + self.a1 * cos1 + self.a2 * cos2;
+        let den_im = -self.a1 * sin1 - self.a2 * sin2;
+
+        let num_sq = num_re * num_re + num_im * num_im;
+        let den_sq = (den_re * den_re + den_im * den_im).max(1e-12);
+        (num_sq / den_sq).sqrt()
+    }
+
     fn recalculate(&mut self) {
         let omega = 2.0 * PI * self.freq / self.sample_rate;
         let sn = omega.sin();

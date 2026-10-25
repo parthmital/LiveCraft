@@ -83,6 +83,46 @@ mod tests {
             assert_eq!(m.notes.len(), 3);
             assert_eq!(m.notes[2].pitch, 67);
         }
+
+        // Test ArrangementClip non-destructive editing (split, duplicate, trim)
+        let arr_clip =
+            ArrangementClip::new(100, track.clip_slots[0].clip.clone().unwrap(), 4.0, 4.0);
+
+        // Split at beat 6.0 (2 beats into the 4-beat clip)
+        let (first, second) = arr_clip.split_at(6.0, 101).expect("Split failed");
+        assert_eq!(first.start_beat, 4.0);
+        assert_eq!(first.length_beats, 2.0);
+        assert_eq!(second.start_beat, 6.0);
+        assert_eq!(second.length_beats, 2.0);
+
+        if let ClipPayload::Midi(ref m1) = first.clip.payload {
+            // Notes 60 (0..1) and 64 (1..2) should be in first
+            assert_eq!(m1.notes.len(), 2);
+            assert_eq!(m1.notes[0].pitch, 60);
+            assert_eq!(m1.notes[1].pitch, 64);
+        }
+        if let ClipPayload::Midi(ref m2) = second.clip.payload {
+            // Note 67 was originally at 2.0..4.0, which corresponds to 0.0..2.0 in second part
+            assert_eq!(m2.notes.len(), 1);
+            assert_eq!(m2.notes[0].pitch, 67);
+            assert_eq!(m2.notes[0].start_beat, 0.0);
+            assert_eq!(m2.notes[0].duration_beats, 2.0);
+        }
+
+        // Test duplicate
+        let dup = arr_clip.duplicate(102, 8.0);
+        assert_eq!(dup.id, 102);
+        assert_eq!(dup.start_beat, 12.0);
+        assert_eq!(dup.length_beats, 4.0);
+
+        // Test trim_start and trim_end
+        let mut trim_clip = arr_clip.clone();
+        trim_clip.trim_start(1.0);
+        assert_eq!(trim_clip.start_beat, 5.0);
+        assert_eq!(trim_clip.length_beats, 3.0);
+
+        trim_clip.trim_end(-1.0);
+        assert_eq!(trim_clip.length_beats, 2.0);
     }
 
     #[test]
@@ -95,6 +135,83 @@ mod tests {
         let imported = AlsParser::parse_xml(&xml, "Imported").expect("Failed to parse XML");
         assert_eq!(imported.tracks.len(), 4);
         assert_eq!(imported.transport.bpm, 120.0);
+
+        // Authentic Ableton Live 12 schema test snippet
+        let authentic_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Ableton MajorVersion="5" MinorVersion="12.0" SchemaChangeCount="3" Creator="Ableton Live 12.0.1">
+  <LiveSet>
+    <Transport>
+      <Tempo>
+        <Manual Value="128.5" />
+      </Tempo>
+    </Transport>
+    <Tracks>
+      <MidiTrack Id="1">
+        <Name>
+          <EffectiveName Value="Synth Lead" />
+        </Name>
+        <DeviceChain>
+          <Mixer>
+            <Volume>
+              <Manual Value="0.8" />
+            </Volume>
+            <Pan>
+              <Manual Value="-0.25" />
+            </Pan>
+          </Mixer>
+          <Devices>
+            <Operator Id="10">
+              <On>
+                <Manual Value="true" />
+              </On>
+              <FilterCutoff>
+                <Manual Value="2800" />
+              </FilterCutoff>
+            </Operator>
+            <Eq8 Id="11">
+              <On>
+                <Manual Value="true" />
+              </On>
+            </Eq8>
+            <Compressor2 Id="12">
+              <On>
+                <Manual Value="false" />
+              </On>
+              <Threshold>
+                <Manual Value="-16.0" />
+              </Threshold>
+            </Compressor2>
+          </Devices>
+        </DeviceChain>
+      </MidiTrack>
+    </Tracks>
+  </LiveSet>
+</Ableton>"#;
+
+        let parsed_ableton = AlsParser::parse_xml(authentic_xml, "AuthenticTest")
+            .expect("Failed to parse authentic Ableton XML snippet");
+
+        assert_eq!(parsed_ableton.transport.bpm, 128.5);
+        assert_eq!(parsed_ableton.tracks.len(), 1);
+        let track = &parsed_ableton.tracks[0];
+        assert_eq!(track.name, "Synth Lead");
+        assert!((track.volume_db - (20.0 * 0.8f32.log10())).abs() < 1e-3);
+        assert!((track.pan - (-0.25)).abs() < 1e-4);
+
+        assert_eq!(track.device_chain.len(), 3);
+        assert_eq!(track.device_chain[0].device_type, DeviceType::Operator);
+        assert_eq!(track.device_chain[0].id, 10);
+        assert!(track.device_chain[0].is_enabled);
+        assert_eq!(track.device_chain[0].get_param("filter_cutoff"), 2800.0);
+
+        assert_eq!(track.device_chain[1].device_type, DeviceType::EqEight);
+        assert_eq!(track.device_chain[1].id, 11);
+        assert!(track.device_chain[1].is_enabled);
+
+        assert_eq!(track.device_chain[2].device_type, DeviceType::Compressor);
+        assert_eq!(track.device_chain[2].id, 12);
+        assert!(!track.device_chain[2].is_enabled);
+        assert_eq!(track.device_chain[2].get_param("threshold_db"), -16.0);
     }
 
     #[test]
@@ -122,6 +239,10 @@ mod tests {
         assert!(xml.contains("Lead Synth"));
         assert!(xml.contains("Intro Hook"));
         assert!(xml.contains("Dorian"));
+        assert!(!xml.contains("<Device "));
+        assert!(xml.contains("<Operator Id=\"101\">"));
+        assert!(xml.contains("<FilterCutoff>"));
+        assert!(xml.contains("<Attack>"));
 
         let imported = AlsParser::parse_xml(&xml, "FullRoundtrip").expect("Import failed");
 
@@ -153,6 +274,20 @@ mod tests {
         } else {
             panic!("Expected Midi payload");
         }
+
+        // Verify gzip .als file save and load roundtrip
+        let temp_dir = std::env::temp_dir();
+        let als_path = temp_dir.join("livecraft_test_roundtrip.als");
+        AlsParser::save_project_to_als(&proj, &als_path).expect("Failed to save .als");
+        let loaded_proj = AlsParser::load_project(&als_path).expect("Failed to load .als");
+        let _ = std::fs::remove_file(&als_path);
+        assert_eq!(loaded_proj.scale.root_note, 2);
+        let loaded_dev = loaded_proj.tracks[0]
+            .device_chain
+            .iter()
+            .find(|d| d.name == "Lead Synth")
+            .expect("Lead Synth device not found in loaded .als");
+        assert_eq!(loaded_dev.get_param("filter_cutoff"), 3200.0);
     }
 
     #[test]
@@ -174,6 +309,74 @@ mod tests {
 
         assert!(history.redo(&mut proj));
         assert_eq!(proj.transport.bpm, 140.0);
+
+        // Test AutomationLane and undo/redo of automation points
+        let vol_lane = AutomationLane::new(1, AutomationTarget::TrackVolume);
+        let pan_lane = AutomationLane::new(2, AutomationTarget::TrackPan);
+        proj.tracks[0].automation_lanes.push(vol_lane);
+        proj.tracks[0].automation_lanes.push(pan_lane);
+        assert_eq!(proj.tracks[0].automation_lanes.len(), 2);
+
+        // Initially empty lane evaluate_at returns None
+        assert_eq!(proj.tracks[0].automation_lanes[0].evaluate_at(1.0), None);
+
+        // Add first point at beat 0.0, val 0.0
+        let p1 = AutomationPoint::new(0.0, 0.0, 0.0);
+        let add_p1 = Box::new(AddAutomationPointAction::new(0, 0, p1));
+        history.execute(add_p1, &mut proj);
+        assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 1);
+        assert_eq!(
+            proj.tracks[0].automation_lanes[0].evaluate_at(2.0),
+            Some(0.0)
+        );
+
+        // Add second point at beat 4.0, val 1.0
+        let p2 = AutomationPoint::new(4.0, 1.0, 0.0);
+        let add_p2 = Box::new(AddAutomationPointAction::new(0, 0, p2));
+        history.execute(add_p2, &mut proj);
+        assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 2);
+
+        // Evaluate at boundary points, before start, after end, and midpoint
+        assert!(
+            (proj.tracks[0].automation_lanes[0]
+                .evaluate_at(-1.0)
+                .unwrap()
+                - 0.0)
+                .abs()
+                < 1e-5
+        );
+        assert!((proj.tracks[0].automation_lanes[0].evaluate_at(0.0).unwrap() - 0.0).abs() < 1e-5);
+        assert!((proj.tracks[0].automation_lanes[0].evaluate_at(2.0).unwrap() - 0.5).abs() < 1e-5);
+        assert!((proj.tracks[0].automation_lanes[0].evaluate_at(4.0).unwrap() - 1.0).abs() < 1e-5);
+        assert!((proj.tracks[0].automation_lanes[0].evaluate_at(5.0).unwrap() - 1.0).abs() < 1e-5);
+
+        // Undo adding second point
+        assert!(history.undo(&mut proj));
+        assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 1);
+        assert_eq!(
+            proj.tracks[0].automation_lanes[0].evaluate_at(2.0),
+            Some(0.0)
+        );
+
+        // Redo adding second point
+        assert!(history.redo(&mut proj));
+        assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 2);
+        assert!((proj.tracks[0].automation_lanes[0].evaluate_at(2.0).unwrap() - 0.5).abs() < 1e-5);
+
+        // Remove point at index 0
+        let rem_p = Box::new(RemoveAutomationPointAction::new(0, 0, 0));
+        history.execute(rem_p, &mut proj);
+        assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 1);
+        assert_eq!(proj.tracks[0].automation_lanes[0].points[0].beat, 4.0);
+
+        // Undo removal
+        assert!(history.undo(&mut proj));
+        assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 2);
+        assert_eq!(proj.tracks[0].automation_lanes[0].points[0].beat, 0.0);
+
+        // Redo removal
+        assert!(history.redo(&mut proj));
+        assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 1);
     }
 
     #[test]
@@ -284,11 +487,27 @@ mod tests {
         let default_tuning = TuningSystem::default();
         let f69 = default_tuning.note_to_freq(69);
         assert!((f69 - 440.0).abs() < 1e-4);
+        let f81 = default_tuning.note_to_freq(81);
+        assert!((f81 - 880.0).abs() < 1e-4);
 
         let scl_text = "! pentatonic.scl\nSlendro 5-TET\n5\n240.0\n480.0\n720.0\n960.0\n1200.0\n";
         let slendro = TuningSystem::from_scala(scl_text).expect("Failed to parse scala");
         assert_eq!(slendro.degrees_cents.len(), 6);
         assert!((slendro.degrees_cents[1] - 240.0).abs() < 1e-4);
+
+        // Microtonal calculation verification
+        let s69 = slendro.note_to_freq(69);
+        assert!((s69 - 440.0).abs() < 1e-4);
+
+        let s70 = slendro.note_to_freq(70);
+        let expected_s70 = 440.0 * 2.0f64.powf(240.0 / 1200.0);
+        assert!((s70 - expected_s70).abs() < 1e-4);
+        // Ensure it differs from standard 12-TET note 70 (466.16 Hz)
+        assert!((s70 - default_tuning.note_to_freq(70)).abs() > 30.0);
+
+        // 5 notes up in 5-TET is an octave (880.0 Hz)
+        let s74 = slendro.note_to_freq(74);
+        assert!((s74 - 880.0).abs() < 1e-4);
     }
 
     #[test]

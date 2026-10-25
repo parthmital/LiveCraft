@@ -13,6 +13,7 @@ pub struct EqEightBand {
 
 #[derive(Debug, Clone)]
 pub struct EqEight {
+    pub device_id: u64,
     pub bands: Vec<EqEightBand>,
     pub sample_rate: f32,
     pub is_enabled: bool,
@@ -48,6 +49,7 @@ impl EqEight {
         }
 
         Self {
+            device_id: 0,
             bands,
             sample_rate,
             is_enabled: true,
@@ -68,6 +70,13 @@ impl EqEight {
         }
     }
 
+    pub fn set_band_type(&mut self, band_idx: usize, filter_type: FilterType) {
+        if let Some(band) = self.bands.get_mut(band_idx) {
+            band.filter_type = filter_type;
+            band.filter.set_type(filter_type);
+        }
+    }
+
     pub fn set_band_params(&mut self, band_idx: usize, freq: f32, gain_db: f32, q: f32) {
         if let Some(band) = self.bands.get_mut(band_idx) {
             band.freq = freq;
@@ -84,6 +93,41 @@ impl EqEight {
                 band.filter.reset_state();
             }
         }
+    }
+
+    pub fn magnitude_at_freq(&self, freq_hz: f32) -> f32 {
+        if !self.is_enabled {
+            return 1.0;
+        }
+        let mut total_mag = 1.0f32;
+        for band in &self.bands {
+            if band.is_enabled {
+                total_mag *= band.filter.magnitude_response(freq_hz);
+            }
+        }
+        total_mag
+    }
+
+    pub fn gain_db_at_freq(&self, freq_hz: f32) -> f32 {
+        let mag = self.magnitude_at_freq(freq_hz).max(1e-5);
+        20.0 * mag.log10()
+    }
+
+    pub fn response_curve_points(&self, num_points: usize) -> Vec<(f32, f32)> {
+        let num = num_points.max(2);
+        let min_freq = 20.0f32;
+        let max_freq = (self.sample_rate * 0.49).min(20000.0);
+        let log_min = min_freq.ln();
+        let log_max = max_freq.ln();
+
+        (0..num)
+            .map(|i| {
+                let t = i as f32 / (num - 1) as f32;
+                let freq = (log_min + t * (log_max - log_min)).exp();
+                let gain_db = self.gain_db_at_freq(freq);
+                (freq, gain_db)
+            })
+            .collect()
     }
 
     pub fn process_stereo(&mut self, in_l: f32, in_r: f32) -> (f32, f32) {

@@ -350,6 +350,76 @@ pub enum ClipPayload {
     Audio(AudioClipData),
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum AutomationTarget {
+    TrackVolume,
+    TrackPan,
+    SendLevel(usize),
+    DeviceParam { device_id: u64, param_key: String },
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationPoint {
+    pub beat: f64,
+    pub value: f32,
+    pub curve: f32, // -1.0 to 1.0 curvature
+}
+
+impl AutomationPoint {
+    pub fn new(beat: f64, value: f32, curve: f32) -> Self {
+        Self { beat, value, curve }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AutomationLane {
+    pub id: u64,
+    pub target: AutomationTarget,
+    pub points: Vec<AutomationPoint>,
+    pub is_enabled: bool,
+}
+
+impl AutomationLane {
+    pub fn new(id: u64, target: AutomationTarget) -> Self {
+        Self {
+            id,
+            target,
+            points: Vec::new(),
+            is_enabled: true,
+        }
+    }
+
+    pub fn evaluate_at(&self, beat: f64) -> Option<f32> {
+        if self.points.is_empty() || !self.is_enabled {
+            return None;
+        }
+        if beat <= self.points[0].beat {
+            return Some(self.points[0].value);
+        }
+        if beat >= self.points.last().unwrap().beat {
+            return Some(self.points.last().unwrap().value);
+        }
+        // Find surrounding segment and interpolate
+        for w in self.points.windows(2) {
+            if beat >= w[0].beat && beat <= w[1].beat {
+                let span = w[1].beat - w[0].beat;
+                if span <= 1e-6 {
+                    return Some(w[0].value);
+                }
+                let t = (beat - w[0].beat) / span;
+                let factor = if w[0].curve.abs() > 1e-4 {
+                    let exp = (-w[0].curve as f64 * 2.0).exp();
+                    t.powf(exp)
+                } else {
+                    t
+                };
+                return Some(w[0].value + (w[1].value - w[0].value) * factor as f32);
+            }
+        }
+        None
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Clip {
     pub id: u64,
@@ -362,6 +432,8 @@ pub struct Clip {
     pub start_marker_beat: f64,
     pub end_marker_beat: f64,
     pub payload: ClipPayload,
+    #[serde(default)]
+    pub automation_lanes: Vec<AutomationLane>,
 }
 
 impl Clip {
@@ -377,6 +449,7 @@ impl Clip {
             start_marker_beat: 0.0,
             end_marker_beat: length_beats,
             payload: ClipPayload::Midi(MidiClipData { notes: Vec::new() }),
+            automation_lanes: Vec::new(),
         }
     }
 
@@ -407,6 +480,7 @@ impl Clip {
                 gain_db: 0.0,
                 pitch_cents: 0,
             }),
+            automation_lanes: Vec::new(),
         }
     }
 }
@@ -451,6 +525,104 @@ impl ArrangementClip {
             clip,
             start_beat,
             length_beats,
+        }
+    }
+
+    pub fn split_at(&self, split_beat: f64, new_id: u64) -> Option<(Self, Self)> {
+        if split_beat <= self.start_beat || split_beat >= self.start_beat + self.length_beats {
+            return None;
+        }
+        let first_len = split_beat - self.start_beat;
+        let second_len = self.length_beats - first_len;
+
+        let mut first = self.clone();
+        first.length_beats = first_len;
+        first.clip.length_beats = first_len;
+        first.clip.end_marker_beat = first.clip.start_marker_beat + first_len;
+
+        let mut second = self.clone();
+        second.id = new_id;
+        second.clip.id = new_id;
+        second.start_beat = split_beat;
+        second.length_beats = second_len;
+        second.clip.length_beats = second_len;
+        second.clip.start_marker_beat += first_len;
+        second.clip.end_marker_beat = second.clip.start_marker_beat + second_len;
+
+        // Adjust internal markers & payload
+        if let (ClipPayload::Midi(ref mut m1), ClipPayload::Midi(ref mut m2)) =
+            (&mut first.clip.payload, &mut second.clip.payload)
+        {
+            let rel_split = first_len;
+            m1.notes.retain(|n| n.start_beat < rel_split);
+            for n in &mut m1.notes {
+                if n.start_beat + n.duration_beats > rel_split {
+                    n.duration_beats = (rel_split - n.start_beat).max(0.01);
+                }
+            }
+            m2.notes
+                .retain(|n| n.start_beat + n.duration_beats > rel_split);
+            for n in &mut m2.notes {
+                if n.start_beat < rel_split {
+                    let cut = rel_split - n.start_beat;
+                    n.duration_beats = (n.duration_beats - cut).max(0.01);
+                    n.start_beat = 0.0;
+                } else {
+                    n.start_beat -= rel_split;
+                }
+            }
+        }
+        Some((first, second))
+    }
+
+    pub fn duplicate(&self, new_id: u64, offset_beats: f64) -> Self {
+        let mut dup = self.clone();
+        dup.id = new_id;
+        dup.clip.id = new_id;
+        dup.start_beat += offset_beats;
+        dup
+    }
+
+    pub fn trim_start(&mut self, delta_beats: f64) {
+        let actual_delta = delta_beats.min(self.length_beats - 0.01);
+        self.start_beat += actual_delta;
+        self.length_beats -= actual_delta;
+        self.clip.length_beats = self.length_beats;
+        self.clip.start_marker_beat += actual_delta;
+        if let ClipPayload::Midi(ref mut mdata) = self.clip.payload {
+            if actual_delta > 0.0 {
+                mdata
+                    .notes
+                    .retain(|n| n.start_beat + n.duration_beats > actual_delta);
+                for n in &mut mdata.notes {
+                    if n.start_beat < actual_delta {
+                        let cut = actual_delta - n.start_beat;
+                        n.duration_beats = (n.duration_beats - cut).max(0.01);
+                        n.start_beat = 0.0;
+                    } else {
+                        n.start_beat -= actual_delta;
+                    }
+                }
+            } else {
+                for n in &mut mdata.notes {
+                    n.start_beat -= actual_delta;
+                }
+            }
+        }
+    }
+
+    pub fn trim_end(&mut self, delta_beats: f64) {
+        let new_len = (self.length_beats + delta_beats).max(0.01);
+        self.length_beats = new_len;
+        self.clip.length_beats = new_len;
+        self.clip.end_marker_beat = self.clip.start_marker_beat + new_len;
+        if let ClipPayload::Midi(ref mut mdata) = self.clip.payload {
+            mdata.notes.retain(|n| n.start_beat < new_len);
+            for n in &mut mdata.notes {
+                if n.start_beat + n.duration_beats > new_len {
+                    n.duration_beats = (new_len - n.start_beat).max(0.01);
+                }
+            }
         }
     }
 }
@@ -750,6 +922,14 @@ impl Device {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub enum MonitoringMode {
+    In,
+    #[default]
+    Auto,
+    Off,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
     pub id: u64,
@@ -761,10 +941,14 @@ pub struct Track {
     pub is_muted: bool,
     pub is_soloed: bool,
     pub is_armed: bool,
+    #[serde(default)]
+    pub monitoring: MonitoringMode,
     pub sends: Vec<f32>, // Send levels to Return tracks (0.0 to 1.0)
     pub clip_slots: Vec<ClipSlot>,
     #[serde(default)]
     pub arrangement_clips: Vec<ArrangementClip>,
+    #[serde(default)]
+    pub automation_lanes: Vec<AutomationLane>,
     pub device_chain: Vec<Device>,
 }
 
@@ -791,9 +975,11 @@ impl Track {
             is_muted: false,
             is_soloed: false,
             is_armed: false,
+            monitoring: MonitoringMode::Auto,
             sends: vec![0.0, 0.0], // Sends A and B
             clip_slots,
             arrangement_clips: Vec::new(),
+            automation_lanes: Vec::new(),
             device_chain: Vec::new(),
         }
     }
@@ -928,12 +1114,22 @@ impl TuningSystem {
         if self.degrees_cents.is_empty() {
             return 440.0 * 2.0f64.powf((midi_note as f64 - 69.0) / 12.0);
         }
-        let n = self.degrees_cents.len();
+        let (count, period_cents) = if self.degrees_cents.len() > 1
+            && self.degrees_cents[0] == 0.0
+            && self.degrees_cents.last().copied().unwrap_or(0.0) >= 100.0
+            && self.degrees_cents.len() != 12
+        {
+            let cnt = self.degrees_cents.len() - 1;
+            (cnt, self.degrees_cents[cnt])
+        } else {
+            (self.degrees_cents.len(), 1200.0)
+        };
         let delta = midi_note as i32 - self.base_midi_note as i32;
-        let octave = delta.div_euclid(n as i32);
-        let deg = delta.rem_euclid(n as i32) as usize;
-        let cents = octave as f64 * 1200.0 + self.degrees_cents[deg];
-        self.base_freq_hz * 2.0f64.powf(cents / 1200.0)
+        let octave = delta.div_euclid(count as i32);
+        let deg = delta.rem_euclid(count as i32) as usize;
+        let cents = octave as f64 * period_cents + self.degrees_cents[deg];
+        let freq = self.base_freq_hz * 2.0f64.powf(cents / 1200.0);
+        freq.clamp(20.0, 20000.0)
     }
 }
 

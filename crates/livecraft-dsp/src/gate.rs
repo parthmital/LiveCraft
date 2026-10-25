@@ -2,6 +2,8 @@
 /// Passes only signals whose level exceeds a user-specified threshold,
 /// with hysteresis (Return), attack, hold, release, and floor controls.
 pub struct GateEffect {
+    pub device_id: u64,
+    pub is_enabled: bool,
     pub sample_rate: f32,
     pub threshold_db: f32,
     pub return_db: f32, // Hysteresis (level difference to close gate)
@@ -17,6 +19,8 @@ pub struct GateEffect {
 impl GateEffect {
     pub fn new(sample_rate: f32) -> Self {
         Self {
+            device_id: 0,
+            is_enabled: true,
             sample_rate: sample_rate.max(1000.0),
             threshold_db: -30.0,
             return_db: 3.0,
@@ -37,6 +41,9 @@ impl GateEffect {
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        if !self.is_enabled {
+            return;
+        }
         let thresh_linear = 10.0f32.powf(self.threshold_db / 20.0);
         let close_linear = 10.0f32.powf((self.threshold_db - self.return_db.abs()) / 20.0);
         let floor_linear = 10.0f32.powf(self.floor_db / 20.0);

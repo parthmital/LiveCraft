@@ -12,6 +12,7 @@ pub enum SaturatorCurve {
 
 #[derive(Debug, Clone)]
 pub struct SaturatorEffect {
+    pub device_id: u64,
     pub drive_db: f32,
     pub curve: SaturatorCurve,
     pub output_db: f32,
@@ -23,6 +24,7 @@ pub struct SaturatorEffect {
 impl SaturatorEffect {
     pub fn new(sample_rate: f32) -> Self {
         Self {
+            device_id: 0,
             drive_db: 6.0,
             curve: SaturatorCurve::SoftSine,
             output_db: -2.0,

@@ -144,12 +144,21 @@ impl DrumPadVoice {
                 self.amp_env -= dt * 4.0;
                 s
             }
-            // 48..=50: Cymbals (Crash & Ride)
-            48..=50 => {
+            // 48..=49: Cymbals (Crash & Ride)
+            48..=49 => {
                 let noise = self.next_noise();
                 let ring = (2.0 * PI * 4800.0 * t).sin() * 0.25;
                 let s = (noise * 0.75 + ring) * self.amp_env;
                 self.amp_env -= dt * 1.5;
+                s
+            }
+            // 50: Cowbell (Dual high square tones with metallic ring)
+            50 => {
+                let s1 = (2.0 * PI * 587.0 * t).sin();
+                let s2 = (2.0 * PI * 845.0 * t).sin();
+                let pulse = if (s1 + s2) > 0.0 { 0.6 } else { -0.6 };
+                let s = pulse * self.amp_env;
+                self.amp_env -= dt * 9.0;
                 s
             }
             // 51: Tambourine / Shaker
@@ -204,7 +213,7 @@ impl DrumRackInstrument {
             (47, "High Tom", None),
             (48, "Crash Cymbal", None),
             (49, "Ride Cymbal", None),
-            (50, "Ride Bell", None),
+            (50, "Cowbell", None),
             (51, "Perc / Tamb", None),
         ];
 

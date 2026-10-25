@@ -64,6 +64,7 @@ impl AllPassFilter {
 
 #[derive(Debug, Clone)]
 pub struct ReverbEffect {
+    pub device_id: u64,
     combs_l: Vec<CombFilter>,
     combs_r: Vec<CombFilter>,
     allpass_l: Vec<AllPassFilter>,
@@ -97,6 +98,7 @@ impl ReverbEffect {
             .collect();
 
         let mut rev = Self {
+            device_id: 0,
             combs_l,
             combs_r,
             allpass_l,

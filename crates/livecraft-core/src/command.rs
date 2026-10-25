@@ -195,3 +195,155 @@ impl ReversibleAction for AddTrackAction {
         project.tracks.pop();
     }
 }
+
+#[derive(Debug)]
+pub struct AddAutomationPointAction {
+    pub track_index: usize,
+    pub lane_index: usize,
+    pub point: AutomationPoint,
+    pub inserted_index: Option<usize>,
+}
+
+impl AddAutomationPointAction {
+    pub fn new(track_index: usize, lane_index: usize, point: AutomationPoint) -> Self {
+        Self {
+            track_index,
+            lane_index,
+            point,
+            inserted_index: None,
+        }
+    }
+}
+
+impl ReversibleAction for AddAutomationPointAction {
+    fn execute(&mut self, project: &mut Project) {
+        if let Some(track) = project.tracks.get_mut(self.track_index) {
+            if let Some(lane) = track.automation_lanes.get_mut(self.lane_index) {
+                let pos = lane.points.partition_point(|p| p.beat < self.point.beat);
+                lane.points.insert(pos, self.point.clone());
+                self.inserted_index = Some(pos);
+            }
+        }
+    }
+
+    fn undo(&mut self, project: &mut Project) {
+        if let Some(idx) = self.inserted_index.take() {
+            if let Some(track) = project.tracks.get_mut(self.track_index) {
+                if let Some(lane) = track.automation_lanes.get_mut(self.lane_index) {
+                    if idx < lane.points.len() {
+                        lane.points.remove(idx);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct RemoveAutomationPointAction {
+    pub track_index: usize,
+    pub lane_index: usize,
+    pub point_index: usize,
+    pub removed_point: Option<AutomationPoint>,
+}
+
+impl RemoveAutomationPointAction {
+    pub fn new(track_index: usize, lane_index: usize, point_index: usize) -> Self {
+        Self {
+            track_index,
+            lane_index,
+            point_index,
+            removed_point: None,
+        }
+    }
+}
+
+impl ReversibleAction for RemoveAutomationPointAction {
+    fn execute(&mut self, project: &mut Project) {
+        if let Some(track) = project.tracks.get_mut(self.track_index) {
+            if let Some(lane) = track.automation_lanes.get_mut(self.lane_index) {
+                if self.point_index < lane.points.len() {
+                    let p = lane.points.remove(self.point_index);
+                    self.removed_point = Some(p);
+                }
+            }
+        }
+    }
+
+    fn undo(&mut self, project: &mut Project) {
+        if let Some(p) = self.removed_point.take() {
+            if let Some(track) = project.tracks.get_mut(self.track_index) {
+                if let Some(lane) = track.automation_lanes.get_mut(self.lane_index) {
+                    if self.point_index <= lane.points.len() {
+                        lane.points.insert(self.point_index, p);
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MoveAutomationPointAction {
+    pub track_index: usize,
+    pub lane_index: usize,
+    pub point_index: usize,
+    pub old_beat: f64,
+    pub old_value: f32,
+    pub old_curve: f32,
+    pub new_beat: f64,
+    pub new_value: f32,
+    pub new_curve: f32,
+}
+
+impl MoveAutomationPointAction {
+    pub fn new(
+        track_index: usize,
+        lane_index: usize,
+        point_index: usize,
+        new_beat: f64,
+        new_value: f32,
+        new_curve: f32,
+    ) -> Self {
+        Self {
+            track_index,
+            lane_index,
+            point_index,
+            old_beat: 0.0,
+            old_value: 0.0,
+            old_curve: 0.0,
+            new_beat,
+            new_value,
+            new_curve,
+        }
+    }
+}
+
+impl ReversibleAction for MoveAutomationPointAction {
+    fn execute(&mut self, project: &mut Project) {
+        if let Some(track) = project.tracks.get_mut(self.track_index) {
+            if let Some(lane) = track.automation_lanes.get_mut(self.lane_index) {
+                if let Some(point) = lane.points.get_mut(self.point_index) {
+                    self.old_beat = point.beat;
+                    self.old_value = point.value;
+                    self.old_curve = point.curve;
+                    point.beat = self.new_beat;
+                    point.value = self.new_value;
+                    point.curve = self.new_curve;
+                }
+            }
+        }
+    }
+
+    fn undo(&mut self, project: &mut Project) {
+        if let Some(track) = project.tracks.get_mut(self.track_index) {
+            if let Some(lane) = track.automation_lanes.get_mut(self.lane_index) {
+                if let Some(point) = lane.points.get_mut(self.point_index) {
+                    point.beat = self.old_beat;
+                    point.value = self.old_value;
+                    point.curve = self.old_curve;
+                }
+            }
+        }
+    }
+}

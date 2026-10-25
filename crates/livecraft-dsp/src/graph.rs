@@ -11,6 +11,7 @@ use crate::eq8::EqEight;
 use crate::gate::GateEffect;
 use crate::limiter::{LimiterEffect, UtilityEffect};
 use crate::operator::OperatorSynth;
+use crate::processor::{create_processor, DspProcessor};
 use crate::redux::ReduxEffect;
 use crate::reverb::ReverbEffect;
 use crate::saturator::SaturatorEffect;
@@ -54,12 +55,22 @@ impl TrackMeter {
     }
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct ActiveNoteInstance {
+    pub pitch: u8,
+    pub note_index: usize,
+    pub start_beat: f64,
+    pub duration_beats: f64,
+}
+
 pub struct TrackDspState {
     pub track_id: u64,
     pub volume_db: f32,
     pub pan: f32,
     pub is_muted: bool,
     pub is_soloed: bool,
+    pub is_armed: bool,
+    pub monitoring: MonitoringMode,
     pub sends: Vec<f32>,
     pub clip_slots: Vec<ClipSlot>,
     pub arrangement_clips: Vec<ArrangementClip>,
@@ -67,6 +78,7 @@ pub struct TrackDspState {
     pub synth: Option<OperatorSynth>,
     pub simpler: Option<SimplerInstrument>,
     pub drum_rack: Option<DrumRackInstrument>,
+    pub processors: Vec<Box<dyn DspProcessor>>,
     pub eq8: Option<EqEight>,
     pub delay: Option<DelayEffect>,
     pub reverb: Option<ReverbEffect>,
@@ -84,7 +96,9 @@ pub struct TrackDspState {
     pub current_audio_in: (f32, f32),
     pub active_clip_slot: Option<usize>,
     pub meter: TrackMeter,
-    active_notes: [bool; 128],
+    pub active_note_instances: Vec<ActiveNoteInstance>,
+    pub audio_block_l: [f32; 32],
+    pub audio_block_r: [f32; 32],
 }
 
 impl TrackDspState {
@@ -95,6 +109,8 @@ impl TrackDspState {
             pan: track.pan,
             is_muted: track.is_muted,
             is_soloed: track.is_soloed,
+            is_armed: track.is_armed,
+            monitoring: track.monitoring,
             sends: track.sends.clone(),
             clip_slots: track.clip_slots.clone(),
             arrangement_clips: track.arrangement_clips.clone(),
@@ -102,6 +118,7 @@ impl TrackDspState {
             synth: None,
             simpler: None,
             drum_rack: None,
+            processors: Vec::new(),
             eq8: None,
             delay: None,
             reverb: None,
@@ -119,7 +136,9 @@ impl TrackDspState {
             current_audio_in: (0.0, 0.0),
             active_clip_slot: None,
             meter: TrackMeter::default(),
-            active_notes: [false; 128],
+            active_note_instances: Vec::new(),
+            audio_block_l: [0.0; 32],
+            audio_block_r: [0.0; 32],
         };
         state.sync_devices(track, sample_rate);
         state
@@ -131,6 +150,8 @@ impl TrackDspState {
         self.pan = track.pan;
         self.is_muted = track.is_muted;
         self.is_soloed = track.is_soloed;
+        self.is_armed = track.is_armed;
+        self.monitoring = track.monitoring;
         self.sends = track.sends.clone();
         self.clip_slots = track.clip_slots.clone();
         self.arrangement_clips = track.arrangement_clips.clone();
@@ -198,6 +219,22 @@ impl TrackDspState {
             self.redux = None;
         }
 
+        let mut new_processors: Vec<Box<dyn DspProcessor>> =
+            Vec::with_capacity(track.device_chain.len());
+        for dev in &track.device_chain {
+            if let Some(pos) = self.processors.iter().position(|p| p.device_id() == dev.id) {
+                let mut existing = self.processors.remove(pos);
+                existing.set_enabled(dev.is_enabled);
+                for (k, v) in &dev.parameters {
+                    existing.update_param(k, *v);
+                }
+                new_processors.push(existing);
+            } else if let Some(proc) = create_processor(dev, sample_rate) {
+                new_processors.push(proc);
+            }
+        }
+        self.processors = new_processors;
+
         for dev in &track.device_chain {
             self.sync_single_device(dev, sample_rate);
         }
@@ -218,6 +255,11 @@ impl TrackDspState {
             dev.set_param(param_key, value);
             let dev_clone = dev.clone();
             self.sync_single_device(&dev_clone, sample_rate);
+        }
+        for proc in &mut self.processors {
+            if proc.device_id() == device_id || device_id == 0 {
+                proc.update_param(param_key, value);
+            }
         }
     }
 
@@ -393,91 +435,13 @@ impl TrackDspState {
             r += sr;
         }
 
-        // Effect chain
-        if let Some(ref mut eq) = self.eq8 {
-            let (el, er) = eq.process_stereo(l, r);
-            l = el;
-            r = er;
-        }
-
-        if let Some(ref mut comp) = self.compressor {
-            let (cl, cr) = comp.process_stereo(l, r);
-            l = cl;
-            r = cr;
-        }
-
-        if let Some(ref mut sat) = self.saturator {
-            let (sl, sr) = sat.process_stereo(l, r);
-            l = sl;
-            r = sr;
-        }
-
-        if let Some(ref mut af) = self.auto_filter {
-            let (fl, fr) = af.process_stereo(l, r);
-            l = fl;
-            r = fr;
-        }
-
-        if let Some(ref mut eq) = self.eq3 {
-            let mut sl = [l];
-            let mut sr = [r];
-            eq.process(&mut sl, &mut sr);
-            l = sl[0];
-            r = sr[0];
-        }
-
-        if let Some(ref mut g) = self.gate {
-            let mut sl = [l];
-            let mut sr = [r];
-            g.process(&mut sl, &mut sr);
-            l = sl[0];
-            r = sr[0];
-        }
-
-        if let Some(ref mut rd) = self.redux {
-            let mut sl = [l];
-            let mut sr = [r];
-            rd.process(&mut sl, &mut sr);
-            l = sl[0];
-            r = sr[0];
-        }
-
-        if let Some(ref mut ap) = self.auto_pan {
-            let mut sl = [l];
-            let mut sr = [r];
-            ap.process(&mut sl, &mut sr);
-            l = sl[0];
-            r = sr[0];
-        }
-
-        if let Some(ref mut ch) = self.chorus {
-            let (cl, cr) = ch.process_stereo(l, r);
-            l = cl;
-            r = cr;
-        }
-
-        if let Some(ref mut del) = self.delay {
-            let (dl, dr) = del.process_stereo(l, r);
-            l = dl;
-            r = dr;
-        }
-
-        if let Some(ref mut rev) = self.reverb {
-            let (rl, rr) = rev.process_stereo(l, r);
-            l = rl;
-            r = rr;
-        }
-
-        if let Some(ref mut lim) = self.limiter {
-            let (ll, lr) = lim.process_stereo(l, r);
-            l = ll;
-            r = lr;
-        }
-
-        if let Some(ref ut) = self.utility {
-            let (ul, ur) = ut.process_stereo(l, r);
-            l = ul;
-            r = ur;
+        // Modular effect chain in sequential topological order
+        for proc in &mut self.processors {
+            if proc.is_enabled() {
+                let (el, er) = proc.process_stereo(l, r);
+                l = el;
+                r = er;
+            }
         }
 
         self.meter.update(l, r);
@@ -504,7 +468,7 @@ impl TrackDspState {
         if let Some(ref mut dr) = self.drum_rack {
             dr.all_notes_off();
         }
-        self.active_notes = [false; 128];
+        self.active_note_instances.clear();
     }
 }
 
@@ -519,6 +483,7 @@ pub struct AudioGraph {
     pub bpm: f32,
     pub scratch_l: Vec<f32>,
     pub scratch_r: Vec<f32>,
+    pub tuning: Option<TuningSystem>,
 }
 
 impl AudioGraph {
@@ -551,6 +516,7 @@ impl AudioGraph {
             bpm: project.transport.bpm,
             scratch_l,
             scratch_r,
+            tuning: project.tuning.clone(),
         }
     }
 
@@ -671,6 +637,7 @@ impl AudioGraph {
 
     pub fn sync_project(&mut self, project: &Project) {
         self.bpm = project.transport.bpm;
+        self.tuning = project.tuning.clone();
 
         // Tracks
         while self.track_states.len() < project.tracks.len() {
@@ -805,23 +772,29 @@ impl AudioGraph {
             let block_len = block_end - s_idx;
 
             if self.is_playing {
-                self.dispatch_clip_events();
+                self.dispatch_clip_events(block_len, dt_beats);
                 self.playhead_beats += dt_beats * block_len as f64;
+            } else {
+                for state in self.track_states.iter_mut() {
+                    state.audio_block_l[0..block_len].fill(0.0);
+                    state.audio_block_r[0..block_len].fill(0.0);
+                    state.current_audio_in = (0.0, 0.0);
+                }
             }
 
             let any_solo = self.track_states.iter().any(|t| t.is_soloed);
+            let num_returns = self.return_states.len();
 
-            for i in s_idx..block_end {
+            for (sub_i, i) in (s_idx..block_end).enumerate() {
                 let mut master_l = 0.0f32;
                 let mut master_r = 0.0f32;
-                let mut send_a_l = 0.0f32;
-                let mut send_a_r = 0.0f32;
-                let mut send_b_l = 0.0f32;
-                let mut send_b_r = 0.0f32;
+                let mut send_sums_l = [0.0f32; 16];
+                let mut send_sums_r = [0.0f32; 16];
 
                 for state in self.track_states.iter_mut() {
-                    let (raw_l, raw_r) =
-                        state.process_sample(state.current_audio_in.0, state.current_audio_in.1);
+                    let in_l = state.audio_block_l[sub_i];
+                    let in_r = state.audio_block_r[sub_i];
+                    let (raw_l, raw_r) = state.process_sample(in_l, in_r);
 
                     // Skip muted tracks or un-soloed tracks if someone is soloed
                     if state.is_muted || (any_solo && !state.is_soloed) {
@@ -848,29 +821,36 @@ impl AudioGraph {
                     master_l += track_out_l;
                     master_r += track_out_r;
 
-                    // Sends
-                    if let Some(&send_a) = state.sends.first() {
-                        send_a_l += track_out_l * send_a;
-                        send_a_r += track_out_r * send_a;
-                    }
-                    if let Some(&send_b) = state.sends.get(1) {
-                        send_b_l += track_out_l * send_b;
-                        send_b_r += track_out_r * send_b;
+                    // Accumulate to dynamic Return tracks
+                    for (ret_idx, &send_level) in state.sends.iter().enumerate() {
+                        if ret_idx < 16 && ret_idx < num_returns {
+                            send_sums_l[ret_idx] += track_out_l * send_level;
+                            send_sums_r[ret_idx] += track_out_r * send_level;
+                        }
                     }
                 }
 
-                // Process Return A
-                if let Some(ret_a_state) = self.return_states.first_mut() {
-                    let (ret_l, ret_r) = ret_a_state.process_sample(send_a_l, send_a_r);
-                    master_l += ret_l;
-                    master_r += ret_r;
-                }
+                // Process all Return tracks dynamically and accumulate into Master
+                for (ret_idx, ret_state) in self.return_states.iter_mut().enumerate() {
+                    let s_l = if ret_idx < 16 {
+                        send_sums_l[ret_idx]
+                    } else {
+                        0.0
+                    };
+                    let s_r = if ret_idx < 16 {
+                        send_sums_r[ret_idx]
+                    } else {
+                        0.0
+                    };
+                    let (ret_l, ret_r) = ret_state.process_sample(s_l, s_r);
 
-                // Process Return B
-                if let Some(ret_b_state) = self.return_states.get_mut(1) {
-                    let (ret_l, ret_r) = ret_b_state.process_sample(send_b_l, send_b_r);
-                    master_l += ret_l;
-                    master_r += ret_r;
+                    let ret_vol = if ret_state.volume_db <= -59.0 {
+                        0.0
+                    } else {
+                        10.0f32.powf(ret_state.volume_db / 20.0)
+                    };
+                    master_l += ret_l * ret_vol;
+                    master_r += ret_r * ret_vol;
                 }
 
                 // Master channel processing
@@ -891,15 +871,37 @@ impl AudioGraph {
         }
     }
 
-    fn dispatch_clip_events(&mut self) {
+    fn dispatch_clip_events(&mut self, block_len: usize, dt_beats: f64) {
         let bpm = self.bpm;
         for state in self.track_states.iter_mut() {
+            let should_play_clips = match state.monitoring {
+                MonitoringMode::In => false,
+                MonitoringMode::Auto => !state.is_armed,
+                MonitoringMode::Off => true,
+            };
+
+            if !should_play_clips {
+                state.stop_all_notes();
+                state.audio_block_l[0..block_len].fill(0.0);
+                state.audio_block_r[0..block_len].fill(0.0);
+                state.current_audio_in = (0.0, 0.0);
+                continue;
+            }
+
             if let Some(slot_idx) = state.active_clip_slot {
                 let maybe_clip = state.clip_slots.get(slot_idx).and_then(|s| s.clip.clone());
                 if let Some(clip) = maybe_clip {
                     let clip_len = clip.length_beats.max(1.0);
                     let clip_pos = (self.playhead_beats % clip_len).abs();
-                    Self::process_clip_payload(state, &clip, clip_pos, bpm);
+                    Self::process_clip_payload_with_tuning(
+                        state,
+                        &clip,
+                        clip_pos,
+                        bpm,
+                        block_len,
+                        dt_beats,
+                        self.tuning.as_ref(),
+                    );
                 }
             } else if !state.arrangement_clips.is_empty() {
                 let mut matched_clip = None;
@@ -919,9 +921,19 @@ impl AudioGraph {
                     }
                 }
                 if let Some((clip, clip_pos)) = matched_clip {
-                    Self::process_clip_payload(state, &clip, clip_pos, bpm);
+                    Self::process_clip_payload_with_tuning(
+                        state,
+                        &clip,
+                        clip_pos,
+                        bpm,
+                        block_len,
+                        dt_beats,
+                        self.tuning.as_ref(),
+                    );
                 } else {
                     state.stop_all_notes();
+                    state.audio_block_l[0..block_len].fill(0.0);
+                    state.audio_block_r[0..block_len].fill(0.0);
                     state.current_audio_in = (0.0, 0.0);
                 }
             } else {
@@ -942,57 +954,118 @@ impl AudioGraph {
                     }
                 }
                 if let Some((clip, clip_pos)) = matched_clip {
-                    Self::process_clip_payload(state, &clip, clip_pos, bpm);
+                    Self::process_clip_payload_with_tuning(
+                        state,
+                        &clip,
+                        clip_pos,
+                        bpm,
+                        block_len,
+                        dt_beats,
+                        self.tuning.as_ref(),
+                    );
                 } else {
                     if has_clips {
                         state.stop_all_notes();
                     }
+                    state.audio_block_l[0..block_len].fill(0.0);
+                    state.audio_block_r[0..block_len].fill(0.0);
                     state.current_audio_in = (0.0, 0.0);
                 }
             }
         }
     }
 
-    fn process_clip_payload(state: &mut TrackDspState, clip: &Clip, clip_pos: f64, bpm: f32) {
+    pub fn process_clip_payload(
+        state: &mut TrackDspState,
+        clip: &Clip,
+        clip_pos: f64,
+        bpm: f32,
+        block_len: usize,
+        dt_beats: f64,
+    ) {
+        Self::process_clip_payload_with_tuning(
+            state, clip, clip_pos, bpm, block_len, dt_beats, None,
+        );
+    }
+
+    pub fn process_clip_payload_with_tuning(
+        state: &mut TrackDspState,
+        clip: &Clip,
+        clip_pos: f64,
+        bpm: f32,
+        block_len: usize,
+        dt_beats: f64,
+        tuning: Option<&TuningSystem>,
+    ) {
         match clip.payload {
             ClipPayload::Midi(ref midi_data) => {
+                state.audio_block_l[0..block_len].fill(0.0);
+                state.audio_block_r[0..block_len].fill(0.0);
                 state.current_audio_in = (0.0, 0.0);
-                for note in &midi_data.notes {
+                for (idx, note) in midi_data.notes.iter().enumerate() {
                     if !note.muted {
                         let note_start = note.start_beat;
                         let note_end = note.start_beat + note.duration_beats;
-                        let p = note.pitch as usize;
+                        let is_active_now = clip_pos >= note_start && clip_pos < note_end;
+                        let existing_pos = state
+                            .active_note_instances
+                            .iter()
+                            .position(|inst| inst.note_index == idx && inst.pitch == note.pitch);
 
-                        if clip_pos >= note_start && clip_pos < note_end {
-                            if p < 128 && !state.active_notes[p] {
-                                state.active_notes[p] = true;
+                        if is_active_now {
+                            if existing_pos.is_none() {
+                                state.active_note_instances.push(ActiveNoteInstance {
+                                    pitch: note.pitch,
+                                    note_index: idx,
+                                    start_beat: note.start_beat,
+                                    duration_beats: note.duration_beats,
+                                });
+                                let freq = if let Some(t) = tuning {
+                                    t.note_to_freq(note.pitch) as f32
+                                } else {
+                                    440.0 * 2.0f32.powf((note.pitch as f32 - 69.0) / 12.0)
+                                };
                                 if let Some(ref mut s) = state.synth {
-                                    s.note_on(note.pitch, note.velocity);
+                                    s.note_on_with_freq(note.pitch, note.velocity, freq);
                                 }
                                 if let Some(ref mut sm) = state.simpler {
-                                    sm.note_on(note.pitch, note.velocity);
+                                    sm.note_on_with_freq(note.pitch, note.velocity, freq);
                                 }
                                 if let Some(ref mut dr) = state.drum_rack {
                                     dr.note_on(note.pitch, note.velocity);
                                 }
                             }
-                        } else if p < 128 && state.active_notes[p] {
-                            state.active_notes[p] = false;
-                            if let Some(ref mut s) = state.synth {
-                                s.note_off(note.pitch);
-                            }
-                            if let Some(ref mut sm) = state.simpler {
-                                sm.note_off(note.pitch);
-                            }
-                            if let Some(ref mut dr) = state.drum_rack {
-                                dr.note_off(note.pitch);
+                        } else if let Some(pos) = existing_pos {
+                            state.active_note_instances.remove(pos);
+                            let pitch_still_active = state
+                                .active_note_instances
+                                .iter()
+                                .any(|inst| inst.pitch == note.pitch);
+                            if !pitch_still_active {
+                                if let Some(ref mut s) = state.synth {
+                                    s.note_off(note.pitch);
+                                }
+                                if let Some(ref mut sm) = state.simpler {
+                                    sm.note_off(note.pitch);
+                                }
+                                if let Some(ref mut dr) = state.drum_rack {
+                                    dr.note_off(note.pitch);
+                                }
                             }
                         }
                     }
                 }
             }
             ClipPayload::Audio(_) => {
-                state.current_audio_in = state.audio_sample_cache.sample_clip(clip, clip_pos, bpm);
+                state.audio_sample_cache.render_clip_samples(
+                    clip,
+                    clip_pos,
+                    dt_beats,
+                    bpm,
+                    &mut state.audio_block_l[0..block_len],
+                    &mut state.audio_block_r[0..block_len],
+                );
+                state.current_audio_in = (state.audio_block_l[0], state.audio_block_r[0]);
             }
         }
     }

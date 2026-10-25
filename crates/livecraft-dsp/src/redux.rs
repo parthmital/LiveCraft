@@ -1,6 +1,8 @@
 /// Live 12 Redux effect
 /// Digital downsampling (sample rate reduction) and bit reduction (quantization distortion).
 pub struct ReduxEffect {
+    pub device_id: u64,
+    pub is_enabled: bool,
     pub sample_rate: f32,
     pub rate_factor: f32, // Downsample ratio (1.0 = none, up to 32.0)
     pub bits: f32,        // Bit depth (1.0 to 16.0 bits)
@@ -16,6 +18,8 @@ pub struct ReduxEffect {
 impl ReduxEffect {
     pub fn new(sample_rate: f32) -> Self {
         Self {
+            device_id: 0,
+            is_enabled: true,
             sample_rate: sample_rate.max(1000.0),
             rate_factor: 1.0,
             bits: 16.0,
@@ -57,6 +61,9 @@ impl ReduxEffect {
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        if !self.is_enabled {
+            return;
+        }
         let base_rate = self.rate_factor.max(1.0);
         let bits = self.bits.clamp(1.0, 16.0);
         let dry_wet = self.dry_wet.clamp(0.0, 1.0);

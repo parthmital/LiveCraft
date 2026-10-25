@@ -3,6 +3,8 @@ use std::f32::consts::PI;
 /// Live 12 Auto Pan / Tremolo effect
 /// Uses LFO modulation to affect the stereo position or amplitude
 pub struct AutoPanEffect {
+    pub device_id: u64,
+    pub is_enabled: bool,
     pub sample_rate: f32,
     pub amount: f32,    // 0.0 to 1.0
     pub rate_hz: f32,   // 0.01 to 40.0 Hz
@@ -15,6 +17,8 @@ pub struct AutoPanEffect {
 impl AutoPanEffect {
     pub fn new(sample_rate: f32) -> Self {
         Self {
+            device_id: 0,
+            is_enabled: true,
             sample_rate: sample_rate.max(1000.0),
             amount: 1.0,
             rate_hz: 1.0,
@@ -46,6 +50,9 @@ impl AutoPanEffect {
     }
 
     pub fn process(&mut self, left: &mut [f32], right: &mut [f32]) {
+        if !self.is_enabled {
+            return;
+        }
         let phase_inc = (2.0 * PI * self.rate_hz) / self.sample_rate;
         let stereo_offset = (self.phase_deg * PI) / 180.0;
         let is_tremolo = self.mode >= 0.5;

@@ -21,6 +21,118 @@ pub enum AlsError {
     InvalidFormat(String),
 }
 
+pub fn map_ableton_tag_to_device_type(tag: &str) -> Option<DeviceType> {
+    match tag {
+        "Operator" => Some(DeviceType::Operator),
+        "OriginalSimpler" | "Simpler" => Some(DeviceType::Simpler),
+        "Eq8" | "EqEight" => Some(DeviceType::EqEight),
+        "Compressor2" | "Compressor" => Some(DeviceType::Compressor),
+        "StereoGain" | "Utility" => Some(DeviceType::Utility),
+        "Reverb" => Some(DeviceType::Reverb),
+        "Delay" => Some(DeviceType::Delay),
+        "Saturator" => Some(DeviceType::Saturator),
+        "DrumGroupDevice" | "DrumRack" => Some(DeviceType::DrumRack),
+        "AutoFilter" => Some(DeviceType::AutoFilter),
+        "FilterEQ3" | "EqThree" => Some(DeviceType::EqThree),
+        "Chorus" => Some(DeviceType::Chorus),
+        "AutoPan" => Some(DeviceType::AutoPan),
+        "Gate" => Some(DeviceType::Gate),
+        "Redux2" | "Redux" => Some(DeviceType::Redux),
+        "Limiter" => Some(DeviceType::Limiter),
+        _ => None,
+    }
+}
+
+pub fn default_device_name_for_type(dtype: &DeviceType) -> &'static str {
+    match dtype {
+        DeviceType::Operator => "Operator",
+        DeviceType::Simpler => "Simpler",
+        DeviceType::EqEight => "EQ Eight",
+        DeviceType::Compressor => "Compressor",
+        DeviceType::Utility => "Utility",
+        DeviceType::Reverb => "Reverb",
+        DeviceType::Delay => "Delay",
+        DeviceType::Saturator => "Saturator",
+        DeviceType::DrumRack => "Drum Rack",
+        DeviceType::AutoFilter => "Auto Filter",
+        DeviceType::EqThree => "EQ Three",
+        DeviceType::Chorus => "Chorus",
+        DeviceType::AutoPan => "Auto Pan",
+        DeviceType::Gate => "Gate",
+        DeviceType::Redux => "Redux",
+        DeviceType::Limiter => "Limiter",
+        DeviceType::Custom(_) => "Custom Device",
+    }
+}
+
+fn handle_value_element(
+    parent_tag: &str,
+    val_str: &str,
+    in_tempo: bool,
+    bpm: &mut f32,
+    current_device: &mut Option<Device>,
+    current_track: &mut Option<Track>,
+    master_track: &mut Track,
+) {
+    if in_tempo {
+        if let Ok(val) = val_str.parse::<f32>() {
+            *bpm = val;
+        }
+    } else if parent_tag == "On" {
+        if let Some(ref mut dev) = current_device {
+            dev.is_enabled = val_str == "true" || val_str == "1";
+        }
+    } else if parent_tag == "Volume" {
+        if let Ok(val) = val_str.parse::<f32>() {
+            let vol_db = if val <= 0.0001 {
+                -60.0
+            } else {
+                20.0 * val.log10()
+            };
+            if let Some(ref mut trk) = current_track {
+                trk.volume_db = vol_db;
+            } else {
+                master_track.volume_db = vol_db;
+            }
+        }
+    } else if parent_tag == "Pan" {
+        if let Ok(val) = val_str.parse::<f32>() {
+            let pan = val.clamp(-1.0, 1.0);
+            if let Some(ref mut trk) = current_track {
+                trk.pan = pan;
+            } else {
+                master_track.pan = pan;
+            }
+        }
+    } else if let Some(ref mut dev) = current_device {
+        if let Ok(val) = val_str.parse::<f32>() {
+            let param_name = match parent_tag {
+                "FilterCutoff" | "Cutoff" => Some("filter_cutoff"),
+                "FilterResonance" | "Resonance" => Some("filter_resonance"),
+                "Attack" => Some("attack_ms"),
+                "Decay" => Some("decay_ms"),
+                "Sustain" => Some("sustain"),
+                "Release" => Some("release_ms"),
+                "Drive" => Some("drive_db"),
+                "Feedback" => Some("feedback"),
+                "DryWet" | "Dry/Wet" => Some("dry_wet"),
+                "Time" => Some("time_ms"),
+                "Threshold" => Some("threshold_db"),
+                "Ratio" => Some("ratio"),
+                "RoomSize" => Some("room_size"),
+                "Damping" => Some("damping"),
+                "StereoWidth" => Some("stereo_width"),
+                "Ceiling" => Some("ceiling_db"),
+                "Gain" => Some("gain_db"),
+                _ => None,
+            };
+            if let Some(pname) = param_name {
+                dev.set_param(pname, val);
+            }
+        }
+    }
+}
+
 pub struct AlsParser;
 
 impl AlsParser {
@@ -63,6 +175,7 @@ impl AlsParser {
         let mut buf = Vec::new();
         let mut current_track: Option<Track> = None;
         let mut current_device: Option<Device> = None;
+        let mut current_device_tag: Option<String> = None;
         let mut current_tag_stack: Vec<String> = Vec::new();
         let mut in_tempo = false;
         let mut current_midi_key: u8 = 60;
@@ -118,15 +231,38 @@ impl AlsParser {
                         "Tempo" => {
                             in_tempo = true;
                         }
+                        "ScaleInformation" => {
+                            scale.is_active = true;
+                        }
                         "Name" | "UserName" | "EffectiveName" => {
-                            for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"Value" {
-                                    let val = String::from_utf8_lossy(&attr.value).to_string();
-                                    if !val.is_empty() {
-                                        if let Some(ref mut clip) = current_clip {
-                                            clip.name = val;
-                                        } else if let Some(ref mut trk) = current_track {
-                                            trk.name = val;
+                            if current_tag_stack.len() >= 2
+                                && current_tag_stack[current_tag_stack.len() - 2]
+                                    == "ScaleInformation"
+                            {
+                                for attr in e.attributes().flatten() {
+                                    if attr.key.as_ref() == b"Value" {
+                                        let s = String::from_utf8_lossy(&attr.value);
+                                        for st in ScaleType::ALL {
+                                            if st.name().eq_ignore_ascii_case(&s) {
+                                                scale.scale_type = *st;
+                                                scale.is_active = true;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            } else {
+                                for attr in e.attributes().flatten() {
+                                    if attr.key.as_ref() == b"Value" {
+                                        let val = String::from_utf8_lossy(&attr.value).to_string();
+                                        if !val.is_empty() {
+                                            if let Some(ref mut dev) = current_device {
+                                                dev.name = val;
+                                            } else if let Some(ref mut clip) = current_clip {
+                                                clip.name = val;
+                                            } else if let Some(ref mut trk) = current_track {
+                                                trk.name = val;
+                                            }
                                         }
                                     }
                                 }
@@ -139,6 +275,50 @@ impl AlsParser {
                         "AudioClip" => {
                             let clip_id = 2000 + current_clip_slot_idx as u64;
                             current_clip = Some(Clip::new_audio(clip_id, "Audio", "", 4.0));
+                        }
+                        "Operator" | "OriginalSimpler" | "Simpler" | "Eq8" | "EqEight"
+                        | "Compressor2" | "Compressor" | "StereoGain" | "Utility" | "Reverb"
+                        | "Delay" | "Saturator" | "DrumGroupDevice" | "DrumRack" | "AutoFilter"
+                        | "FilterEQ3" | "EqThree" | "Chorus" | "AutoPan" | "Gate" | "Redux2"
+                        | "Redux" | "Limiter" => {
+                            let mut dev_id = 0u64;
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"Id" {
+                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                        dev_id = s.parse().unwrap_or(0);
+                                    }
+                                }
+                            }
+                            if dev_id == 0 {
+                                dev_id = (tracks.len() as u64 * 100) + 1;
+                            }
+                            if let Some(dtype) = map_ableton_tag_to_device_type(&tag_name) {
+                                let dev_name = default_device_name_for_type(&dtype);
+                                current_device = Some(Device::new(dev_id, dev_name, dtype));
+                                current_device_tag = Some(tag_name.clone());
+                            }
+                        }
+                        "Manual" | "Value" => {
+                            let parent_tag = if current_tag_stack.len() >= 2 {
+                                current_tag_stack[current_tag_stack.len() - 2].as_str()
+                            } else {
+                                ""
+                            };
+                            for attr in e.attributes().flatten() {
+                                if attr.key.as_ref() == b"Value" {
+                                    if let Ok(val_str) = std::str::from_utf8(&attr.value) {
+                                        handle_value_element(
+                                            parent_tag,
+                                            val_str,
+                                            in_tempo,
+                                            &mut bpm,
+                                            &mut current_device,
+                                            &mut current_track,
+                                            &mut master_track,
+                                        );
+                                    }
+                                }
+                            }
                         }
                         "Device" => {
                             let mut dev_id = 1u64;
@@ -242,15 +422,41 @@ impl AlsParser {
                 Ok(Event::Empty(ref e)) => {
                     let tag_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
 
-                    if in_tempo && (tag_name == "Manual" || tag_name == "Value") {
+                    if tag_name == "Manual" || tag_name == "Value" {
+                        let parent_tag = current_tag_stack.last().map(|s| s.as_str()).unwrap_or("");
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"Value" {
-                                if let Ok(s) = std::str::from_utf8(&attr.value) {
-                                    if let Ok(val) = s.parse::<f32>() {
-                                        bpm = val;
-                                    }
+                                if let Ok(val_str) = std::str::from_utf8(&attr.value) {
+                                    handle_value_element(
+                                        parent_tag,
+                                        val_str,
+                                        in_tempo,
+                                        &mut bpm,
+                                        &mut current_device,
+                                        &mut current_track,
+                                        &mut master_track,
+                                    );
                                 }
                             }
+                        }
+                    } else if let Some(dtype) = map_ableton_tag_to_device_type(&tag_name) {
+                        let mut dev_id = 0u64;
+                        for attr in e.attributes().flatten() {
+                            if attr.key.as_ref() == b"Id" {
+                                if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                    dev_id = s.parse().unwrap_or(0);
+                                }
+                            }
+                        }
+                        if dev_id == 0 {
+                            dev_id = (tracks.len() as u64 * 100) + 1;
+                        }
+                        let dev_name = default_device_name_for_type(&dtype);
+                        let dev = Device::new(dev_id, dev_name, dtype);
+                        if let Some(ref mut trk) = current_track {
+                            trk.device_chain.push(dev);
+                        } else {
+                            master_track.device_chain.push(dev);
                         }
                     } else if tag_name == "MidiKey" {
                         for attr in e.attributes().flatten() {
@@ -323,13 +529,18 @@ impl AlsParser {
                                 }
                             }
                         }
-                    } else if tag_name == "ScaleType" {
+                    } else if tag_name == "ScaleType"
+                        || (tag_name == "Name"
+                            && current_tag_stack.last().map(|s| s.as_str())
+                                == Some("ScaleInformation"))
+                    {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == b"Value" {
                                 let s = String::from_utf8_lossy(&attr.value);
                                 for st in ScaleType::ALL {
                                     if st.name().eq_ignore_ascii_case(&s) {
                                         scale.scale_type = *st;
+                                        scale.is_active = true;
                                         break;
                                     }
                                 }
@@ -348,7 +559,9 @@ impl AlsParser {
                             if attr.key.as_ref() == b"Value" {
                                 let val = String::from_utf8_lossy(&attr.value).to_string();
                                 if !val.is_empty() {
-                                    if let Some(ref mut clip) = current_clip {
+                                    if let Some(ref mut dev) = current_device {
+                                        dev.name = val;
+                                    } else if let Some(ref mut clip) = current_clip {
                                         clip.name = val;
                                     } else if let Some(ref mut trk) = current_track {
                                         trk.name = val;
@@ -368,6 +581,17 @@ impl AlsParser {
                         "Tempo" => in_tempo = false,
                         "Device" => {
                             if let Some(dev) = current_device.take() {
+                                current_device_tag = None;
+                                if let Some(ref mut trk) = current_track {
+                                    trk.device_chain.push(dev);
+                                } else {
+                                    master_track.device_chain.push(dev);
+                                }
+                            }
+                        }
+                        tag if current_device_tag.as_deref() == Some(tag) => {
+                            if let Some(dev) = current_device.take() {
+                                current_device_tag = None;
                                 if let Some(ref mut trk) = current_track {
                                     trk.device_chain.push(dev);
                                 } else {
@@ -443,6 +667,92 @@ impl AlsParser {
         })
     }
 
+    fn write_ableton_device<W: std::io::Write>(
+        writer: &mut Writer<W>,
+        dev: &Device,
+    ) -> Result<(), quick_xml::Error> {
+        let tag_name = match dev.device_type {
+            DeviceType::Operator => "Operator",
+            DeviceType::EqEight => "Eq8",
+            DeviceType::Compressor => "Compressor2",
+            DeviceType::Utility => "StereoGain",
+            DeviceType::Delay => "Delay",
+            DeviceType::Reverb => "Reverb",
+            DeviceType::Saturator => "Saturator",
+            DeviceType::AutoFilter => "AutoFilter",
+            DeviceType::DrumRack => "DrumGroupDevice",
+            DeviceType::Simpler => "OriginalSimpler",
+            DeviceType::Chorus => "Chorus",
+            DeviceType::AutoPan => "AutoPan",
+            DeviceType::Gate => "Gate",
+            DeviceType::EqThree => "FilterEQ3",
+            DeviceType::Redux => "Redux2",
+            DeviceType::Limiter => "Limiter",
+            DeviceType::Custom(ref s) => s.as_str(),
+        };
+
+        let mut dev_elem = BytesStart::new(tag_name);
+        let id_s = dev.id.to_string();
+        dev_elem.push_attribute(("Id", id_s.as_str()));
+        writer.write_event(Event::Start(dev_elem))?;
+
+        if !dev.name.is_empty() {
+            let mut uname = BytesStart::new("UserName");
+            uname.push_attribute(("Value", dev.name.as_str()));
+            writer.write_event(Event::Empty(uname))?;
+        }
+
+        writer.write_event(Event::Start(BytesStart::new("On")))?;
+        let mut on_elem = BytesStart::new("Manual");
+        on_elem.push_attribute(("Value", if dev.is_enabled { "true" } else { "false" }));
+        writer.write_event(Event::Empty(on_elem))?;
+        writer.write_event(Event::End(quick_xml::events::BytesEnd::new("On")))?;
+
+        let mut sorted_params: Vec<(&String, &f32)> = dev.parameters.iter().collect();
+        sorted_params.sort_by_key(|(k, _)| *k);
+
+        for (pk, pv) in sorted_params {
+            let param_tag = match pk.as_str() {
+                "filter_cutoff" => "FilterCutoff",
+                "filter_resonance" => "FilterResonance",
+                "attack_ms" => "Attack",
+                "decay_ms" => "Decay",
+                "sustain" => "Sustain",
+                "release_ms" => "Release",
+                "drive_db" => "Drive",
+                "feedback" => "Feedback",
+                "dry_wet" => "DryWet",
+                "time_ms" => "Time",
+                "threshold_db" => "Threshold",
+                "ratio" => "Ratio",
+                "room_size" => "RoomSize",
+                "damping" => "Damping",
+                "stereo_width" => "StereoWidth",
+                "ceiling_db" => "Ceiling",
+                "gain_db" => "Gain",
+                _ => "",
+            };
+
+            if !param_tag.is_empty() {
+                writer.write_event(Event::Start(BytesStart::new(param_tag)))?;
+                let mut manual = BytesStart::new("Manual");
+                let val_str = pv.to_string();
+                manual.push_attribute(("Value", val_str.as_str()));
+                writer.write_event(Event::Empty(manual))?;
+                writer.write_event(Event::End(quick_xml::events::BytesEnd::new(param_tag)))?;
+            } else {
+                let mut p_elem = BytesStart::new("Parameter");
+                let val_str = pv.to_string();
+                p_elem.push_attribute(("Name", pk.as_str()));
+                p_elem.push_attribute(("Value", val_str.as_str()));
+                writer.write_event(Event::Empty(p_elem))?;
+            }
+        }
+
+        writer.write_event(Event::End(quick_xml::events::BytesEnd::new(tag_name)))?;
+        Ok(())
+    }
+
     /// Save a LiveCraft `Project` as a real, gzip-compressed Ableton Live `.als` file
     pub fn save_project_to_als<P: AsRef<Path>>(project: &Project, path: P) -> Result<(), AlsError> {
         let file = File::create(path)?;
@@ -462,7 +772,12 @@ impl AlsParser {
         let mut ableton_elem = BytesStart::new("Ableton");
         ableton_elem.push_attribute(("MajorVersion", "5"));
         ableton_elem.push_attribute(("MinorVersion", "12.0_12117"));
-        ableton_elem.push_attribute(("Creator", project.creator.as_str()));
+        let creator_str = if project.creator.is_empty() {
+            "Ableton Live 12.0.5".to_string()
+        } else {
+            project.creator.clone()
+        };
+        ableton_elem.push_attribute(("Creator", creator_str.as_str()));
         ableton_elem.push_attribute(("Revision", "livecraft-r1"));
         writer.write_event(Event::Start(ableton_elem))?;
 
@@ -475,18 +790,9 @@ impl AlsParser {
         root_elem.push_attribute(("Value", root_s.as_str()));
         writer.write_event(Event::Empty(root_elem))?;
 
-        let mut st_elem = BytesStart::new("ScaleType");
+        let mut st_elem = BytesStart::new("Name");
         st_elem.push_attribute(("Value", project.scale.scale_type.name()));
         writer.write_event(Event::Empty(st_elem))?;
-
-        let mut act_elem = BytesStart::new("IsActive");
-        let act_s = if project.scale.is_active {
-            "true"
-        } else {
-            "false"
-        };
-        act_elem.push_attribute(("Value", act_s));
-        writer.write_event(Event::Empty(act_elem))?;
         writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
             "ScaleInformation",
         )))?;
@@ -519,42 +825,7 @@ impl AlsParser {
             // Devices
             writer.write_event(Event::Start(BytesStart::new("Devices")))?;
             for dev in &track.device_chain {
-                let mut dev_elem = BytesStart::new("Device");
-                let id_s = dev.id.to_string();
-                let type_s = match dev.device_type {
-                    DeviceType::EqEight => "EqEight",
-                    DeviceType::Compressor => "Compressor",
-                    DeviceType::Delay => "Delay",
-                    DeviceType::Reverb => "Reverb",
-                    DeviceType::Limiter => "Limiter",
-                    DeviceType::Utility => "Utility",
-                    DeviceType::Operator => "Operator",
-                    DeviceType::Simpler => "Simpler",
-                    DeviceType::Saturator => "Saturator",
-                    DeviceType::DrumRack => "DrumRack",
-                    DeviceType::AutoFilter => "AutoFilter",
-                    DeviceType::Chorus => "Chorus",
-                    DeviceType::AutoPan => "AutoPan",
-                    DeviceType::Gate => "Gate",
-                    DeviceType::EqThree => "EqThree",
-                    DeviceType::Redux => "Redux",
-                    DeviceType::Custom(ref s) => s.as_str(),
-                };
-                let en_s = if dev.is_enabled { "true" } else { "false" };
-                dev_elem.push_attribute(("Id", id_s.as_str()));
-                dev_elem.push_attribute(("Type", type_s));
-                dev_elem.push_attribute(("Name", dev.name.as_str()));
-                dev_elem.push_attribute(("IsEnabled", en_s));
-                writer.write_event(Event::Start(dev_elem))?;
-
-                for (pk, pv) in &dev.parameters {
-                    let mut p_elem = BytesStart::new("Parameter");
-                    let pv_s = pv.to_string();
-                    p_elem.push_attribute(("Name", pk.as_str()));
-                    p_elem.push_attribute(("Value", pv_s.as_str()));
-                    writer.write_event(Event::Empty(p_elem))?;
-                }
-                writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Device")))?;
+                Self::write_ableton_device(&mut writer, dev)?;
             }
             writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Devices")))?;
 
@@ -564,7 +835,12 @@ impl AlsParser {
             // Volume
             writer.write_event(Event::Start(BytesStart::new("Volume")))?;
             let mut vol = BytesStart::new("Manual");
-            let vol_str = track.volume_db.to_string();
+            let lin_vol = if track.volume_db <= -60.0 {
+                0.0f32
+            } else {
+                10.0f32.powf(track.volume_db / 20.0)
+            };
+            let vol_str = lin_vol.to_string();
             vol.push_attribute(("Value", vol_str.as_str()));
             writer.write_event(Event::Empty(vol))?;
             writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Volume")))?;
