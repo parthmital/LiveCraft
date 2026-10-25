@@ -1441,6 +1441,7 @@ dependencies = [
  "anyhow",
  "eframe",
  "egui",
+ "image",
  "livecraft-core",
  "livecraft-dsp",
  "log",

@@ -39,51 +39,78 @@ pub fn render_piano_roll(
     let num_rows = visible_pitches.len();
 
     ui.vertical(|ui| {
-        // Clip Header: Name, Length, Loop, Scale Controls & MIDI Tools
+        // Clip Header: Name, Length, Loop, Scale Controls & MIDI Tools (Manual p. 201, 252)
         ui.horizontal(|ui| {
-            ui.label(
-                egui::RichText::new(&clip.name)
-                    .strong()
-                    .size(12.0)
-                    .color(palette.control_foreground),
-            );
-            ui.separator();
-            ui.label(format!("Length: {:.1} beats", clip.length_beats));
-            ui.checkbox(&mut clip.is_looping, "Loop");
-            ui.label(format!("Notes: {}", midi_data.notes.len()));
+            ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
 
-            ui.separator();
+            // Clip Name LCD
+            crate::widgets::live_lcd_box(
+                ui,
+                &clip.name,
+                Vec2::new(90.0, 22.0),
+                palette.amber,
+                true,
+            );
+
+            // Length LCD
+            let len_str = format!("{:.1} Bars", clip.length_beats / 4.0);
+            crate::widgets::live_lcd_box(ui, &len_str, Vec2::new(60.0, 22.0), palette.amber, false);
+
+            // Loop Toggle Button
+            let loop_btn = crate::widgets::live_toggle_button(
+                ui,
+                clip.is_looping,
+                palette.amber,
+                "Loop",
+                Vec2::new(40.0, 22.0),
+            );
+            if loop_btn.clicked() {
+                clip.is_looping = !clip.is_looping;
+            }
+
+            crate::widgets::live_divider(ui, 22.0);
 
             // Ableton 12 Scale Controls
-            let scale_active_btn = ui.selectable_label(scale.is_active, "Scale");
-            if scale_active_btn.clicked() {
+            let scale_btn = crate::widgets::live_toggle_button(
+                ui,
+                scale.is_active,
+                palette.amber,
+                "Scale",
+                Vec2::new(42.0, 22.0),
+            );
+            if scale_btn.clicked() {
                 scale.is_active = !scale.is_active;
             }
 
             if scale.is_active {
-                // Root note combo
                 let current_root = NOTE_NAMES[scale.root_note as usize % 12];
                 egui::ComboBox::from_id_salt("scale_root_select")
                     .selected_text(current_root)
-                    .width(42.0)
+                    .width(36.0)
                     .show_ui(ui, |ui| {
                         for (idx, &name) in NOTE_NAMES.iter().enumerate() {
                             ui.selectable_value(&mut scale.root_note, idx as u8, name);
                         }
                     });
 
-                // Scale type combo
                 egui::ComboBox::from_id_salt("scale_type_select")
                     .selected_text(scale.scale_type.name())
-                    .width(100.0)
+                    .width(90.0)
                     .show_ui(ui, |ui| {
                         for &st in ScaleType::ALL {
                             ui.selectable_value(&mut scale.scale_type, st, st.name());
                         }
                     });
 
-                // Fold to Scale checkbox
-                if ui.checkbox(&mut fold_scale, "Fold").changed() {
+                let fold_btn = crate::widgets::live_toggle_button(
+                    ui,
+                    fold_scale,
+                    palette.amber,
+                    "Fold",
+                    Vec2::new(36.0, 22.0),
+                );
+                if fold_btn.clicked() {
+                    fold_scale = !fold_scale;
                     ui.data_mut(|d| d.insert_temp(fold_id, fold_scale));
                 }
             }

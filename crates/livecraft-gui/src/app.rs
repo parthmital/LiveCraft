@@ -6,7 +6,7 @@ use crate::pianoroll::render_piano_roll;
 use crate::session::render_session_view;
 use crate::style::{apply_live_style, LivePalette};
 use crate::transport::{render_transport_bar, ViewMode};
-use eframe::egui::{self, Color32, Key};
+use eframe::egui::{self, Color32, Key, Vec2};
 use livecraft_core::als::AlsParser;
 use livecraft_core::command::CommandHistory;
 use livecraft_core::model::{Clip, ClipPayload, MidiNote, Project, Track, TrackType};
@@ -26,15 +26,28 @@ pub struct LiveCraftApp {
     pub browser: LiveBrowser,
     pub palette: LivePalette,
     pub status_message: String,
+    pub screenshot_path: Option<PathBuf>,
+    pub frame_counter: u32,
+    pub browser_visible: bool,
 }
 
 impl LiveCraftApp {
     pub fn new(project_path: Option<&Path>) -> Self {
-        let palette = LivePalette::default();
+        Self::new_with_options(crate::GuiOptions {
+            project_path: project_path.map(|p| p.to_path_buf()),
+            ..Default::default()
+        })
+    }
 
-        let (project, path_buf) = if let Some(p) = project_path {
+    pub fn new_with_options(options: crate::GuiOptions) -> Self {
+        let palette = match options.theme.as_deref() {
+            Some("light") => LivePalette::light(),
+            _ => LivePalette::dark(),
+        };
+
+        let (project, path_buf) = if let Some(ref p) = options.project_path {
             if let Ok(proj) = AlsParser::load_project(p) {
-                (proj, Some(p.to_path_buf()))
+                (proj, Some(p.clone()))
             } else {
                 (Self::create_demo_project(), None)
             }
@@ -45,18 +58,28 @@ impl LiveCraftApp {
         // Try initializing audio engine
         let engine = AudioEngine::new(&project).ok();
 
+        let view_mode = match options.initial_view.as_deref() {
+            Some("arrange") | Some("arrangement") => ViewMode::Arrangement,
+            _ => ViewMode::Session,
+        };
+
+        let bottom_tab = options.initial_tab.unwrap_or(0);
+
         Self {
             project,
             project_path: path_buf,
             engine,
             command_history: CommandHistory::default(),
-            view_mode: ViewMode::Session,
+            view_mode,
             selected_track_idx: 0,
             selected_clip: Some((0, 0)),
-            bottom_tab: 0,
+            bottom_tab,
             browser: LiveBrowser::default(),
             palette,
             status_message: "LiveCraft Ready".to_string(),
+            screenshot_path: options.screenshot_path,
+            frame_counter: 0,
+            browser_visible: true,
         }
     }
 
@@ -187,6 +210,48 @@ impl LiveCraftApp {
 
 impl eframe::App for LiveCraftApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.frame_counter += 1;
+        if self.screenshot_path.is_some() {
+            ctx.request_repaint();
+            if self.frame_counter == 5 {
+                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+            }
+            if self.frame_counter > 50 {
+                eprintln!("Screenshot timeout");
+                std::process::exit(1);
+            }
+        }
+
+        ctx.input(|i| {
+            for event in &i.raw.events {
+                if let egui::Event::Screenshot { image, .. } = event {
+                    if let Some(ref path) = self.screenshot_path {
+                        let width = image.width() as u32;
+                        let height = image.height() as u32;
+                        let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+                        for p in &image.pixels {
+                            rgba.push(p.r());
+                            rgba.push(p.g());
+                            rgba.push(p.b());
+                            rgba.push(p.a());
+                        }
+                        if let Some(parent) = path.parent() {
+                            let _ = std::fs::create_dir_all(parent);
+                        }
+                        if let Err(e) =
+                            image::save_buffer(path, &rgba, width, height, image::ColorType::Rgba8)
+                        {
+                            eprintln!("Failed to save screenshot: {}", e);
+                            std::process::exit(1);
+                        } else {
+                            println!("Screenshot successfully saved to: {}", path.display());
+                            std::process::exit(0);
+                        }
+                    }
+                }
+            }
+        });
+
         apply_live_style(ctx, &self.palette);
         self.handle_keyboard_shortcuts(ctx);
 
@@ -238,7 +303,12 @@ impl eframe::App for LiveCraftApp {
                     self.view_mode,
                     &self.palette,
                     2.5, // CPU percent
+                    self.browser_visible,
                 );
+
+                if t_resp.browser_toggled {
+                    self.browser_visible = !self.browser_visible;
+                }
 
                 if t_resp.play_toggled {
                     if let Some(ref eng) = self.engine {
@@ -259,45 +329,79 @@ impl eframe::App for LiveCraftApp {
                 }
             });
 
-        // Bottom Status Bar
+        // Bottom Status Bar (Info View & Status, Manual p. 36)
         egui::TopBottomPanel::bottom("status_bar")
-            .exact_height(20.0)
+            .exact_height(22.0)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+                    // Ableton Info View toggle button '?'
+                    let _info_btn = crate::widgets::live_toggle_button(
+                        ui,
+                        false,
+                        self.palette.amber,
+                        "?",
+                        Vec2::new(18.0, 18.0),
+                    );
+
                     ui.label(
                         egui::RichText::new(&self.status_message)
-                            .size(10.0)
-                            .color(Color32::from_rgb(0x88, 0x88, 0x88)),
+                            .size(10.5)
+                            .color(Color32::from_rgb(0xa0, 0xa0, 0xa0)),
                     );
+
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
-                            egui::RichText::new("LiveCraft v0.1.0 | 44.1 kHz 24-bit")
-                                .size(10.0)
-                                .color(Color32::from_rgb(0x66, 0x66, 0x66)),
+                            egui::RichText::new(
+                                "Ableton Live 12 Compatible Engine | 44.1 kHz 24-bit",
+                            )
+                            .size(10.0)
+                            .color(Color32::from_rgb(0x70, 0x70, 0x70)),
                         );
                     });
                 });
             });
 
-        // Bottom Detail Panel: Device Chain or Piano Roll
+        // Bottom Detail Panel: Device Chain or Piano Roll (Manual p. 50, 445)
         egui::TopBottomPanel::bottom("detail_panel")
-            .exact_height(170.0)
+            .exact_height(185.0)
             .resizable(true)
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    // Tab selector: Devices vs Clip Detail
-                    let dev_btn = ui.selectable_label(self.bottom_tab == 0, "Device View");
-                    let clip_btn = ui.selectable_label(self.bottom_tab == 1, "Clip View / Piano Roll");
+                    ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
+
+                    // Authentic Ableton Detail View Tabs
+                    let dev_btn = crate::widgets::live_toggle_button(
+                        ui,
+                        self.bottom_tab == 0,
+                        self.palette.amber,
+                        "🎛️ Device View",
+                        Vec2::new(96.0, 22.0),
+                    );
                     if dev_btn.clicked() { self.bottom_tab = 0; }
+
+                    let clip_btn = crate::widgets::live_toggle_button(
+                        ui,
+                        self.bottom_tab == 1,
+                        self.palette.amber,
+                        "🎹 Clip View",
+                        Vec2::new(88.0, 22.0),
+                    );
                     if clip_btn.clicked() { self.bottom_tab = 1; }
 
                     if let Some(trk) = self.project.tracks.get(self.selected_track_idx) {
-                        ui.separator();
-                        ui.label(egui::RichText::new(&trk.name).strong().size(11.0).color(self.palette.amber));
+                        crate::widgets::live_divider(ui, 20.0);
+                        let [r, g, b, _] = livecraft_core::theme::parse_hex_color(&trk.color);
+                        ui.label(
+                            egui::RichText::new(format!("● {}", trk.name))
+                                .strong()
+                                .size(11.0)
+                                .color(Color32::from_rgb(r, g, b)),
+                        );
                     }
                 });
 
-                ui.separator();
+                ui.add_space(2.0);
 
                 if self.bottom_tab == 0 {
                     // Device Chain View
@@ -329,35 +433,37 @@ impl eframe::App for LiveCraftApp {
                 }
             });
 
-        // Left Browser Sidebar
-        egui::SidePanel::left("browser_panel")
-            .exact_width(170.0)
-            .resizable(true)
-            .show(ctx, |ui| {
-                let action = self.browser.render(
-                    ui,
-                    self.project.tracks.get_mut(self.selected_track_idx),
-                    &self.palette,
-                );
+        // Left Browser Sidebar (toggleable)
+        if self.browser_visible {
+            egui::SidePanel::left("browser_panel")
+                .exact_width(180.0)
+                .resizable(true)
+                .show(ctx, |ui| {
+                    let action = self.browser.render(
+                        ui,
+                        self.project.tracks.get_mut(self.selected_track_idx),
+                        &self.palette,
+                    );
 
-                if let Some(dev) = action.add_device {
-                    if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
-                        trk.device_chain.push(dev);
-                        self.status_message = "Device added to track".to_string();
+                    if let Some(dev) = action.add_device {
+                        if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
+                            trk.device_chain.push(dev);
+                            self.status_message = "Device added to track".to_string();
+                        }
                     }
-                }
 
-                if let Some(ttype) = action.add_track {
-                    let new_id = self.project.tracks.len() as u64 + 1;
-                    let name = match ttype {
-                        TrackType::Audio => format!("{}-Audio", new_id),
-                        TrackType::Midi => format!("{}-MIDI", new_id),
-                        _ => format!("Track-{}", new_id),
-                    };
-                    self.project.tracks.push(Track::new(new_id, name, ttype, 8));
-                    self.status_message = "New track added".to_string();
-                }
-            });
+                    if let Some(ttype) = action.add_track {
+                        let new_id = self.project.tracks.len() as u64 + 1;
+                        let name = match ttype {
+                            TrackType::Audio => format!("{}-Audio", new_id),
+                            TrackType::Midi => format!("{}-MIDI", new_id),
+                            _ => format!("Track-{}", new_id),
+                        };
+                        self.project.tracks.push(Track::new(new_id, name, ttype, 8));
+                        self.status_message = "New track added".to_string();
+                    }
+                });
+        }
 
         // Center Work Area: Session View or Arrangement View
         egui::CentralPanel::default().show(ctx, |ui| {

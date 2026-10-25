@@ -122,6 +122,22 @@ enum Commands {
     Gui {
         /// Optional project file to open
         project: Option<PathBuf>,
+
+        /// Path to save a PNG screenshot and exit
+        #[arg(long)]
+        screenshot: Option<PathBuf>,
+
+        /// Initial view mode ("session" or "arrangement")
+        #[arg(long)]
+        view: Option<String>,
+
+        /// Initial bottom detail tab (0 = Device View, 1 = Clip View)
+        #[arg(long)]
+        tab: Option<usize>,
+
+        /// Color theme ("light" or "dark")
+        #[arg(long)]
+        theme: Option<String>,
     },
 }
 
@@ -175,13 +191,30 @@ fn main() -> anyhow::Result<()> {
     match args.command {
         None => {
             // Default action if no subcommand is given: launch GUI
-            if let Err(e) = livecraft_gui::run_gui(args.project.as_deref()) {
+            let options = livecraft_gui::GuiOptions {
+                project_path: args.project,
+                ..Default::default()
+            };
+            if let Err(e) = livecraft_gui::run_gui_with_options(options) {
                 eprintln!("Error starting GUI: {:?}", e);
                 return Err(e);
             }
         }
-        Some(Commands::Gui { project }) => {
-            if let Err(e) = livecraft_gui::run_gui(project.as_deref()) {
+        Some(Commands::Gui {
+            project,
+            screenshot,
+            view,
+            tab,
+            theme,
+        }) => {
+            let options = livecraft_gui::GuiOptions {
+                project_path: project,
+                screenshot_path: screenshot,
+                initial_view: view,
+                initial_tab: tab,
+                theme,
+            };
+            if let Err(e) = livecraft_gui::run_gui_with_options(options) {
                 eprintln!("Error starting GUI: {:?}", e);
                 return Err(e);
             }

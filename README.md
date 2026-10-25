@@ -179,22 +179,32 @@ livecraft convert project.json project.als
 
 ```bash
 livecraft gui
-# Or open directly with a project
+
+# Open directly with a project file
 livecraft gui path/to/project.als
+
+# Launch with light or dark theme matching Ableton Live 12
+livecraft gui --theme light
+livecraft gui --theme dark
+
+# Headless/automated screenshot capture for visual CI and testing
+livecraft gui --screenshot capture.png --view session --theme dark
+livecraft gui --screenshot capture_arr.png --view arrangement --theme light
 ```
 
 ## Graphical User Interface (GUI)
 
 The desktop application recreates Ableton Live 12's signature interface:
 
-- **Top Control Bar:** Tap tempo, drag-to-adjust BPM, 4/4 time signature, metronome toggle, Play/Stop/Record buttons, Bar.Beat.Sixteenth counter, View mode toggle, CPU load meter.
-- **Session View (`Tab` or `[|||]`):** Track headers with color tags, vertical clip slot matrix, launch arrows, real-time animated loop progress bars, track stop buttons, Master Scene launch column, and "Stop All Clips".
-- **Mixer View:** Vertical volume faders (-60 dB to +6 dB), stereo peak VU meters (green/yellow/red), pan knobs, Send A (Reverb) and Send B (Delay) knobs, Track Activator (mute), Solo (`S`), and Arm (`●`) buttons.
-- **Arrangement View (`Tab` or `[=]`):** Horizontal timeline with bar/beat time ruler, track lanes with color-coded clips and note previews, and real-time moving playhead line.
-- **Bottom Detail Panel:**
-  - **Device Chain:** Horizontal modular rack showing selected track's devices (EQ Eight, Auto Filter, Auto Pan-Tremolo, Gate, EQ Three, Redux, Saturator, Compressor, Delay, Reverb, Operator, Utility).
-  - **Clip Detail / Piano Roll:** 128-note keyboard grid, click to insert/remove notes, 16th-note snap grid, Fold to Scale toggle, moving playhead indicator, and MIDI toolbars (Chop, Ornament, Span, Euclid, Stacks, Quantize, Transpose, Strum, Humanize, Invert, Reverse, Velocity Ramp).
-- **Left Browser Sidebar:** Searchable categories (Instruments, Audio Effects, Samples, Places) with one-click device insertion and track creation (`+ MIDI`, `+ Audio`).
+- **Top Control Bar (Manual Ch. 3.1):** 9-section Control Bar with Browser toggle (`◀`/`▶`), Link, Tap tempo, BPM LCD well with up/down nudge, Time Signature LCD, Metronome with dual-circle icon (`○ ●`), Quantization menu (`1 Bar ▼`), Live 12 Scale toggle and Root/Mode selector, Follow toggle, Arrangement Position LCD (`Bar . Beat . 16th`), green polygon Play triangle (`▶`), square Stop (`■`), circular Record (`●`), Automation & MIDI overdub/arm/capture controls, Arrangement Loop controls (punch in/out, start, length, loop toggle), Draw mode (`✎`), Computer MIDI Keyboard (`⌨`), KEY/MIDI map modes, CPU load meter with real-time bar, and View Selector (`|||` Session / `☰` Arrangement).
+- **Session View (`Tab` or `|||`):** Track headers with color tags, vertical clip slot matrix with circular stop placeholders and solid left color badges, launch arrows, real-time animated loop progress fills, track stop buttons, Master Scene launch column with green launch triangles, and "Stop All Clips".
+- **Mixer View (Manual Ch. 18):** In/Auto/Off monitoring buttons, Send A and Send B rotary knobs, Pan knob with center detent readout, vertical volume faders with graduated dB ticks (+6, 0, -6, -12, -24, -inf), 24-segment stereo peak VU meters with clipping indicators, numeric dB LCD display boxes, illuminated Track Activator (amber number), Solo (`S` blue), and Arm (`●` red) buttons.
+- **Arrangement View (`Tab` or `☰`):** Horizontal timeline with bar/beat time ruler, draggable loop brace with start/end boundary flags, scrubbing playhead marker, alternating lane backgrounds with grid lines, track controls headers, and clip representations with MIDI note previews and audio waveform contours.
+- **Bottom Detail Panel (Manual Ch. 3.12, 23.1):**
+  - **Device Chain (`🎛️ Device View`):** Horizontal modular rack showing selected track's devices (EQ Eight, Auto Filter, Auto Pan-Tremolo, Gate, EQ Three, Redux, Saturator, Compressor, Delay, Reverb, Operator, Utility) with parameter controls, ADSR curves, and filter response displays.
+  - **Clip Detail / Piano Roll (`🎹 Clip View`):** Clip properties LCD displays, loop toggle, diatonic scale awareness engine, piano keyboard with pitch labels (`C3`, `C4`), in-scale key highlighting, note insertion/removal grid, moving playhead indicator, and MIDI toolbars (Chop, Ornament, Span, Euclid, Stacks, Quantize, Transpose, Strum, Humanize, Invert, Reverse, Velocity Ramp).
+- **Left Browser Sidebar (Manual Ch. 4):** Search bar, 7-color collection tags (Favorites, Synths, Drums, Bass, FX, Templates, Other), Core Library categories (Sounds, Drums, Instruments, Audio Effects, MIDI Effects, Plug-Ins, Clips, Samples), and Places (Packs, User Library, Current Project).
+- **Bottom Status Bar (Manual Ch. 3.2):** Info View toggle button (`?`), contextual status readout, and audio engine rate/bit-depth badge.
 
 ### Keyboard Shortcuts (Ableton Live 12 Chapter 42)
 

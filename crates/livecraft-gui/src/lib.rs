@@ -10,9 +10,25 @@ pub mod transport;
 pub mod widgets;
 
 pub use app::LiveCraftApp;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, Default)]
+pub struct GuiOptions {
+    pub project_path: Option<PathBuf>,
+    pub screenshot_path: Option<PathBuf>,
+    pub initial_view: Option<String>,
+    pub initial_tab: Option<usize>,
+    pub theme: Option<String>,
+}
 
 pub fn run_gui(project_path: Option<&Path>) -> anyhow::Result<()> {
+    run_gui_with_options(GuiOptions {
+        project_path: project_path.map(|p| p.to_path_buf()),
+        ..Default::default()
+    })
+}
+
+pub fn run_gui_with_options(options: GuiOptions) -> anyhow::Result<()> {
     let native_options = eframe::NativeOptions {
         renderer: eframe::Renderer::Glow,
         viewport: eframe::egui::ViewportBuilder::default()
@@ -22,12 +38,10 @@ pub fn run_gui(project_path: Option<&Path>) -> anyhow::Result<()> {
         ..Default::default()
     };
 
-    let p_path = project_path.map(|p| p.to_path_buf());
-
     eframe::run_native(
         "LiveCraft",
         native_options,
-        Box::new(move |_cc| Ok(Box::new(LiveCraftApp::new(p_path.as_deref())))),
+        Box::new(move |_cc| Ok(Box::new(LiveCraftApp::new_with_options(options)))),
     )
     .map_err(|e| anyhow::anyhow!("GUI error: {}", e))
 }

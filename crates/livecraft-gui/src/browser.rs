@@ -1,13 +1,21 @@
 use crate::style::LivePalette;
-use eframe::egui::{self, Color32, Ui};
+use eframe::egui::{self, Color32, Pos2, Rounding, Sense, Ui, Vec2};
 use livecraft_core::model::{Device, DeviceType, Track, TrackType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrowserCategory {
+    Collections(usize), // 0..7 colored dots
+    Sounds,
+    Drums,
     Instruments,
     AudioEffects,
+    MidiEffects,
+    Plugins,
+    Clips,
     Samples,
-    Places,
+    Packs,
+    UserLibrary,
+    CurrentProject,
 }
 
 pub struct BrowserAction {
@@ -42,60 +50,197 @@ impl LiveBrowser {
         };
 
         ui.vertical(|ui| {
-            ui.set_width(170.0);
+            ui.set_width(180.0);
+            ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
 
-            // Search Bar
+            // 1. Search Bar (Manual p. 65)
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new("🔍").size(11.0));
+                ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
                 ui.add(
                     egui::TextEdit::singleline(&mut self.search_query)
-                        .hint_text("Search...")
-                        .desired_width(130.0),
+                        .hint_text("🔍 Search...")
+                        .desired_width(145.0),
                 );
+                if !self.search_query.is_empty() && ui.small_button("✕").clicked() {
+                    self.search_query.clear();
+                }
             });
 
-            ui.separator();
+            ui.add_space(3.0);
 
-            // Categories Section
+            // 2. Collections (Manual p. 81)
+            ui.label(
+                egui::RichText::new("COLLECTIONS")
+                    .size(9.0)
+                    .strong()
+                    .color(Color32::from_rgb(0x80, 0x80, 0x80)),
+            );
+
+            let collections = [
+                (Color32::from_rgb(0xff, 0x4f, 0x4f), "Favorites"),
+                (Color32::from_rgb(0xff, 0x9f, 0x36), "Synths"),
+                (Color32::from_rgb(0xff, 0xd8, 0x3d), "Drums"),
+                (Color32::from_rgb(0x38, 0xd8, 0x55), "Bass"),
+                (Color32::from_rgb(0x2f, 0x77, 0xee), "FX"),
+                (Color32::from_rgb(0xaa, 0x55, 0xff), "Templates"),
+                (Color32::from_rgb(0x88, 0x88, 0x88), "Other"),
+            ];
+
+            for (idx, (dot_color, label)) in collections.iter().enumerate() {
+                let is_sel = self.selected_category == BrowserCategory::Collections(idx);
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(176.0, 18.0), Sense::click());
+                if ui.is_rect_visible(rect) {
+                    let painter = ui.painter();
+                    if is_sel {
+                        painter.rect_filled(rect, Rounding::same(2.0), palette.surface_highlight);
+                    } else if resp.hovered() {
+                        painter.rect_filled(
+                            rect,
+                            Rounding::same(2.0),
+                            Color32::from_rgb(0x32, 0x32, 0x32),
+                        );
+                    }
+                    // Color dot
+                    painter.circle_filled(
+                        Pos2::new(rect.min.x + 8.0, rect.center().y),
+                        3.5,
+                        *dot_color,
+                    );
+                    painter.text(
+                        Pos2::new(rect.min.x + 20.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        *label,
+                        egui::FontId::proportional(10.5),
+                        if is_sel {
+                            Color32::WHITE
+                        } else {
+                            palette.control_foreground
+                        },
+                    );
+                }
+                if resp.clicked() {
+                    self.selected_category = BrowserCategory::Collections(idx);
+                }
+            }
+
+            ui.add_space(4.0);
+
+            // 3. Categories (Manual p. 64)
             ui.label(
                 egui::RichText::new("CATEGORIES")
                     .size(9.0)
-                    .color(Color32::from_rgb(0x88, 0x88, 0x88)),
+                    .strong()
+                    .color(Color32::from_rgb(0x80, 0x80, 0x80)),
             );
 
-            let mut category_btn = |cat: BrowserCategory, label: &str, icon: &str| {
+            let categories = [
+                (BrowserCategory::Sounds, "Sounds"),
+                (BrowserCategory::Drums, "Drums"),
+                (BrowserCategory::Instruments, "Instruments"),
+                (BrowserCategory::AudioEffects, "Audio Effects"),
+                (BrowserCategory::MidiEffects, "MIDI Effects"),
+                (BrowserCategory::Plugins, "Plug-Ins"),
+                (BrowserCategory::Clips, "Clips"),
+                (BrowserCategory::Samples, "Samples"),
+            ];
+
+            for (cat, label) in categories {
                 let is_sel = self.selected_category == cat;
-                let text = format!("{} {}", icon, label);
-                if ui.selectable_label(is_sel, text).clicked() {
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(176.0, 18.0), Sense::click());
+                if ui.is_rect_visible(rect) {
+                    let painter = ui.painter();
+                    if is_sel {
+                        painter.rect_filled(rect, Rounding::same(2.0), palette.surface_highlight);
+                    } else if resp.hovered() {
+                        painter.rect_filled(
+                            rect,
+                            Rounding::same(2.0),
+                            Color32::from_rgb(0x32, 0x32, 0x32),
+                        );
+                    }
+                    painter.text(
+                        Pos2::new(rect.min.x + 8.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        label,
+                        egui::FontId::proportional(10.5),
+                        if is_sel {
+                            Color32::WHITE
+                        } else {
+                            palette.control_foreground
+                        },
+                    );
+                }
+                if resp.clicked() {
                     self.selected_category = cat;
                 }
-            };
+            }
 
-            category_btn(BrowserCategory::Instruments, "Instruments", "🎹");
-            category_btn(BrowserCategory::AudioEffects, "Audio Effects", "🎛️");
-            category_btn(BrowserCategory::Samples, "Samples", "🌊");
-            category_btn(BrowserCategory::Places, "Places", "📁");
+            ui.add_space(4.0);
+
+            // 4. Places (Manual p. 85)
+            ui.label(
+                egui::RichText::new("PLACES")
+                    .size(9.0)
+                    .strong()
+                    .color(Color32::from_rgb(0x80, 0x80, 0x80)),
+            );
+
+            let places = [
+                (BrowserCategory::Packs, "Packs"),
+                (BrowserCategory::UserLibrary, "User Library"),
+                (BrowserCategory::CurrentProject, "Current Project"),
+            ];
+
+            for (cat, label) in places {
+                let is_sel = self.selected_category == cat;
+                let (rect, resp) = ui.allocate_exact_size(Vec2::new(176.0, 18.0), Sense::click());
+                if ui.is_rect_visible(rect) {
+                    let painter = ui.painter();
+                    if is_sel {
+                        painter.rect_filled(rect, Rounding::same(2.0), palette.surface_highlight);
+                    } else if resp.hovered() {
+                        painter.rect_filled(
+                            rect,
+                            Rounding::same(2.0),
+                            Color32::from_rgb(0x32, 0x32, 0x32),
+                        );
+                    }
+                    painter.text(
+                        Pos2::new(rect.min.x + 8.0, rect.center().y),
+                        egui::Align2::LEFT_CENTER,
+                        label,
+                        egui::FontId::proportional(10.5),
+                        if is_sel {
+                            Color32::WHITE
+                        } else {
+                            palette.control_foreground
+                        },
+                    );
+                }
+                if resp.clicked() {
+                    self.selected_category = cat;
+                }
+            }
 
             ui.separator();
 
-            // Content List based on selected category
+            // 5. Content Items
             egui::ScrollArea::vertical().show(ui, |ui| match self.selected_category {
                 BrowserCategory::Instruments => {
                     let instruments = [
                         (
                             "Operator",
                             DeviceType::Operator,
-                            "4-Osc FM & Subtractive Synth",
+                            "4-Osc FM & Subtractive Synthesizer",
                         ),
-                        ("Simpler", DeviceType::Simpler, "Polyphonic Sample Player"),
                         (
-                            "Drum Rack",
-                            DeviceType::DrumRack,
-                            "16-Pad Sample & Synth Drum Machine",
+                            "Simpler",
+                            DeviceType::Simpler,
+                            "Polyphonic Sample Instrument",
                         ),
+                        ("Drum Rack", DeviceType::DrumRack, "16-Pad Drum Sampler"),
                     ];
-
-                    for (name, dtype, desc) in instruments {
+                    for (name, dtype, _desc) in instruments {
                         if !self.search_query.is_empty()
                             && !name
                                 .to_lowercase()
@@ -103,71 +248,20 @@ impl LiveBrowser {
                         {
                             continue;
                         }
-
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(name)
-                                        .strong()
-                                        .size(11.0)
-                                        .color(palette.amber),
-                                );
-                                if ui.button("+ Add").clicked() {
-                                    let dev = Device::new(rand_id(), name, dtype);
-                                    action.add_device = Some(dev);
-                                }
-                            });
-                            ui.label(
-                                egui::RichText::new(desc)
-                                    .size(9.0)
-                                    .color(Color32::from_rgb(0x88, 0x88, 0x88)),
-                            );
-                        });
-                        ui.add_space(2.0);
+                        if ui.selectable_label(false, format!("🎹 {}", name)).clicked() {
+                            action.add_device = Some(Device::new(1001, name, dtype));
+                        }
                     }
                 }
                 BrowserCategory::AudioEffects => {
-                    let effects = [
-                        ("EQ Eight", DeviceType::EqEight, "8-band parametric EQ"),
-                        (
-                            "Compressor",
-                            DeviceType::Compressor,
-                            "Dynamic range compressor",
-                        ),
-                        (
-                            "Saturator",
-                            DeviceType::Saturator,
-                            "Harmonic drive & waveshaping",
-                        ),
-                        ("Delay", DeviceType::Delay, "Stereo ping-pong delay"),
-                        ("Reverb", DeviceType::Reverb, "Algorithmic room reverb"),
-                        ("Limiter", DeviceType::Limiter, "Peak brickwall limiter"),
-                        ("Utility", DeviceType::Utility, "Gain, stereo width & pan"),
-                        (
-                            "Auto Filter",
-                            DeviceType::AutoFilter,
-                            "Multi-mode resonant filter with LFO",
-                        ),
-                        (
-                            "Chorus-Ensemble",
-                            DeviceType::Chorus,
-                            "Stereo modulated delay ensemble",
-                        ),
-                        (
-                            "Auto Pan-Tremolo",
-                            DeviceType::AutoPan,
-                            "LFO stereo panner & tremolo",
-                        ),
-                        (
-                            "Gate",
-                            DeviceType::Gate,
-                            "Noise gate with hysteresis & hold",
-                        ),
-                        ("EQ Three", DeviceType::EqThree, "3-band DJ isolator EQ"),
-                        ("Redux", DeviceType::Redux, "Sample rate & bit crusher"),
+                    let fx = [
+                        ("Reverb", DeviceType::Reverb),
+                        ("Delay", DeviceType::Delay),
+                        ("EQ Eight", DeviceType::EqEight),
+                        ("Compressor", DeviceType::Compressor),
+                        ("Saturator", DeviceType::Saturator),
                     ];
-
-                    for (name, dtype, desc) in effects {
+                    for (name, dtype) in fx {
                         if !self.search_query.is_empty()
                             && !name
                                 .to_lowercase()
@@ -175,66 +269,21 @@ impl LiveBrowser {
                         {
                             continue;
                         }
-
-                        ui.group(|ui| {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(name)
-                                        .strong()
-                                        .size(11.0)
-                                        .color(palette.cyan),
-                                );
-                                if ui.button("+ Add").clicked() {
-                                    let dev = Device::new(rand_id(), name, dtype);
-                                    action.add_device = Some(dev);
-                                }
-                            });
-                            ui.label(
-                                egui::RichText::new(desc)
-                                    .size(9.0)
-                                    .color(Color32::from_rgb(0x88, 0x88, 0x88)),
-                            );
-                        });
-                        ui.add_space(2.0);
+                        if ui.selectable_label(false, format!("🎛️ {}", name)).clicked() {
+                            action.add_device = Some(Device::new(1002, name, dtype));
+                        }
                     }
                 }
-                BrowserCategory::Samples => {
-                    ui.label(egui::RichText::new("Core Sample Library").size(10.0));
-                    ui.label(egui::RichText::new("• 808_Kick.wav").size(10.0));
-                    ui.label(egui::RichText::new("• 909_Snare.wav").size(10.0));
-                    ui.label(egui::RichText::new("• Closed_HiHat.wav").size(10.0));
-                    ui.label(egui::RichText::new("• Open_HiHat.wav").size(10.0));
-                }
-                BrowserCategory::Places => {
-                    ui.label(egui::RichText::new("Places:").size(10.0));
-                    ui.label("• Core Library");
-                    ui.label("• User Library");
-                    ui.label("• Current Project");
-                }
-            });
-
-            ui.add_space(8.0);
-            ui.separator();
-
-            // Track Addition shortcuts
-            ui.horizontal(|ui| {
-                if ui.button("+ MIDI").clicked() {
-                    action.add_track = Some(TrackType::Midi);
-                }
-                if ui.button("+ Audio").clicked() {
-                    action.add_track = Some(TrackType::Audio);
+                _ => {
+                    ui.label(
+                        egui::RichText::new("No items in folder")
+                            .size(10.0)
+                            .color(Color32::from_rgb(0x77, 0x77, 0x77)),
+                    );
                 }
             });
         });
 
         action
     }
-}
-
-fn rand_id() -> u64 {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_micros() as u64
 }
