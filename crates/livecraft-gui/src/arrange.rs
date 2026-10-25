@@ -22,13 +22,15 @@ pub fn render_arrangement_view(
         select_clip: None,
     };
 
-    let total_bars = 48;
-    let pixels_per_beat = 28.0;
-    let timeline_width = (total_bars * 4) as f32 * pixels_per_beat;
-    let track_header_width = 150.0;
-    let track_lane_height = 54.0;
+    let avail_w = ui.available_width();
+    let track_header_width = 180.0_f32;
+    let track_lane_height = 56.0_f32;
+    let timeline_width = (avail_w - track_header_width - 4.0).max(300.0);
+    let pixels_per_beat = 24.0_f32;
+    let total_bars = (timeline_width / (4.0 * pixels_per_beat)).ceil() as usize;
+    let is_dark = palette.is_dark();
 
-    egui::ScrollArea::both()
+    egui::ScrollArea::vertical()
         .auto_shrink([false, false])
         .show(ui, |ui| {
             ui.vertical(|ui| {
@@ -38,42 +40,14 @@ pub fn render_arrangement_view(
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(0.0, 0.0);
 
-                    // Track title spacer on left
-                    let (spacer_rect, _) =
-                        ui.allocate_exact_size(Vec2::new(track_header_width, 28.0), Sense::hover());
-                    if ui.is_rect_visible(spacer_rect) {
-                        let painter = ui.painter();
-                        painter.rect_filled(
-                            spacer_rect,
-                            Rounding::ZERO,
-                            Color32::from_rgb(0x22, 0x22, 0x22),
-                        );
-                        painter.rect_stroke(
-                            spacer_rect,
-                            Rounding::ZERO,
-                            Stroke::new(1.0_f32, palette.panel_border),
-                        );
-                        painter.text(
-                            Pos2::new(spacer_rect.min.x + 8.0, spacer_rect.center().y),
-                            egui::Align2::LEFT_CENTER,
-                            "Track Title",
-                            egui::FontId::proportional(10.0),
-                            palette.control_disabled,
-                        );
-                    }
-
-                    // Timeline Ruler & Scrub Area
+                    // Timeline Ruler & Scrub Area on LEFT
                     let (ruler_rect, ruler_resp) = ui.allocate_exact_size(
                         Vec2::new(timeline_width, 28.0),
                         Sense::click_and_drag(),
                     );
                     let painter = ui.painter();
 
-                    painter.rect_filled(
-                        ruler_rect,
-                        Rounding::ZERO,
-                        Color32::from_rgb(0x1c, 0x1c, 0x1c),
-                    );
+                    painter.rect_filled(ruler_rect, Rounding::ZERO, palette.ruler_bg);
                     painter.rect_stroke(
                         ruler_rect,
                         Rounding::ZERO,
@@ -121,7 +95,7 @@ pub fn render_arrangement_view(
                                 Pos2::new(bar_x, ruler_rect.min.y + 8.0),
                                 Pos2::new(bar_x, ruler_rect.max.y),
                             ],
-                            Stroke::new(1.0_f32, Color32::from_rgb(0x40, 0x40, 0x40)),
+                            Stroke::new(1.0_f32, palette.panel_border),
                         );
 
                         // Bar number text
@@ -141,12 +115,19 @@ pub fn render_arrangement_view(
                                     Pos2::new(beat_x, ruler_rect.max.y - 5.0),
                                     Pos2::new(beat_x, ruler_rect.max.y),
                                 ],
-                                Stroke::new(0.5_f32, Color32::from_rgb(0x30, 0x30, 0x30)),
+                                Stroke::new(
+                                    0.5_f32,
+                                    if is_dark {
+                                        Color32::from_rgb(0x38, 0x38, 0x38)
+                                    } else {
+                                        Color32::from_rgb(0x9a, 0x9a, 0x98)
+                                    },
+                                ),
                             );
                         }
                     }
 
-                    // Playhead scrubber marker in ruler
+                    // Playhead marker in ruler
                     let playhead_x = ruler_rect.min.x + (playhead_beats as f32 * pixels_per_beat);
                     if playhead_x >= ruler_rect.min.x && playhead_x <= ruler_rect.max.x {
                         let p1 = Pos2::new(playhead_x - 4.5, ruler_rect.min.y + 2.0);
@@ -173,10 +154,57 @@ pub fn render_arrangement_view(
                             action.set_playhead = Some(new_beats);
                         }
                     }
+
+                    // Track header top toolbar on RIGHT (Ableton Live 12 layout)
+                    let (spacer_rect, _) =
+                        ui.allocate_exact_size(Vec2::new(track_header_width, 28.0), Sense::hover());
+                    if ui.is_rect_visible(spacer_rect) {
+                        let painter = ui.painter();
+                        painter.rect_filled(spacer_rect, Rounding::ZERO, palette.button_idle);
+                        painter.rect_stroke(
+                            spacer_rect,
+                            Rounding::ZERO,
+                            Stroke::new(1.0_f32, palette.panel_border),
+                        );
+
+                        // "Set" button
+                        let set_box = Rect::from_min_size(
+                            Pos2::new(spacer_rect.min.x + 8.0, spacer_rect.min.y + 4.0),
+                            Vec2::new(32.0, 20.0),
+                        );
+                        painter.rect_filled(set_box, Rounding::same(2.0), palette.surface_area);
+                        painter.rect_stroke(
+                            set_box,
+                            Rounding::same(2.0),
+                            Stroke::new(1.0_f32, palette.panel_border),
+                        );
+                        painter.text(
+                            set_box.center(),
+                            egui::Align2::CENTER_CENTER,
+                            "Set",
+                            egui::FontId::proportional(10.0),
+                            palette.control_foreground,
+                        );
+
+                        // Locator cue icon
+                        let cue_c = Pos2::new(spacer_rect.min.x + 52.0, spacer_rect.center().y);
+                        painter.line_segment(
+                            [
+                                Pos2::new(cue_c.x - 4.0, cue_c.y + 4.0),
+                                Pos2::new(cue_c.x + 4.0, cue_c.y - 4.0),
+                            ],
+                            Stroke::new(1.5_f32, palette.control_foreground),
+                        );
+                        painter.circle_filled(
+                            Pos2::new(cue_c.x + 4.0, cue_c.y - 4.0),
+                            2.5,
+                            palette.amber,
+                        );
+                    }
                 });
 
                 // -------------------------------------------------------------
-                // 2. Track Lanes (Manual p. 165-175)
+                // 2. Track Lanes (Manual p. 165-175): Timeline on Left, Track Strips on Right
                 // -------------------------------------------------------------
                 for (trk_idx, trk) in project.tracks.iter_mut().enumerate() {
                     let is_selected = trk_idx == selected_track_idx;
@@ -184,116 +212,33 @@ pub fn render_arrangement_view(
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(0.0, 0.0);
 
-                        // Left Track Header
-                        let (hdr_rect, hdr_resp) = ui.allocate_exact_size(
-                            Vec2::new(track_header_width, track_lane_height),
-                            Sense::click(),
-                        );
-                        if ui.is_rect_visible(hdr_rect) {
-                            let painter = ui.painter();
-                            let bg_color = if is_selected {
-                                palette.surface_highlight
-                            } else {
-                                Color32::from_rgb(0x28, 0x28, 0x28)
-                            };
-
-                            painter.rect_filled(hdr_rect, Rounding::same(1.0), bg_color);
-                            let border_stroke = if is_selected {
-                                Stroke::new(1.5_f32, palette.amber)
-                            } else {
-                                Stroke::new(1.0_f32, palette.panel_border)
-                            };
-                            painter.rect_stroke(hdr_rect, Rounding::same(1.0), border_stroke);
-
-                            // Left color accent bar
-                            let [r, g, b, _] = parse_hex_color(&trk.color);
-                            painter.rect_filled(
-                                Rect::from_min_size(
-                                    hdr_rect.min,
-                                    Vec2::new(4.0, hdr_rect.height()),
-                                ),
-                                Rounding::same(1.0),
-                                Color32::from_rgb(r, g, b),
-                            );
-
-                            // Track Title
-                            painter.text(
-                                Pos2::new(hdr_rect.min.x + 10.0, hdr_rect.min.y + 12.0),
-                                egui::Align2::LEFT_CENTER,
-                                &trk.name,
-                                egui::FontId::proportional(11.0),
-                                if is_selected {
-                                    Color32::WHITE
-                                } else {
-                                    palette.control_foreground
-                                },
-                            );
-
-                            // Controls info (Mute, Solo, Arm status)
-                            let act_color = if !trk.is_muted {
-                                palette.amber
-                            } else {
-                                palette.control_disabled
-                            };
-                            let solo_color = if trk.is_soloed {
-                                palette.solo_blue
-                            } else {
-                                palette.control_disabled
-                            };
-                            let arm_color = if trk.is_armed {
-                                palette.record_red
-                            } else {
-                                palette.control_disabled
-                            };
-
-                            painter.text(
-                                Pos2::new(hdr_rect.min.x + 10.0, hdr_rect.min.y + 32.0),
-                                egui::Align2::LEFT_CENTER,
-                                format!("{:.1} dB | Pan {:.2}", trk.volume_db, trk.pan),
-                                egui::FontId::monospace(8.5),
-                                Color32::from_rgb(0x88, 0x88, 0x88),
-                            );
-
-                            // Small status dots
-                            painter.circle_filled(
-                                Pos2::new(hdr_rect.max.x - 36.0, hdr_rect.min.y + 32.0),
-                                3.0,
-                                act_color,
-                            );
-                            painter.circle_filled(
-                                Pos2::new(hdr_rect.max.x - 24.0, hdr_rect.min.y + 32.0),
-                                3.0,
-                                solo_color,
-                            );
-                            painter.circle_filled(
-                                Pos2::new(hdr_rect.max.x - 12.0, hdr_rect.min.y + 32.0),
-                                3.0,
-                                arm_color,
-                            );
-                        }
-
-                        if hdr_resp.clicked() {
-                            action.select_track = Some(trk_idx);
-                        }
-
-                        // Right Timeline Lane
+                        // A. Timeline Lane on the LEFT
                         let (lane_rect, lane_resp) = ui.allocate_exact_size(
                             Vec2::new(timeline_width, track_lane_height),
                             Sense::click(),
                         );
                         let lane_painter = ui.painter();
 
-                        // Alternating lane background
                         let lane_bg = if trk_idx % 2 == 0 {
-                            Color32::from_rgb(0x22, 0x22, 0x22)
-                        } else {
+                            palette.clip_slot_bg
+                        } else if is_dark {
                             Color32::from_rgb(0x25, 0x25, 0x25)
+                        } else {
+                            Color32::from_rgb(0xbb, 0xbb, 0xb9)
                         };
                         lane_painter.rect_filled(lane_rect, Rounding::ZERO, lane_bg);
                         lane_painter.rect_stroke(
                             lane_rect,
                             Rounding::ZERO,
-                            Stroke::new(1.0_f32, Color32::from_rgb(0x2e, 0x2e, 0x2e)),
+                            Stroke::new(1.0_f32, palette.panel_border),
+                        );
+
+                        // Left track color stripe
+                        let [r, g, b, _] = parse_hex_color(&trk.color);
+                        lane_painter.rect_filled(
+                            Rect::from_min_size(lane_rect.min, Vec2::new(3.0, lane_rect.height())),
+                            Rounding::ZERO,
+                            Color32::from_rgb(r, g, b),
                         );
 
                         // Vertical bar grid lines
@@ -304,7 +249,14 @@ pub fn render_arrangement_view(
                                     Pos2::new(bar_x, lane_rect.min.y),
                                     Pos2::new(bar_x, lane_rect.max.y),
                                 ],
-                                Stroke::new(1.0_f32, Color32::from_rgb(0x2e, 0x2e, 0x2e)),
+                                Stroke::new(
+                                    1.0_f32,
+                                    if is_dark {
+                                        Color32::from_rgb(0x32, 0x32, 0x32)
+                                    } else {
+                                        Color32::from_rgb(0xa8, 0xa8, 0xa6)
+                                    },
+                                ),
                             );
 
                             for b in 1..4 {
@@ -314,12 +266,19 @@ pub fn render_arrangement_view(
                                         Pos2::new(beat_x, lane_rect.min.y),
                                         Pos2::new(beat_x, lane_rect.max.y),
                                     ],
-                                    Stroke::new(0.5_f32, Color32::from_rgb(0x28, 0x28, 0x28)),
+                                    Stroke::new(
+                                        0.5_f32,
+                                        if is_dark {
+                                            Color32::from_rgb(0x28, 0x28, 0x28)
+                                        } else {
+                                            Color32::from_rgb(0xb4, 0xb4, 0xb2)
+                                        },
+                                    ),
                                 );
                             }
                         }
 
-                        // Render Arrangement Clips (or fallback clip slot 0 for preview)
+                        // Render Arrangement Clips
                         let clips_to_render: Vec<(f64, f64, &livecraft_core::model::Clip)> =
                             if !trk.arrangement_clips.is_empty() {
                                 trk.arrangement_clips
@@ -342,27 +301,28 @@ pub fn render_arrangement_view(
                                 Vec2::new(clip_w, lane_rect.height() - 4.0),
                             );
 
-                            let [r, g, b, _] = parse_hex_color(&clip.color);
-                            let clip_color = Color32::from_rgb(r, g, b);
+                            let [cr, cg, cb, _] = parse_hex_color(&clip.color);
+                            let clip_color = Color32::from_rgb(cr, cg, cb);
 
                             // Clip Body Fill
-                            lane_painter.rect_filled(
-                                clip_rect,
-                                Rounding::same(2.0),
-                                Color32::from_rgba_unmultiplied(r, g, b, 70),
-                            );
+                            let clip_body_bg = if is_dark {
+                                Color32::from_rgba_unmultiplied(cr, cg, cb, 80)
+                            } else {
+                                Color32::from_rgba_unmultiplied(cr, cg, cb, 140)
+                            };
+                            lane_painter.rect_filled(clip_rect, Rounding::same(2.0), clip_body_bg);
                             lane_painter.rect_stroke(
                                 clip_rect,
                                 Rounding::same(2.0),
                                 Stroke::new(1.0_f32, clip_color),
                             );
 
-                            // Clip Header Bar
+                            // Clip Title Header Bar
                             let hdr_bar = Rect::from_min_size(
                                 clip_rect.min,
                                 Vec2::new(clip_rect.width(), 14.0),
                             );
-                            lane_painter.rect_filled(hdr_bar, Rounding::same(1.0), clip_color);
+                            lane_painter.rect_filled(hdr_bar, Rounding::same(2.0), clip_color);
                             lane_painter.text(
                                 Pos2::new(hdr_bar.min.x + 4.0, hdr_bar.center().y),
                                 egui::Align2::LEFT_CENTER,
@@ -371,50 +331,31 @@ pub fn render_arrangement_view(
                                 Color32::BLACK,
                             );
 
-                            // Draw preview contents: MIDI notes or Audio waveform
-                            match clip.payload {
-                                ClipPayload::Midi(ref mdata) => {
-                                    for note in &mdata.notes {
-                                        let note_x = clip_rect.min.x
-                                            + (note.start_beat as f32 * pixels_per_beat);
-                                        let note_w =
-                                            (note.duration_beats as f32 * pixels_per_beat).max(3.0);
-                                        // Map pitch 36-84 to vertical space in clip
-                                        let norm_pitch = ((note.pitch.clamp(36, 84) - 36) as f32
-                                            / 48.0)
-                                            .clamp(0.0, 1.0);
-                                        let note_y = clip_rect.max.y
-                                            - 4.0
-                                            - norm_pitch * (clip_rect.height() - 20.0);
-                                        let n_rect = Rect::from_min_size(
-                                            Pos2::new(note_x, note_y),
-                                            Vec2::new(note_w, 2.5),
-                                        );
-                                        lane_painter.rect_filled(
-                                            n_rect,
-                                            Rounding::same(0.5),
-                                            Color32::WHITE,
-                                        );
-                                    }
-                                }
-                                ClipPayload::Audio(_) => {
-                                    // Simulated high-fidelity waveform center line & contour
-                                    let mid_y = clip_rect.center().y + 6.0;
-                                    let steps = (clip_rect.width() / 4.0).max(4.0) as usize;
-                                    for i in 0..steps {
-                                        let x = clip_rect.min.x + i as f32 * 4.0;
-                                        let wave_amp = ((i as f32 * 0.4).sin().abs() * 8.0) + 2.0;
-                                        lane_painter.line_segment(
-                                            [
-                                                Pos2::new(x, mid_y - wave_amp),
-                                                Pos2::new(x, mid_y + wave_amp),
-                                            ],
-                                            Stroke::new(
-                                                1.5_f32,
-                                                Color32::from_rgba_unmultiplied(255, 255, 255, 180),
-                                            ),
-                                        );
-                                    }
+                            // Mini preview notes / waveform inside clip
+                            if let ClipPayload::Midi(ref mdata) = clip.payload {
+                                for note in &mdata.notes {
+                                    let n_x = clip_rect.min.x
+                                        + (note.start_beat as f32 * pixels_per_beat);
+                                    let n_w =
+                                        (note.duration_beats as f32 * pixels_per_beat).max(3.0);
+                                    let pitch_norm =
+                                        ((note.pitch as f32 - 48.0) / 36.0).clamp(0.0, 1.0);
+                                    let n_y = clip_rect.max.y
+                                        - 4.0
+                                        - pitch_norm * (clip_rect.height() - 20.0);
+                                    let n_rect = Rect::from_min_size(
+                                        Pos2::new(n_x, n_y),
+                                        Vec2::new(n_w, 2.5),
+                                    );
+                                    lane_painter.rect_filled(
+                                        n_rect,
+                                        Rounding::same(0.5),
+                                        if is_dark {
+                                            Color32::WHITE
+                                        } else {
+                                            Color32::BLACK
+                                        },
+                                    );
                                 }
                             }
                         }
@@ -439,6 +380,166 @@ pub fn render_arrangement_view(
                                 action.set_playhead = Some(new_beats);
                                 action.select_track = Some(trk_idx);
                             }
+                        }
+
+                        // B. Right Track Header Strip (Ableton Live 12 layout)
+                        let (hdr_rect, hdr_resp) = ui.allocate_exact_size(
+                            Vec2::new(track_header_width, track_lane_height),
+                            Sense::click(),
+                        );
+                        if ui.is_rect_visible(hdr_rect) {
+                            let painter = ui.painter();
+                            let bg_color = if is_selected {
+                                palette.surface_highlight
+                            } else {
+                                palette.button_idle
+                            };
+
+                            painter.rect_filled(hdr_rect, Rounding::same(1.0), bg_color);
+                            let border_stroke = if is_selected {
+                                Stroke::new(1.5_f32, palette.amber)
+                            } else {
+                                Stroke::new(1.0_f32, palette.panel_border)
+                            };
+                            painter.rect_stroke(hdr_rect, Rounding::same(1.0), border_stroke);
+
+                            // Left color accent bar
+                            let [r, g, b, _] = parse_hex_color(&trk.color);
+                            painter.rect_filled(
+                                Rect::from_min_size(
+                                    hdr_rect.min,
+                                    Vec2::new(4.0, hdr_rect.height()),
+                                ),
+                                Rounding::same(1.0),
+                                Color32::from_rgb(r, g, b),
+                            );
+
+                            // Track Title
+                            painter.text(
+                                Pos2::new(hdr_rect.min.x + 10.0, hdr_rect.min.y + 14.0),
+                                egui::Align2::LEFT_CENTER,
+                                &trk.name,
+                                egui::FontId::proportional(11.0),
+                                if is_selected {
+                                    if is_dark {
+                                        Color32::WHITE
+                                    } else {
+                                        Color32::BLACK
+                                    }
+                                } else {
+                                    palette.control_foreground
+                                },
+                            );
+
+                            // Volume and Pan display
+                            let vol_str = if trk.volume_db <= -59.5 {
+                                "-inf dB".to_string()
+                            } else {
+                                format!("{:.1} dB", trk.volume_db)
+                            };
+                            let pan_str = if trk.pan.abs() < 0.05 {
+                                "C".to_string()
+                            } else if trk.pan < 0.0 {
+                                format!("{}L", (-trk.pan * 50.0).round() as i32)
+                            } else {
+                                format!("{}R", (trk.pan * 50.0).round() as i32)
+                            };
+                            painter.text(
+                                Pos2::new(hdr_rect.min.x + 10.0, hdr_rect.min.y + 36.0),
+                                egui::Align2::LEFT_CENTER,
+                                format!("{} | {}", vol_str, pan_str),
+                                egui::FontId::monospace(9.0),
+                                if is_dark {
+                                    Color32::from_rgb(0xa0, 0xa0, 0xa0)
+                                } else {
+                                    Color32::from_rgb(0x40, 0x40, 0x40)
+                                },
+                            );
+
+                            // Buttons: Track Activator [1], Solo [S], Arm [●]
+                            let btn_y = hdr_rect.center().y;
+                            let act_color = if !trk.is_muted {
+                                palette.amber
+                            } else {
+                                palette.button_idle
+                            };
+                            let act_rect = Rect::from_center_size(
+                                Pos2::new(hdr_rect.max.x - 52.0, btn_y),
+                                Vec2::new(18.0, 18.0),
+                            );
+                            painter.rect_filled(act_rect, Rounding::same(2.0), act_color);
+                            painter.rect_stroke(
+                                act_rect,
+                                Rounding::same(2.0),
+                                Stroke::new(1.0_f32, palette.panel_border),
+                            );
+                            painter.text(
+                                act_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                format!("{}", trk_idx + 1),
+                                egui::FontId::proportional(10.0),
+                                if !trk.is_muted {
+                                    Color32::BLACK
+                                } else {
+                                    palette.control_disabled
+                                },
+                            );
+
+                            let solo_color = if trk.is_soloed {
+                                palette.solo_blue
+                            } else {
+                                palette.button_idle
+                            };
+                            let solo_rect = Rect::from_center_size(
+                                Pos2::new(hdr_rect.max.x - 30.0, btn_y),
+                                Vec2::new(18.0, 18.0),
+                            );
+                            painter.rect_filled(solo_rect, Rounding::same(2.0), solo_color);
+                            painter.rect_stroke(
+                                solo_rect,
+                                Rounding::same(2.0),
+                                Stroke::new(1.0_f32, palette.panel_border),
+                            );
+                            painter.text(
+                                solo_rect.center(),
+                                egui::Align2::CENTER_CENTER,
+                                "S",
+                                egui::FontId::proportional(10.0),
+                                if trk.is_soloed {
+                                    Color32::WHITE
+                                } else {
+                                    palette.control_disabled
+                                },
+                            );
+
+                            let arm_color = if trk.is_armed {
+                                palette.record_red
+                            } else {
+                                palette.button_idle
+                            };
+                            let arm_rect = Rect::from_center_size(
+                                Pos2::new(hdr_rect.max.x - 10.0, btn_y),
+                                Vec2::new(16.0, 16.0),
+                            );
+                            painter.rect_filled(arm_rect, Rounding::same(2.0), arm_color);
+                            painter.rect_stroke(
+                                arm_rect,
+                                Rounding::same(2.0),
+                                Stroke::new(1.0_f32, palette.panel_border),
+                            );
+                            painter.circle_filled(
+                                arm_rect.center(),
+                                3.5,
+                                if trk.is_armed {
+                                    Color32::WHITE
+                                } else {
+                                    palette.control_disabled
+                                },
+                            );
+                        }
+
+                        if hdr_resp.clicked() {
+                            action.select_track = Some(trk_idx);
                         }
                     });
                 }

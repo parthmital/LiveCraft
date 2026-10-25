@@ -24,7 +24,7 @@ Thank you for your interest in contributing to LiveCraft. LiveCraft is a clean-r
 git clone https://github.com/storytold/livecraft.git
 cd livecraft
 
-# Run full test suite (42 tests across core, dsp, and cli)
+# Run full test suite (44 tests across core, dsp, gui, and cli)
 cargo test --workspace
 
 # Check formatting

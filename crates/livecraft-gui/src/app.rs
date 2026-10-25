@@ -1,7 +1,6 @@
 use crate::arrange::render_arrangement_view;
 use crate::browser::LiveBrowser;
 use crate::devices::render_device_chain;
-use crate::mixer::render_mixer_section;
 use crate::pianoroll::render_piano_roll;
 use crate::session::render_session_view;
 use crate::style::{apply_live_style, LivePalette};
@@ -236,6 +235,23 @@ impl LiveCraftApp {
                 self.project_path = Some(default_save);
                 self.status_message = "Saved to Untitled.als".to_string();
             }
+        }
+
+        // F8 -> Toggle Dark / Light Theme
+        if ctx.input(|i| i.key_pressed(Key::F8)) {
+            self.palette = if self.palette.is_dark() {
+                LivePalette::light()
+            } else {
+                LivePalette::dark()
+            };
+            self.status_message = format!(
+                "Theme changed to {}",
+                if self.palette.is_dark() {
+                    "Dark"
+                } else {
+                    "Light"
+                }
+            );
         }
     }
 
@@ -476,8 +492,8 @@ impl eframe::App for LiveCraftApp {
                         ui,
                         self.bottom_tab == 0,
                         self.palette.amber,
-                        "🎛️ Device View",
-                        Vec2::new(96.0, 22.0),
+                        "Device View",
+                        Vec2::new(88.0, 22.0),
                     );
                     if dev_btn.clicked() { self.bottom_tab = 0; }
 
@@ -485,8 +501,8 @@ impl eframe::App for LiveCraftApp {
                         ui,
                         self.bottom_tab == 1,
                         self.palette.amber,
-                        "🎹 Clip View",
-                        Vec2::new(88.0, 22.0),
+                        "Clip View",
+                        Vec2::new(76.0, 22.0),
                     );
                     if clip_btn.clicked() { self.bottom_tab = 1; }
 
@@ -570,58 +586,56 @@ impl eframe::App for LiveCraftApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             match self.view_mode {
                 ViewMode::Session => {
-                    ui.vertical(|ui| {
-                        // Top part of CentralPanel: Clip Matrix
-                        let sess_action = render_session_view(
-                            ui,
-                            &mut self.project,
-                            self.selected_track_idx,
-                            &active_slots,
-                            playhead_beats,
-                            &self.palette,
-                        );
+                    let sess_action = render_session_view(
+                        ui,
+                        &mut self.project,
+                        self.selected_track_idx,
+                        &active_slots,
+                        &track_meters,
+                        &master_meter,
+                        playhead_beats,
+                        &self.palette,
+                    );
 
-                        if let Some((t, s)) = sess_action.trigger_clip {
-                            if let Some(ref eng) = self.engine {
-                                eng.trigger_clip(t, s);
-                                eng.play();
-                            }
+                    if let Some((t, s)) = sess_action.trigger_clip {
+                        if let Some(ref eng) = self.engine {
+                            eng.trigger_clip(t, s);
+                            eng.play();
                         }
-                        if let Some(t) = sess_action.stop_clip {
-                            if let Some(ref eng) = self.engine {
-                                eng.stop_clip(t);
-                            }
+                    }
+                    if let Some(t) = sess_action.stop_clip {
+                        if let Some(ref eng) = self.engine {
+                            eng.stop_clip(t);
                         }
-                        if let Some(sc) = sess_action.trigger_scene {
-                            if let Some(ref eng) = self.engine {
-                                eng.trigger_scene(sc);
-                                eng.play();
-                            }
+                    }
+                    if let Some(sc) = sess_action.trigger_scene {
+                        if let Some(ref eng) = self.engine {
+                            eng.trigger_scene(sc);
+                            eng.play();
                         }
-                        if sess_action.stop_all_clips {
-                            if let Some(ref eng) = self.engine {
-                                eng.stop();
-                            }
+                    }
+                    if sess_action.stop_all_clips {
+                        if let Some(ref eng) = self.engine {
+                            eng.stop();
                         }
-                        if let Some(t) = sess_action.select_track {
-                            self.selected_track_idx = t;
-                        }
-                        if let Some(c) = sess_action.select_clip {
-                            self.selected_clip = Some(c);
-                            self.bottom_tab = 1; // Switch to clip view
-                        }
-
-                        ui.separator();
-
-                        // Bottom part of Session View: Mixer Faders & VU meters
-                        render_mixer_section(
-                            ui,
-                            &mut self.project,
-                            &track_meters,
-                            &master_meter,
-                            &self.palette,
-                        );
-                    });
+                    }
+                    if let Some(t) = sess_action.select_track {
+                        self.selected_track_idx = t;
+                    }
+                    if let Some(c) = sess_action.select_clip {
+                        self.selected_clip = Some(c);
+                        self.bottom_tab = 1; // Switch to clip view
+                    }
+                    if let Some(ttype) = sess_action.add_track {
+                        let new_id = self.project.tracks.len() as u64 + 1;
+                        let name = match ttype {
+                            TrackType::Audio => format!("{}-Audio", new_id),
+                            TrackType::Midi => format!("{}-MIDI", new_id),
+                            _ => format!("Track-{}", new_id),
+                        };
+                        self.project.tracks.push(Track::new(new_id, name, ttype, 8));
+                        self.status_message = format!("Added new {:?} track", ttype);
+                    }
                 }
                 ViewMode::Arrangement => {
                     let arr_action = render_arrangement_view(

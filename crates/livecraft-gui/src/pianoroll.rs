@@ -16,9 +16,17 @@ pub fn render_piano_roll(
     };
 
     let key_width = 40.0;
-    let row_height = 14.0;
-    let min_pitch = 48u8; // C3
-    let total_pitches: u8 = 36; // 3 octaves: C3 (48) to B5 (83)
+    let row_height = 9.5;
+    let (note_min, note_max) = if !midi_data.notes.is_empty() {
+        let n_min = midi_data.notes.iter().map(|n| n.pitch).min().unwrap_or(60);
+        let n_max = midi_data.notes.iter().map(|n| n.pitch).max().unwrap_or(72);
+        (n_min, n_max)
+    } else {
+        (60, 72)
+    };
+    let max_pitch = (note_max + 1).min(127);
+    let min_pitch = note_min.saturating_sub(1);
+    let total_pitches = (max_pitch.saturating_sub(min_pitch) + 1).max(12);
     let total_beats = clip.length_beats.max(4.0) as f32;
     let pixels_per_beat = 48.0;
     let grid_width = total_beats * pixels_per_beat;
@@ -278,12 +286,14 @@ pub fn render_piano_roll(
                         Sense::click(),
                     );
                     let grid_painter = ui.painter();
+                    let is_dark = palette.is_dark();
 
-                    grid_painter.rect_filled(
-                        grid_rect,
-                        Rounding::ZERO,
-                        Color32::from_rgb(0x22, 0x22, 0x22),
-                    );
+                    let grid_base_bg = if is_dark {
+                        Color32::from_rgb(0x22, 0x22, 0x22)
+                    } else {
+                        Color32::from_rgb(0xd4, 0xd4, 0xd2)
+                    };
+                    grid_painter.rect_filled(grid_rect, Rounding::ZERO, grid_base_bg);
 
                     // Horizontal pitch lines
                     for (row_idx, &pitch) in visible_pitches.iter().enumerate() {
@@ -293,13 +303,29 @@ pub fn render_piano_roll(
                         let in_scale = scale.is_in_scale(pitch);
 
                         let bg = if is_root {
-                            Color32::from_rgb(0x2a, 0x26, 0x1a)
+                            if is_dark {
+                                Color32::from_rgb(0x2a, 0x26, 0x1a)
+                            } else {
+                                Color32::from_rgb(0xf2, 0xe8, 0xd0)
+                            }
                         } else if in_scale && scale.is_active {
-                            Color32::from_rgb(0x26, 0x26, 0x28)
+                            if is_dark {
+                                Color32::from_rgb(0x26, 0x26, 0x28)
+                            } else {
+                                Color32::from_rgb(0xde, 0xde, 0xdc)
+                            }
                         } else if is_black {
-                            Color32::from_rgb(0x1a, 0x1a, 0x1a)
+                            if is_dark {
+                                Color32::from_rgb(0x1a, 0x1a, 0x1a)
+                            } else {
+                                Color32::from_rgb(0xce, 0xce, 0xcc)
+                            }
                         } else {
-                            Color32::from_rgb(0x22, 0x22, 0x22)
+                            if is_dark {
+                                Color32::from_rgb(0x22, 0x22, 0x22)
+                            } else {
+                                Color32::from_rgb(0xd8, 0xd8, 0xd6)
+                            }
                         };
 
                         grid_painter.rect_filled(
@@ -312,9 +338,23 @@ pub fn render_piano_roll(
                         );
 
                         let line_stroke = if is_root {
-                            Stroke::new(0.75_f32, Color32::from_rgb(0x60, 0x4d, 0x25))
+                            Stroke::new(
+                                0.75_f32,
+                                if is_dark {
+                                    Color32::from_rgb(0x60, 0x4d, 0x25)
+                                } else {
+                                    Color32::from_rgb(0xc0, 0xa0, 0x60)
+                                },
+                            )
                         } else {
-                            Stroke::new(0.5_f32, Color32::from_rgb(0x30, 0x30, 0x30))
+                            Stroke::new(
+                                0.5_f32,
+                                if is_dark {
+                                    Color32::from_rgb(0x30, 0x30, 0x30)
+                                } else {
+                                    Color32::from_rgb(0xb8, 0xb8, 0xb6)
+                                },
+                            )
                         };
 
                         grid_painter.line_segment(

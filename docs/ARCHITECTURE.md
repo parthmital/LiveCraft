@@ -30,6 +30,7 @@ LiveCraft/
 |   `-- livecraft-cli/          # Command-line entry point and integration test harness
 |-- tasks/                      # Implementation registry, manifest, and specifications
 |-- scripts/                    # Task runner and build verification utilities
+|-- DESIGN.md                   # Ableton Live 12 UI/UX design tokens and widget specifications
 |-- ROADMAP.md                  # Living master roadmap and parity matrix
 |-- RESEARCH.md                 # Research dossier and architecture evaluation
 `-- CONTRIBUTING.md             # Open-source developer guidelines
@@ -130,7 +131,7 @@ Residing in [bouncer.rs](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/
 
 ### 3.3 livecraft-gui (Immediate Mode User Interface)
 
-The [livecraft-gui](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/crates/livecraft-gui/src/lib.rs) crate renders the Ableton Live 12 desktop interface using `egui`, `eframe`, and hardware acceleration via OpenGL (`glow`).
+The [livecraft-gui](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/crates/livecraft-gui/src/lib.rs) crate renders the Ableton Live 12 desktop interface using `egui`, `eframe`, and hardware acceleration via OpenGL (`glow`). Detailed color tokens, spatial dimensions, piecewise tapered dB mappings, and component standards are specified in [DESIGN.md](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/DESIGN.md).
 
 - Top Control Bar: 9-section control bar managing Link, Tap tempo, BPM LCD with nudge, Time Signature, Metronome, Quantization, Scale toggle and Root selector, Follow toggle, Position counter, Transport controls (Play, Stop, Record), Arrangement Loop, Draw mode, Computer MIDI Keyboard, and CPU load meter.
 - Session View: Vertical track columns with clip slot matrices, animated progress fills, slot trigger buttons, track stop buttons, Master Scene launches, and Stop All Clips.

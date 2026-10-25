@@ -25,6 +25,11 @@ pub struct LivePalette {
     pub button_hover: Color32,
     pub grid_line: Color32,
     pub grid_subdivision: Color32,
+    pub clip_slot_bg: Color32,
+    pub clip_slot_border: Color32,
+    pub fader_trough: Color32,
+    pub fader_cap: Color32,
+    pub ruler_bg: Color32,
 }
 
 impl Default for LivePalette {
@@ -34,6 +39,10 @@ impl Default for LivePalette {
 }
 
 impl LivePalette {
+    pub fn is_dark(&self) -> bool {
+        self.control_foreground.r() > 100
+    }
+
     /// Authentic Ableton Live 12 Dark Neutral theme
     pub fn dark() -> Self {
         Self {
@@ -60,6 +69,11 @@ impl LivePalette {
             button_hover: Color32::from_rgb(0x42, 0x42, 0x42),
             grid_line: Color32::from_rgb(0x33, 0x33, 0x33),
             grid_subdivision: Color32::from_rgb(0x26, 0x26, 0x26),
+            clip_slot_bg: Color32::from_rgb(0x27, 0x27, 0x27),
+            clip_slot_border: Color32::from_rgb(0x38, 0x38, 0x38),
+            fader_trough: Color32::from_rgb(0x14, 0x14, 0x14),
+            fader_cap: Color32::from_rgb(0x60, 0x60, 0x60),
+            ruler_bg: Color32::from_rgb(0x1a, 0x1a, 0x1a),
         }
     }
 
@@ -89,6 +103,11 @@ impl LivePalette {
             button_hover: Color32::from_rgb(0xdb, 0xdb, 0xd9),
             grid_line: Color32::from_rgb(0xa6, 0xa6, 0xa4),
             grid_subdivision: Color32::from_rgb(0xb2, 0xb2, 0xb0),
+            clip_slot_bg: Color32::from_rgb(0xd0, 0xd0, 0xce),
+            clip_slot_border: Color32::from_rgb(0xb6, 0xb6, 0xb4),
+            fader_trough: Color32::from_rgb(0x9a, 0x9a, 0x98),
+            fader_cap: Color32::from_rgb(0xd8, 0xd8, 0xd6),
+            ruler_bg: Color32::from_rgb(0xb4, 0xb4, 0xb2),
         }
     }
 }
@@ -104,7 +123,11 @@ pub fn apply_live_style(ctx: &egui::Context, palette: &LivePalette) {
     visuals.panel_fill = palette.surface_area;
     visuals.window_fill = palette.desktop;
     visuals.faint_bg_color = palette.desktop;
-    visuals.extreme_bg_color = palette.lcd_bg;
+    visuals.extreme_bg_color = if palette.is_dark() {
+        palette.lcd_bg
+    } else {
+        Color32::from_rgb(0xd4, 0xd4, 0xd2)
+    };
 
     // Ableton Live 12's signature crisp flat widgets
     visuals.widgets.noninteractive.bg_fill = palette.surface_area;

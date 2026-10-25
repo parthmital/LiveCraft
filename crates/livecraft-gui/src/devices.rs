@@ -24,13 +24,16 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
         for (dev_idx, dev) in selected_track.device_chain.iter_mut().enumerate() {
             ui.vertical(|ui| {
                 let box_width = match dev.device_type {
-                    DeviceType::EqEight => 240.0,
-                    DeviceType::Operator => 260.0,
-                    DeviceType::Saturator => 190.0,
-                    DeviceType::DrumRack => 260.0,
-                    DeviceType::AutoFilter => 220.0,
-                    DeviceType::Chorus => 180.0,
-                    _ => 160.0,
+                    DeviceType::EqEight => 280.0,
+                    DeviceType::Operator => 350.0,
+                    DeviceType::Saturator => 220.0,
+                    DeviceType::DrumRack => 280.0,
+                    DeviceType::AutoFilter => 230.0,
+                    DeviceType::Chorus => 200.0,
+                    DeviceType::Delay => 210.0,
+                    DeviceType::Reverb => 210.0,
+                    DeviceType::Compressor => 210.0,
+                    _ => 180.0,
                 };
                 ui.set_width(box_width);
 
@@ -90,7 +93,7 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                 painter.rect_stroke(
                     body_rect,
                     Rounding::same(3.0),
-                    Stroke::new(1.0_f32, Color32::from_rgb(0x40, 0x40, 0x40)),
+                    Stroke::new(1.0_f32, palette.panel_border),
                 );
 
                 ui.allocate_new_ui(
@@ -144,6 +147,29 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                     },
                 );
             });
+        }
+        // Drop Audio Effects Here placeholder
+        let drop_w = 130.0;
+        let (drop_rect, _) = ui.allocate_exact_size(Vec2::new(drop_w, 142.0), egui::Sense::hover());
+        if ui.is_rect_visible(drop_rect) {
+            let painter = ui.painter();
+            painter.rect_filled(
+                drop_rect,
+                Rounding::same(3.0),
+                Color32::from_rgb(0x1e, 0x1e, 0x1e),
+            );
+            painter.rect_stroke(
+                drop_rect,
+                Rounding::same(3.0),
+                Stroke::new(1.0_f32, Color32::from_rgb(0x35, 0x35, 0x35)),
+            );
+            painter.text(
+                drop_rect.center(),
+                egui::Align2::CENTER_CENTER,
+                "Drop Audio Effects\n       Here",
+                egui::FontId::proportional(10.5),
+                palette.control_disabled,
+            );
         }
 
         if let Some(idx) = remove_idx {
@@ -290,66 +316,182 @@ fn render_reverb_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) 
 }
 
 fn render_operator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette) {
-    ui.vertical(|ui| {
-        ui.horizontal(|ui| {
-            let osc1_wave = dev.get_param("osc1_waveform");
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
+
+        // Sub-panel 1: Oscillators (A and B)
+        ui.vertical(|ui| {
+            ui.set_width(120.0);
             ui.label(
-                egui::RichText::new("Osc1:")
+                egui::RichText::new("Osc A")
+                    .strong()
+                    .size(10.0)
+                    .color(palette.amber),
+            );
+
+            let osc1_wave = dev.get_param("osc1_waveform");
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing = Vec2::new(1.0, 0.0);
+                let btn_w = 26.0;
+                if ui
+                    .add_sized(
+                        Vec2::new(btn_w, 16.0),
+                        egui::SelectableLabel::new(osc1_wave == 0.0, "Sin"),
+                    )
+                    .clicked()
+                {
+                    dev.set_param("osc1_waveform", 0.0);
+                }
+                if ui
+                    .add_sized(
+                        Vec2::new(btn_w, 16.0),
+                        egui::SelectableLabel::new(osc1_wave == 1.0, "Saw"),
+                    )
+                    .clicked()
+                {
+                    dev.set_param("osc1_waveform", 1.0);
+                }
+                if ui
+                    .add_sized(
+                        Vec2::new(btn_w, 16.0),
+                        egui::SelectableLabel::new(osc1_wave == 2.0, "Sqr"),
+                    )
+                    .clicked()
+                {
+                    dev.set_param("osc1_waveform", 2.0);
+                }
+                if ui
+                    .add_sized(
+                        Vec2::new(btn_w, 16.0),
+                        egui::SelectableLabel::new(osc1_wave == 3.0, "Noi"),
+                    )
+                    .clicked()
+                {
+                    dev.set_param("osc1_waveform", 3.0);
+                }
+            });
+
+            ui.add_space(2.0);
+
+            ui.horizontal(|ui| {
+                let mut lvl = dev.get_param("osc1_level");
+                if live_knob(ui, &mut lvl, 0.0, 1.0, 24.0, "Level", palette.amber).changed() {
+                    dev.set_param("osc1_level", lvl);
+                }
+
+                let mut coarse = dev.get_param("osc1_coarse");
+                if coarse < 0.5 {
+                    coarse = 1.0;
+                }
+                if live_knob(ui, &mut coarse, 1.0, 16.0, 24.0, "Coarse", palette.amber).changed() {
+                    dev.set_param("osc1_coarse", coarse.round());
+                }
+            });
+        });
+
+        ui.separator();
+
+        // Sub-panel 2: Filter Section
+        ui.vertical(|ui| {
+            ui.set_width(100.0);
+            ui.label(
+                egui::RichText::new("Filter")
+                    .strong()
+                    .size(10.0)
+                    .color(palette.cyan),
+            );
+
+            ui.horizontal(|ui| {
+                let mut cutoff = dev.get_param("filter_cutoff");
+                if live_knob(ui, &mut cutoff, 100.0, 18000.0, 24.0, "Freq", palette.cyan).changed()
+                {
+                    dev.set_param("filter_cutoff", cutoff);
+                }
+
+                let mut reso = dev.get_param("filter_resonance");
+                if live_knob(ui, &mut reso, 0.1, 8.0, 24.0, "Reso", palette.cyan).changed() {
+                    dev.set_param("filter_resonance", reso);
+                }
+            });
+
+            let cutoff_val = dev.get_param("filter_cutoff");
+            ui.label(
+                egui::RichText::new(if cutoff_val > 1000.0 {
+                    format!("{:.1} kHz", cutoff_val / 1000.0)
+                } else {
+                    format!("{:.0} Hz", cutoff_val)
+                })
+                .size(9.0)
+                .color(palette.control_foreground),
+            );
+        });
+
+        ui.separator();
+
+        // Sub-panel 3: Envelopes ADSR
+        ui.vertical(|ui| {
+            ui.set_width(100.0);
+            ui.label(
+                egui::RichText::new("Envelope")
+                    .strong()
                     .size(10.0)
                     .color(palette.control_foreground),
             );
-            if ui.selectable_label(osc1_wave == 0.0, "Sin").clicked() {
-                dev.set_param("osc1_waveform", 0.0);
+
+            ui.horizontal(|ui| {
+                let mut atk = dev.get_param("attack_ms");
+                if live_knob(ui, &mut atk, 0.1, 500.0, 20.0, "A", palette.amber).changed() {
+                    dev.set_param("attack_ms", atk);
+                }
+
+                let mut dec = dev.get_param("decay_ms");
+                if dec < 1.0 {
+                    dec = 120.0;
+                }
+                if live_knob(ui, &mut dec, 10.0, 1000.0, 20.0, "D", palette.amber).changed() {
+                    dev.set_param("decay_ms", dec);
+                }
+
+                let mut sus = dev.get_param("sustain");
+                if sus < 0.01 && sus > -0.01 {
+                    sus = 0.7;
+                }
+                if live_knob(ui, &mut sus, 0.0, 1.0, 20.0, "S", palette.amber).changed() {
+                    dev.set_param("sustain", sus);
+                }
+
+                let mut rel = dev.get_param("release_ms");
+                if live_knob(ui, &mut rel, 10.0, 2000.0, 20.0, "R", palette.amber).changed() {
+                    dev.set_param("release_ms", rel);
+                }
+            });
+
+            // Mini visual envelope curve
+            let (env_rect, _) = ui.allocate_exact_size(Vec2::new(96.0, 26.0), egui::Sense::hover());
+            if ui.is_rect_visible(env_rect) {
+                let painter = ui.painter();
+                painter.rect_filled(
+                    env_rect,
+                    Rounding::same(1.0),
+                    Color32::from_rgb(0x12, 0x12, 0x12),
+                );
+                painter.rect_stroke(
+                    env_rect,
+                    Rounding::same(1.0),
+                    Stroke::new(0.5_f32, Color32::from_rgb(0x30, 0x30, 0x30)),
+                );
+
+                let p0 = Pos2::new(env_rect.min.x + 2.0, env_rect.max.y - 2.0);
+                let p1 = Pos2::new(env_rect.min.x + 18.0, env_rect.min.y + 4.0);
+                let p2 = Pos2::new(env_rect.min.x + 45.0, env_rect.min.y + 12.0);
+                let p3 = Pos2::new(env_rect.min.x + 72.0, env_rect.min.y + 12.0);
+                let p4 = Pos2::new(env_rect.max.x - 2.0, env_rect.max.y - 2.0);
+
+                painter.line_segment([p0, p1], Stroke::new(1.2_f32, palette.amber));
+                painter.line_segment([p1, p2], Stroke::new(1.2_f32, palette.amber));
+                painter.line_segment([p2, p3], Stroke::new(1.2_f32, palette.amber));
+                painter.line_segment([p3, p4], Stroke::new(1.2_f32, palette.amber));
             }
-            if ui.selectable_label(osc1_wave == 1.0, "Saw").clicked() {
-                dev.set_param("osc1_waveform", 1.0);
-            }
-            if ui.selectable_label(osc1_wave == 2.0, "Sqr").clicked() {
-                dev.set_param("osc1_waveform", 2.0);
-            }
-
-            ui.separator();
-
-            let mut cutoff = dev.get_param("filter_cutoff");
-            if live_knob(
-                ui,
-                &mut cutoff,
-                100.0,
-                18000.0,
-                24.0,
-                "Cutoff",
-                palette.amber,
-            )
-            .changed()
-            {
-                dev.set_param("filter_cutoff", cutoff);
-            }
-
-            let mut reso = dev.get_param("filter_resonance");
-            if live_knob(ui, &mut reso, 0.1, 8.0, 24.0, "Reso", palette.amber).changed() {
-                dev.set_param("filter_resonance", reso);
-            }
-        });
-
-        ui.add_space(4.0);
-
-        // Envelope ADSR sliders
-        ui.horizontal(|ui| {
-            let mut atk = dev.get_param("attack_ms");
-            ui.add(
-                egui::Slider::new(&mut atk, 0.1..=1000.0)
-                    .text("A")
-                    .logarithmic(true),
-            );
-            dev.set_param("attack_ms", atk);
-
-            let mut rel = dev.get_param("release_ms");
-            ui.add(
-                egui::Slider::new(&mut rel, 10.0..=3000.0)
-                    .text("R")
-                    .logarithmic(true),
-            );
-            dev.set_param("release_ms", rel);
         });
     });
 }

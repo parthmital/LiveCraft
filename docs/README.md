@@ -29,6 +29,11 @@ LiveCraft is an open-source, native Rust implementation of Ableton Live 12. This
    - Lock-free audio engine, DAG topological graph, dynamic processor chain, voice scheduling, and offline bouncer.
    - Conformance to Chapters 38, 39, and 40 (lock-free safety, neutral operations, bit-transparency).
 
+6. [LiveCraft UI/UX Design System Specification](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/DESIGN.md)
+   - Ableton Live 12 color tokens, layout proportions, typography, and widget specifications.
+   - Piecewise tapered volume fader and stereo peak meter mathematical alignment.
+   - Dual theme support (Dark Neutral and Light) with runtime F8 toggle.
+
 ## Ableton Live 12 Reference Manual PDF
 
 The primary source of truth for all LiveCraft specifications, formulas, and UI behaviors is:

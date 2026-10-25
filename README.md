@@ -36,13 +36,14 @@ The specification and mathematical formulas of LiveCraft are grounded in the off
 - [MIDI Tools, Scales and Microtonal Tuning](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/docs/MIDI_TOOLS_AND_TUNING.md): Details transformation algorithms, generative Euclidean rhythms, scale engines, and Scala `.scl` tuning.
 - [Complete Keyboard Shortcuts Matrix](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/docs/KEYBOARD_SHORTCUTS.md): Comprehensive shortcut mapping across Windows and macOS from Chapter 42.
 - [LiveCraft Technical Architecture](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/docs/ARCHITECTURE.md): Engineering manual covering crate boundaries, lock-free queues, dynamic topological DSP chains, and offline bouncers.
+- [LiveCraft UI/UX Design System](file:///d:/PARTH/FINISHED%20WORK/DEVELOPMENT/LiveCraft/DESIGN.md): Ableton Live 12 design tokens, layout proportions, typography, and widget specifications.
 
 ## Quick Start
 
 Follow these verified steps from the repository root to verify and run LiveCraft:
 
 ```bash
-# Step 1: Run the full test suite (verifies 42 unit and integration tests)
+# Step 1: Run the full test suite (verifies 44 unit and integration tests)
 cargo test --workspace
 
 # Step 2: Build the optimized release binary
@@ -65,7 +66,7 @@ Quick Start command breakdown:
 
 | Command                                     | Action                     | Directory       | Expected Result                         | Common Errors and Fixes                                                                |
 | :------------------------------------------ | :------------------------- | :-------------- | :-------------------------------------- | :------------------------------------------------------------------------------------- |
-| `cargo test --workspace`                    | Runs all 42 tests          | Repository root | All tests pass with 0 failures          | Missing sound dependencies on Linux: run `sudo apt install libasound2-dev libudev-dev` |
+| `cargo test --workspace`                    | Runs all 44 tests          | Repository root | All tests pass with 0 failures          | Missing sound dependencies on Linux: run `sudo apt install libasound2-dev libudev-dev` |
 | `cargo build --release`                     | Compiles release binary    | Repository root | Executable created in `target/release/` | Rust toolchain outdated: run `rustup update stable`                                    |
 | `livecraft new DemoTrack.als --bpm 128`     | Initializes project set    | Any directory   | Creates valid gzip `.als` XML file      | File permission error: choose a writable directory path                                |
 | `livecraft render DemoTrack.als -o out.wav` | Offline audio bounce       | Any directory   | Generates 24-bit stereo WAV             | Invalid duration: ensure `--duration-bars` is greater than 0                           |
@@ -328,6 +329,7 @@ Standard Ableton Live 12 shortcuts from Chapter 42:
 - `Space`: Play / Stop playback
 - `Tab`: Switch between Session View and Arrangement View
 - `Shift + Tab` or `F12`: Toggle between Device View and Clip View
+- `F8`: Toggle between Dark Neutral and Light Themes
 - `Ctrl + T`: Insert Audio Track
 - `Ctrl + Shift + T`: Insert MIDI Track
 - `0`: Toggle Mute / Track Activator on selected track
@@ -354,9 +356,13 @@ cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Test Results Breakdown (42 tests passing):
+Test Results Breakdown (44 tests passing):
 
 - `livecraft-cli` integration tests: 4 passed
+- `livecraft-core` unit tests: 13 passed
+- `livecraft-dsp` unit tests: 25 passed
+- `livecraft-gui` unit tests: 2 passed (db_to_norm roundtrip & boundary precision)
+- Total: 44 passed; 0 failed; 0 warnings
   - `test_cli_midi_transformations_and_tuning`: ok
   - `test_cli_new_and_roundtrip_project`: ok
   - `test_cli_render_and_stem_pipeline`: ok
