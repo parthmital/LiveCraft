@@ -9,7 +9,7 @@ Users pick audio driver type, input and output devices, sample rate, and buffer 
 
 ## Decisions
 
-- Audio: `cpal` 0.18 hosts. Windows: WASAPI (shared; exclusive when cpal exposes it, otherwise documented as a gap), plus `asio` behind the opt-in feature (DECISIONS D14, D-OWN-2). macOS: CoreAudio. Linux: ALSA and JACK (cpal `jack` feature on, since JACK is LGPL-licensed client library loaded dynamically; confirm with cargo-deny in the task).
+- Audio: `cpal` 0.18 hosts. Windows: WASAPI (shared; exclusive when cpal exposes it, otherwise documented as a gap), plus `asio` behind feature `asio`, enabled in release builds (DECISIONS D14, D31, D-OWN-2). macOS: CoreAudio. Linux: ALSA and JACK (cpal `jack` feature on, since JACK is LGPL-licensed client library loaded dynamically; confirm with cargo-deny in the task).
 - Duplex: input and output streams joined through an `rtrb` ring per channel group, with input latency compensation recorded for recording (M21).
 - Settings persistence: `Preferences` stored as TOML in the platform config directory (`directories` 6.0.0) under `LiveCraft/Preferences.toml`; never in the repository.
 - MIDI: `midir` 0.11.1 inputs feed timestamped events into an `rtrb` queue; the engine converts host timestamps to sample offsets (manual chapter 40 timing rules); outputs send from a dedicated thread with timestamps.

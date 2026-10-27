@@ -9,7 +9,7 @@ Video clips import into the Arrangement, show in the video window synchronised t
 
 ## Decisions
 
-- Decoding: research when the milestone starts (Rust video decoders with permissive licences, or the platform media APIs: Media Foundation on Windows, AVFoundation on macOS, a GStreamer-free path on Linux); record the choice and licence check in RESEARCH and DECISIONS. FFmpeg-based crates are acceptable only if cargo-deny accepts the licences of the build used (LGPL dynamic linking needs an owner decision).
+- Decoding: research when the milestone starts (Rust video decoders with permissive licences, or the platform media APIs: Media Foundation on Windows, AVFoundation on macOS, a GStreamer-free path on Linux); record the choice and licence check in RESEARCH and DECISIONS. FFmpeg-based crates are acceptable only if cargo-deny accepts the licences of the build used (LGPL is compatible with GPL-3.0-or-later under D31, so no owner decision is needed; add its licence to `deny.toml` with a reason when adopted).
 - The video window is an eframe viewport; frames are decoded ahead on a worker thread and shown by presentation timestamp from the engine snapshot transport position.
 - Export: video export as the manual lists for the Export dialog; if encoding is not available under acceptable licences, export is listed as a gap.
 

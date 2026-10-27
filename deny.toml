@@ -1,5 +1,5 @@
 # cargo-deny configuration. Run with `cargo xtask ci` (or `cargo deny check` with cargo-deny 0.20.2).
-# Licence policy: plans/livecraft-1.0/reference/DECISIONS.md D13 and D14.
+# Licence policy: plans/livecraft-1.0/reference/DECISIONS.md D13, D14, and D31.
 
 [graph]
 all-features = false
@@ -10,6 +10,9 @@ ignore = []
 
 [licenses]
 confidence-threshold = 0.9
+# The workspace crates are unpublished (`publish = false`) and carry the project licence,
+# GPL-3.0-or-later (D31). They are not dependencies, so their licence is not checked here.
+private = { ignore = true }
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",

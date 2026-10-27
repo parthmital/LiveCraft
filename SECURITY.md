@@ -56,4 +56,4 @@ Full audit on 2026-10-27 (Task P0-17): tools gitleaks 8.30.1, cargo-deny 0.20.2,
 
 ## Residual Risks And Required Actions
 
-- Ableton Link support, if added, is GPL-2.0-or-later or needs a commercial licence from Ableton; see `RESEARCH.md#sync-and-ableton-link-2026-10-27`.
+- Ableton Link support is GPL-2.0-or-later code shipped in release builds under the project's GPL-3.0-or-later licence (DECISIONS D31); see `RESEARCH.md#sync-and-ableton-link-2026-10-27`.

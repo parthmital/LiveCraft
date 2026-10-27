@@ -11,7 +11,7 @@ Slice to New MIDI Track, Convert Harmony, Melody, and Drums to MIDI, Bounce to A
 
 - Bounce, freeze, and flatten use the M08 offline render path on a sub-graph; frozen tracks play back rendered files and keep devices editable after unfreeze, as the manual documents.
 - Audio to MIDI: Drums via onset detection plus spectral band classification (kick, snare, hi-hat), Melody via YIN pitch tracking with note segmentation, Harmony via constant-Q chroma and multi-pitch estimation; each compared with Live's output on HUMAN oracle clips (note-level F-measure at least 0.8 against Live's result).
-- Stem Separation: `stem-splitter-core` 1.2.0 behind feature `stems` (D-OWN-5); model downloaded only after consent, SHA-256 verified (`sha2` 0.11.1), stored in the platform data directory; separation runs as a job with progress as Live 12.4 shows it for the whole operation.
+- Stem Separation: `stem-splitter-core` 1.2.0 behind feature `stems`, enabled in release builds (D-OWN-5, D31); model downloaded only after consent, SHA-256 verified (`sha2` 0.11.1), stored in the platform data directory; separation runs as a job with progress as Live 12.4 shows it for the whole operation.
 
 ## Task Outline
 

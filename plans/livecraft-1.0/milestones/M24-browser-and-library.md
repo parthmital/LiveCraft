@@ -11,7 +11,7 @@ The Browser looks and behaves like Live's: sidebar, content pane, search with Li
 
 - New crate `livecraft-library` (depends on model, formats, dsp). Index store: SQLite via `rusqlite` 0.41.0 (`bundled`), in the platform data directory, never in the repository.
 - Indexing runs as a background job with file-system change watching (`notify` 8.2.1, CC0-1.0; if 9.0 final has been out at least 14 days when the milestone starts, D28 allows moving to it).
-- Tags: Live's built-in tag hierarchy is described in 4.4; LiveCraft implements user tags and tag groups with the same UI. Live's own tag data from its library is read only if D-OWN-6 allows it.
+- Tags: Live's built-in tag hierarchy is described in 4.4; LiveCraft implements user tags and tag groups with the same UI. Live's own tag data is not read; LiveCraft does not read Live's library (D30).
 - Sound Similarity (3.4): audio embedding per file computed from MFCC statistics and spectral contrast (in-house, `realfft` 3.5.1), cosine similarity search; evaluated by a HUMAN listening check on 20 queries and by agreement with Live's similar-samples results on the owner's machine (top-10 overlap reported).
 - Preview: decoded through M11 off the audio thread, routed to the Cue output; tempo-synced preview uses M23 warping.
 - Content: LiveCraft ships a small CC0 or self-made content set (D06) with device presets for its own devices.

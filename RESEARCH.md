@@ -30,7 +30,7 @@ Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superse
 
 **Brief:** low-latency output and input on Windows, macOS, Linux.
 **Findings:** `cpal` 0.18.2 is current (repo pins 0.15). Its `asio` feature needs the Steinberg ASIO SDK, which is GPLv3 or proprietary since October 2025. WASAPI, CoreAudio, ALSA, and JACK need no extra SDK.
-**Decision:** Adopt `cpal` 0.18. ASIO only behind an opt-in Cargo feature `asio`, off by default, because enabling it makes distributed binaries GPLv3. The owner decides whether release builds enable it.
+**Decision:** Adopt `cpal` 0.18. ASIO only behind an opt-in Cargo feature `asio`, off by default, because enabling it makes distributed binaries GPLv3. Owner decided on 2026-10-28 that release builds enable it (DECISIONS D31).
 **Sources:** [cpal docs](https://docs.rs/cpal), [VST 3 and ASIO licensing press release](https://sonicstate.com/news/2025/10/30/vst-3-now-available-under-mit-license).
 
 ## Real-Time Concurrency (2026-10-27)
@@ -71,7 +71,7 @@ Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superse
 
 **Brief:** Live syncs via Link, Link Audio, Tempo Follower, and MIDI clock.
 **Findings:** Ableton Link is GPL-2.0-or-later, or available under a proprietary licence from Ableton (link-devs@ableton.com). `rusty_link` 0.4.9 wraps it and is GPL-2.0-or-later.
-**Decision:** MIDI clock and Tempo Follower are built in. Link and Link Audio only behind an opt-in Cargo feature `link`, off by default, because enabling it makes distributed binaries GPL. Owner decision required before release.
+**Decision:** MIDI clock and Tempo Follower are built in. Link and Link Audio only behind an opt-in Cargo feature `link`, off by default, because enabling it makes distributed binaries GPL. Owner decided on 2026-10-28 that release builds enable it (DECISIONS D31).
 **Sources:** [rusty_link](https://docs.rs/crate/rusty_link/latest).
 
 ## Stem Separation (2026-10-27)

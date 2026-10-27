@@ -14,7 +14,7 @@ Prove parity and the improvements with evidence, close every open finding, and r
   - Visual: 10 experienced Live users each see 30 pairs of screenshots (LiveCraft vs Live, same state, random order) and pick Live; pass if the correct-pick rate is not significantly above chance (two-sided binomial test, p greater than 0.05).
   - Audio: ABX tests on 20 oracle renders (devices and mixes); pass if listeners cannot distinguish at p greater than 0.05.
   - Workflow: the same users complete 10 scripted tasks in both apps; pass if no task fails in LiveCraft and median time is within 20 percent of Live's.
-- D-OWN-3 must be answered with legal advice recorded (queue row Q01) before the public `v1.0.0` tag; D-OWN-1, 2, 4, 5, 6 may stand at their defaults.
+- Owner answers to D-OWN-1 to D-OWN-6 are recorded in `reference/DECISIONS.md#owner-decisions` (queue rows Q01 and Q02). No legal advice is required before the public `v1.0.0` tag (owner decision, 2026-10-28).
 - Docs: `README.md`, `ARCHITECTURE.md`, `DESIGN.md`, `SECURITY.md`, `RESEARCH.md`, `CHANGELOG.md`, user documentation for every feature (paraphrased, never copied from the manual).
 
 ## Task Outline
@@ -25,7 +25,7 @@ Prove parity and the improvements with evidence, close every open finding, and r
 4. Blind test kit: screenshot pairs, ABX render sets, scripted workflow tasks, a results form, and `tools/blind_test_stats.py` (binomial and ABX analysis with unit tests). Queue the test sessions; analysis steps are Owner-gated.
 5. User documentation set.
 6. Release candidate: version `1.0.0-rc.1`, tag `v1.0.0-rc.1`, release workflow builds a draft (not published) release with every package and SHA256SUMS.
-7. Version 1.0.0 in `[workspace.package]`, CHANGELOG, tag `v1.0.0`, release workflow run, release published: Owner-gated on Q01 and the blind test rows, finished by the Final reference pass.
+7. Version 1.0.0 in `[workspace.package]`, CHANGELOG, tag `v1.0.0`, release workflow run, release published: Owner-gated on the blind test rows, finished by the Final reference pass.
 8. Post-release review: lessons learned and the next plan's starting point.
 
 ## Acceptance Criteria

@@ -5,7 +5,7 @@ Phase: 6. Depends on: M37. Manual: 3.20 MIDI and Key Remote (60), 34 MIDI and Ke
 
 ## Goal
 
-MIDI Map and Key Map modes, the computer MIDI keyboard, control surface support with takeover modes, MIDI clock in and out, Tempo Follower, and Link and Link Audio (built behind the `link` feature, shipped only if the owner approves) behave like Live; Push 2 is supported as a control surface.
+MIDI Map and Key Map modes, the computer MIDI keyboard, control surface support with takeover modes, MIDI clock in and out, Tempo Follower, and Link and Link Audio (built behind the `link` feature and enabled in release builds, D31) behave like Live; Push 2 is supported as a control surface.
 
 ## Decisions
 
@@ -13,7 +13,7 @@ MIDI Map and Key Map modes, the computer MIDI keyboard, control surface support 
 - MIDI and Key mappings are model data saved in `.als` where Live stores them (structure from oracle sets).
 - Control surface scripts are Rhai scripts (D24) with an API for parameter banks, transport, clip launch, and feedback; generic scripts for common controllers ship with LiveCraft; Live's Python remote scripts are not executed (proprietary and outside scope).
 - Push 2: MIDI and display protocol as published by Ableton's open Push 2 interface documentation (implementation first confirms licence and availability; if not available under permissive terms, Push support is Out of Scope). Push 1 likewise.
-- Sync: MIDI clock out and in with song position pointer (37.3); Tempo Follower from audio input (37.2) using M23 tempo detection; Link and Link Audio only with feature `link` (D14, D-OWN-1).
+- Sync: MIDI clock out and in with song position pointer (37.3); Tempo Follower from audio input (37.2) using M23 tempo detection; Link and Link Audio only with feature `link`, enabled in release builds (D31, D-OWN-1).
 
 ## Task Outline
 
@@ -22,7 +22,7 @@ MIDI Map and Key Map modes, the computer MIDI keyboard, control surface support 
 3. Control surface script runtime and two generic scripts; settings tab (34.1.1, 34.1.2).
 4. MIDI clock out and in, sync settings (37.3).
 5. Tempo Follower (37.2).
-6. Link and Link Audio behind `link`, off by default and excluded from release builds while D-OWN-1 keeps its default (no stop; the owner's answer only flips the default).
+6. Link and Link Audio behind `link`, enabled in release builds (D-OWN-1 answered yes; D31).
 7. Push 2 support (36) if licensing allows; else record Out of Scope.
 8. Milestone verification.
 

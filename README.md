@@ -178,7 +178,7 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md). Agents read [AGENTS.md](AGENTS.md) firs
 
 ## Licence
 
-Dual-licensed under [MIT](LICENSE-MIT) or [Apache-2.0](LICENSE-APACHE), at your option.
+Copyright 2026 Parth Mital. Licensed under the [GNU General Public License v3.0 or later](LICENSE).
 
 ## Documentation
 
