@@ -12,8 +12,5 @@ livecraft-core = { path = "../livecraft-core" }
 cpal.workspace = true
 hound.workspace = true
 crossbeam-channel.workspace = true
-ringbuf.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 anyhow.workspace = true
 log.workspace = true

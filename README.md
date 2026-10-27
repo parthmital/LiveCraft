@@ -81,8 +81,6 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 | `anyhow`, `thiserror` | 1.0                     | Error handling                                                    |
 | `log`, `env_logger`   | 0.4, 0.11               | Logging, configured through `RUST_LOG`                            |
 
-`ringbuf` 0.4 is declared by `livecraft-dsp` but not used yet. The plan's [Task 03](plans/livecraft-1.0/tasks/P0-03-remove-unused-dependencies.md) removes it.
-
 ## Repository Structure
 
 ```text
