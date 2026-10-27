@@ -58,6 +58,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 - Rust workspace with separate core, DSP, GUI, and CLI crates: keeps the model testable without audio or UI.
 - `egui` immediate-mode GUI: fully custom painting suits Live's flat, dense look; used by the Storytold Craft apps. See `RESEARCH.md#gui-toolkit-2026-10-27`.
 - `.als` support through `quick-xml` and `flate2`: a Live Set is gzip-compressed XML.
+- wgpu renderer with DX12 default on Windows: Vulkan crashed on the reference machine (DECISIONS.md D12).
 
 ## Known Violations
 

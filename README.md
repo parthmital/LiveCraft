@@ -40,7 +40,7 @@ cargo run --bin livecraft -- gui
 
 | Command                  | What it does                            | Expected result                               | Common error and fix                                                                          |
 | ------------------------ | --------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 44 tests pass (4 cli, 13 core, 25 dsp, 2 gui) | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 53 tests pass                                 | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
 | `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                         | Permission denied: use a writable folder                                                      |
 | `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal      | `Decompression failed`: the file is not a gzip `.als`                                         |
 | `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                             | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
@@ -86,6 +86,9 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 ```text
 LiveCraft/
 |-- Cargo.toml                 Workspace manifest and shared dependency versions
+|-- deny.toml                  Dependency licence and advisory policy
+|-- rust-toolchain.toml        Pinned Rust 1.99.1
+|-- .cargo/config.toml         cargo xtask and cargo dev aliases
 |-- crates/
 |   |-- livecraft-core/        Document model, .als and .ask parsing, undo history (no audio, no UI)
 |   |-- livecraft-dsp/         Audio graph, engine, device DSP, offline bouncer
@@ -96,6 +99,7 @@ LiveCraft/
 |   |-- keyboard-shortcuts.md  Live 12 shortcut tables transcribed from manual chapter 42
 |   `-- ableton-live-12-reference-manual.pdf   Reference manual (Git-ignored, 108 MB, kept locally)
 |-- plans/livecraft-1.0/       End-to-end implementation plan, prompts, and reference material
+|-- xtask/                     cargo xtask ci: checks, layering, docs links, cargo-deny
 |-- .github/                   CI workflow, issue and pull request templates
 `-- LICENSE-MIT, LICENSE-APACHE
 ```
@@ -136,7 +140,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-Baseline on 2026-10-27: formatting clean, clippy clean, 44 tests pass. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
+Baseline after Phase 0 (2026-10-27): cargo xtask ci passes; 53 tests (cli 4, core 15, dsp 28, gui 2, xtask 4). One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
 
 ## Troubleshooting
 

@@ -72,6 +72,7 @@ plans/livecraft-1.0/
   - `cargo build --release --workspace`
 - After Task P0-07: `cargo xtask ci` runs all of them plus the layering and docs checks. After Task P0-12 it also runs `cargo-deny` (`--no-deny` skips it).
 - Baseline on 2026-10-27 (commit `1735fa8`): format clean, clippy clean, 44 tests pass (livecraft-cli 4, livecraft-core 13, livecraft-dsp 25, livecraft-gui 2), release build succeeds, `livecraft gui --screenshot` works.
+- Baseline after Phase 0 (2026-10-27): cargo xtask ci passes, 53 tests.
 - Branch: `main`. Remote: `origin` (`https://github.com/parthmital/LiveCraft.git`).
 - Commit format: imperative subject under 72 characters, blank line, `- ` bullets, then the attribution line if your tool adds one. Example:
 

@@ -21,7 +21,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 - [x] P0-15 One WAV loader with a size limit ([task](tasks/P0-15-wav-loader-limit-and-dedupe.md))
 - [x] P0-16 Never send NaN or infinity to the driver or a render ([task](tasks/P0-16-non-finite-output-guard.md))
 - [x] P0-17 Full security audit and SECURITY.md update ([task](tasks/P0-17-security-audit.md))
-- [ ] P0-18 Verify Phase 0 and bring the docs up to date ([task](tasks/P0-18-phase-0-verification.md))
+- [x] P0-18 Verify Phase 0 and bring the docs up to date ([task](tasks/P0-18-phase-0-verification.md))
 
 ## Phase 1: Core architecture
 
