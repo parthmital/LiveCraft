@@ -8,7 +8,8 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-livecraft-core = { path = "../livecraft-core" }
+livecraft-model = { path = "../livecraft-model" }
+livecraft-formats = { path = "../livecraft-formats" }
 livecraft-dsp = { path = "../livecraft-dsp" }
 eframe.workspace = true
 egui.workspace = true

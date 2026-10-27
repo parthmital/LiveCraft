@@ -1,5 +1,5 @@
 use crate::biquad::{BiquadFilter, FilterType};
-use livecraft_core::model::Device;
+use livecraft_model::model::Device;
 
 #[derive(Debug, Clone)]
 pub struct EqEightBand {

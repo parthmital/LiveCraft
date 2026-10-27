@@ -1,4 +1,4 @@
-use livecraft_core::model::Device;
+use livecraft_model::model::Device;
 
 #[derive(Debug, Clone)]
 pub struct CompressorEffect {

@@ -1,5 +1,5 @@
-use livecraft_core::model::Project;
 use livecraft_dsp::graph::AudioGraph;
+use livecraft_model::model::Project;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RenderSummary {

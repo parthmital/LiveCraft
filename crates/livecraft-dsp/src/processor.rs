@@ -1,4 +1,4 @@
-use livecraft_core::model::{Device, DeviceType};
+use livecraft_model::model::{Device, DeviceType};
 
 use crate::autofilter::{AutoFilterEffect, AutoFilterMode};
 use crate::autopan::AutoPanEffect;

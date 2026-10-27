@@ -1,9 +1,9 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use livecraft_core::als::AlsParser;
-use livecraft_core::model::{Clip, ClipPayload, MidiNote, Project, TrackType};
 use livecraft_dsp::bouncer::{OfflineBouncer, RenderOptions};
 use livecraft_dsp::engine::AudioEngine;
 use livecraft_dsp::operator::{OperatorSynth, Waveform};
+use livecraft_formats::als::AlsParser;
+use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, TrackType};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};

@@ -1,6 +1,6 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Ui, Vec2};
-use livecraft_core::model::{Device, DeviceType, Track, TrackType};
+use livecraft_model::model::{Device, DeviceType, Track, TrackType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrowserCategory {

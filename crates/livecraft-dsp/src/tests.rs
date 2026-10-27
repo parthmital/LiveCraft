@@ -1,5 +1,5 @@
 use super::*;
-use livecraft_core::model::*;
+use livecraft_model::model::*;
 
 #[test]
 fn test_biquad_all_filter_types() {

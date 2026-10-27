@@ -8,7 +8,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
-livecraft-core = { path = "../livecraft-core" }
+livecraft-model = { path = "../livecraft-model" }
 cpal.workspace = true
 hound.workspace = true
 crossbeam-channel.workspace = true

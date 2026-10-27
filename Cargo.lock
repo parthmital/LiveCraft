@@ -1514,26 +1514,13 @@ dependencies = [
  "env_logger",
  "hound",
  "insta",
- "livecraft-core",
  "livecraft-dsp",
+ "livecraft-formats",
  "livecraft-gui",
+ "livecraft-model",
  "livecraft-testkit",
  "log",
  "serde_json",
-]
-
-[[package]]
-name = "livecraft-core"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "flate2",
- "livecraft-formats",
- "livecraft-model",
- "log",
- "quick-xml 0.42.0",
- "serde",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -1544,7 +1531,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "hound",
- "livecraft-core",
+ "livecraft-model",
  "log",
 ]
 
@@ -1568,8 +1555,9 @@ dependencies = [
  "eframe",
  "egui",
  "image",
- "livecraft-core",
  "livecraft-dsp",
+ "livecraft-formats",
+ "livecraft-model",
  "log",
 ]
 
@@ -1584,8 +1572,8 @@ dependencies = [
 name = "livecraft-testkit"
 version = "0.1.0"
 dependencies = [
- "livecraft-core",
  "livecraft-dsp",
+ "livecraft-model",
 ]
 
 [[package]]

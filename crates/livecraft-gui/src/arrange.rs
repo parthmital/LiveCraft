@@ -1,7 +1,7 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
-use livecraft_core::model::{ClipPayload, Project};
-use livecraft_core::theme::parse_hex_color;
+use livecraft_formats::theme::parse_hex_color;
+use livecraft_model::model::{ClipPayload, Project};
 
 pub struct ArrangementAction {
     pub set_playhead: Option<f64>,
@@ -283,7 +283,7 @@ pub fn render_arrangement_view(
                         }
 
                         // Render Arrangement Clips
-                        let clips_to_render: Vec<(f64, f64, &livecraft_core::model::Clip)> =
+                        let clips_to_render: Vec<(f64, f64, &livecraft_model::model::Clip)> =
                             if !trk.arrangement_clips.is_empty() {
                                 trk.arrangement_clips
                                     .iter()

@@ -1,4 +1,4 @@
-use livecraft_core::model::Device;
+use livecraft_model::model::Device;
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone)]

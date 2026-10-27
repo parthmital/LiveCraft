@@ -1,5 +1,5 @@
 use hound::WavReader;
-use livecraft_core::model::{Clip, ClipPayload};
+use livecraft_model::model::{Clip, ClipPayload};
 use std::collections::HashMap;
 use std::path::Path;
 

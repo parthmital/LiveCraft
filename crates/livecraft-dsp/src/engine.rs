@@ -2,7 +2,7 @@ use crate::graph::AudioGraph;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig};
 use crossbeam_channel::{Receiver, Sender, bounded};
-use livecraft_core::model::Project;
+use livecraft_model::model::Project;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 

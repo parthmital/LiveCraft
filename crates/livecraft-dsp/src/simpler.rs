@@ -1,6 +1,6 @@
 use crate::biquad::{BiquadFilter, FilterType};
 use crate::operator::AdsrEnvelope;
-use livecraft_core::model::Device;
+use livecraft_model::model::Device;
 use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

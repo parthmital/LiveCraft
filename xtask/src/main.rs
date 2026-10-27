@@ -15,14 +15,21 @@ use std::process::{Command, ExitCode};
 const LAYERS: &[(&str, &[&str])] = &[
     ("livecraft-model", &[]),
     ("livecraft-formats", &["livecraft-model"]),
-    ("livecraft-core", &["livecraft-model", "livecraft-formats"]),
-    ("livecraft-dsp", &["livecraft-core"]),
-    ("livecraft-gui", &["livecraft-core", "livecraft-dsp"]),
+    ("livecraft-dsp", &["livecraft-model"]),
+    (
+        "livecraft-gui",
+        &["livecraft-model", "livecraft-formats", "livecraft-dsp"],
+    ),
     (
         "livecraft-cli",
-        &["livecraft-core", "livecraft-dsp", "livecraft-gui"],
+        &[
+            "livecraft-model",
+            "livecraft-formats",
+            "livecraft-dsp",
+            "livecraft-gui",
+        ],
     ),
-    ("livecraft-testkit", &["livecraft-core", "livecraft-dsp"]),
+    ("livecraft-testkit", &["livecraft-model", "livecraft-dsp"]),
     ("xtask", &[]),
 ];
 
@@ -249,14 +256,20 @@ mod tests {
 
     #[test]
     fn layering_accepts_allowed_edges() {
-        assert!(violations("livecraft-gui", &["livecraft-core", "livecraft-dsp"]).is_empty());
+        assert!(
+            violations(
+                "livecraft-gui",
+                &["livecraft-model", "livecraft-formats", "livecraft-dsp"]
+            )
+            .is_empty()
+        );
     }
 
     #[test]
     fn layering_rejects_reverse_edge() {
         assert_eq!(
-            violations("livecraft-core", &["livecraft-gui"]),
-            vec!["`livecraft-core` must not depend on `livecraft-gui`".to_string()]
+            violations("livecraft-model", &["livecraft-gui"]),
+            vec!["`livecraft-model` must not depend on `livecraft-gui`".to_string()]
         );
     }
 

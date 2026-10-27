@@ -12,7 +12,8 @@ name = "livecraft"
 path = "src/main.rs"
 
 [dependencies]
-livecraft-core = { path = "../livecraft-core" }
+livecraft-model = { path = "../livecraft-model" }
+livecraft-formats = { path = "../livecraft-formats" }
 livecraft-dsp = { path = "../livecraft-dsp" }
 livecraft-gui = { path = "../livecraft-gui" }
 clap.workspace = true

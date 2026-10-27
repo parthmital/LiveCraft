@@ -16,7 +16,7 @@ use crate::redux::ReduxEffect;
 use crate::reverb::ReverbEffect;
 use crate::saturator::SaturatorEffect;
 use crate::simpler::SimplerInstrument;
-use livecraft_core::model::*;
+use livecraft_model::model::*;
 
 /// Replaces NaN and infinity with silence; finite samples pass through bit-exactly.
 #[inline]

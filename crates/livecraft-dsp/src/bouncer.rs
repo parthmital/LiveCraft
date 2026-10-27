@@ -1,6 +1,6 @@
 use crate::graph::AudioGraph;
 use hound::{WavSpec, WavWriter};
-use livecraft_core::model::Project;
+use livecraft_model::model::Project;
 use std::fs;
 use std::path::Path;
 

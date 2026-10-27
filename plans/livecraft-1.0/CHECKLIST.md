@@ -30,7 +30,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 - [x] M01-02 Create livecraft-testkit crate ([task](tasks/M01-02-create-testkit.md))
 - [x] M01-03 Create livecraft-model crate ([task](tasks/M01-03-create-model-crate.md))
 - [x] M01-04 Create livecraft-formats crate ([task](tasks/M01-04-create-formats-crate.md))
-- [ ] M01-05 Remove livecraft-core crate ([task](tasks/M01-05-remove-core-crate.md))
+- [x] M01-05 Remove livecraft-core crate ([task](tasks/M01-05-remove-core-crate.md))
 - [ ] M01-06 Create livecraft-devices crate ([task](tasks/M01-06-create-devices-crate.md))
 - [ ] M01-07 Create livecraft-engine crate and trim livecraft-dsp ([task](tasks/M01-07-create-engine-crate.md))
 - [ ] M01-08 Rename livecraft-gui to livecraft-ui ([task](tasks/M01-08-rename-gui-to-ui.md))

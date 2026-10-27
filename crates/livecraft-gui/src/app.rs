@@ -6,11 +6,11 @@ use crate::session::render_session_view;
 use crate::style::{LivePalette, apply_live_style};
 use crate::transport::{ViewMode, render_transport_bar};
 use eframe::egui::{self, Color32, Key, Vec2};
-use livecraft_core::als::AlsParser;
-use livecraft_core::command::CommandHistory;
-use livecraft_core::model::{Clip, ClipPayload, MidiNote, Project, Track, TrackType};
 use livecraft_dsp::engine::AudioEngine;
 use livecraft_dsp::graph::TrackMeter;
+use livecraft_formats::als::AlsParser;
+use livecraft_model::command::CommandHistory;
+use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, Track, TrackType};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, PartialEq)]
@@ -486,7 +486,7 @@ impl eframe::App for LiveCraftApp {
 
                     if let Some(trk) = self.project.tracks.get(self.selected_track_idx) {
                         crate::widgets::live_divider(ui, 20.0);
-                        let [r, g, b, _] = livecraft_core::theme::parse_hex_color(&trk.color);
+                        let [r, g, b, _] = livecraft_formats::theme::parse_hex_color(&trk.color);
                         ui.label(
                             egui::RichText::new(format!("● {}", trk.name))
                                 .strong()

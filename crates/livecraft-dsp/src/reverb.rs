@@ -1,4 +1,4 @@
-use livecraft_core::model::Device;
+use livecraft_model::model::Device;
 
 // Freeverb Comb and All-Pass tuning constants (at 44100 Hz, scaled to sample_rate)
 const COMB_TUNINGS_L: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];

@@ -1,4 +1,4 @@
-use livecraft_core::model::{Clip, ClipPayload, MidiNote, Project};
+use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project};
 use livecraft_testkit::render_project_summary;
 
 #[test]

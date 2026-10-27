@@ -1,7 +1,7 @@
 use crate::style::LivePalette;
 use crate::widgets::live_knob;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Stroke, Ui, Vec2};
-use livecraft_core::model::{Device, DeviceType, Track};
+use livecraft_model::model::{Device, DeviceType, Track};
 
 pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &LivePalette) {
     ui.horizontal(|ui| {

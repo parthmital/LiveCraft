@@ -1,7 +1,7 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
-use livecraft_core::model::{Clip, ClipPayload, MidiNote, NOTE_NAMES, ScaleConfig, ScaleType};
-use livecraft_core::theme::parse_hex_color;
+use livecraft_formats::theme::parse_hex_color;
+use livecraft_model::model::{Clip, ClipPayload, MidiNote, NOTE_NAMES, ScaleConfig, ScaleType};
 
 pub fn render_piano_roll(
     ui: &mut Ui,
@@ -259,7 +259,7 @@ pub fn render_piano_roll(
                         );
 
                         // Draw key note label
-                        let label = livecraft_core::model::note_name(pitch);
+                        let label = livecraft_model::model::note_name(pitch);
                         let label_color = if is_root {
                             palette.amber
                         } else if is_black {
@@ -410,7 +410,7 @@ pub fn render_piano_roll(
                             );
 
                             // Note label
-                            let label = livecraft_core::model::note_name(note.pitch);
+                            let label = livecraft_model::model::note_name(note.pitch);
                             grid_painter.text(
                                 Pos2::new(n_rect.min.x + 3.0, n_rect.center().y),
                                 egui::Align2::LEFT_CENTER,

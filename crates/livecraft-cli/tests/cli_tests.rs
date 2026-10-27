@@ -1,7 +1,7 @@
-use livecraft_core::als::AlsParser;
-use livecraft_core::model::*;
 use livecraft_dsp::bouncer::{OfflineBouncer, RenderOptions};
 use livecraft_dsp::operator::{OperatorSynth, Waveform};
+use livecraft_formats::als::AlsParser;
+use livecraft_model::model::*;
 use std::fs;
 
 #[test]
