@@ -17,7 +17,7 @@ Last verified: 2026-10-27.
 
 ## Controls
 
-- Rust with no `unsafe` code in the workspace (checked on 2026-10-27).
+- `unsafe_code = "forbid"` for every crate through `[workspace.lints]` in `Cargo.toml`.
 - CI runs `cargo clippy -D warnings` and tests on Windows and Ubuntu.
 - Planned in `plans/livecraft-1.0/` Phase 0: `cargo-deny` for advisories, licences, and sources; input size limits; `unsafe_code = "forbid"`; output safety limiter.
 

@@ -14,3 +14,7 @@ hound.workspace = true
 crossbeam-channel.workspace = true
 anyhow.workspace = true
 log.workspace = true
+
+[lints]
+workspace = true
+

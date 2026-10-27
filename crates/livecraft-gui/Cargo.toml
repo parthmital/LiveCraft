@@ -15,3 +15,7 @@ egui.workspace = true
 log.workspace = true
 anyhow.workspace = true
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+[lints]
+workspace = true
+
