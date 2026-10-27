@@ -11,7 +11,7 @@ The Settings window with every tab and option, Learn View with LiveCraft's own l
 
 - Settings options: transcribe every option from 2.3.1 to 2.3.10 into the `Preferences` schema (M06); options that depend on out-of-scope features (account, licences, Splice, cloud) are hidden and recorded Out of Scope.
 - Learn View: same panel layout and lesson-tracking behaviour as 2.2 describes; lesson content written by LiveCraft (no Ableton text or videos), stored as Markdown in `crates/livecraft-ui/assets/learn/`.
-- Accessibility: enable eframe's `accesskit` feature once cargo-deny passes for it (D29 revisited at expansion; if the unmaintained crates remain, record an advisory exception with reason only if they are not security vulnerabilities); every widget exposes role, name, value, and actions; navigation per 41.4 and editing envelopes per 41.5.
+- Accessibility: enable eframe's `accesskit` feature once cargo-deny passes for it (D29 revisited when the milestone starts; if the unmaintained crates remain, record an advisory exception with reason only if they are not security vulnerabilities); every widget exposes role, name, value, and actions; navigation per 41.4 and editing envelopes per 41.5.
 - Keyboard navigation settings from 41.1.
 
 ## Task Outline

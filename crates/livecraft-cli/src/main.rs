@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
-use livecraft_dsp::bouncer::{OfflineBouncer, RenderOptions};
-use livecraft_dsp::engine::AudioEngine;
-use livecraft_dsp::operator::{OperatorSynth, Waveform};
+use livecraft_devices::operator::{OperatorSynth, Waveform};
+use livecraft_engine::bouncer::{OfflineBouncer, RenderOptions};
+use livecraft_engine::engine::AudioEngine;
 use livecraft_formats::als::AlsParser;
 use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, TrackType};
 use std::fs;

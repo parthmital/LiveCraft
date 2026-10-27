@@ -10,7 +10,7 @@ The eight MIDI effects and every chapter 33 device (DS drum synths, Align Delay,
 ## Decisions
 
 - MIDI effects implement `DeviceProcessor` on event lists only (no audio), sample-accurate, seeded randomness for Random and Arpeggiator random styles.
-- Modulators (LFO, Envelope Follower, Shaper, Expression Control, Envelope MIDI, Shaper MIDI) map to any parameter like Live's modulation devices: a mapping targets `(DeviceId, ParamId)` and modulates around the current value with depth; mappings save into `.als` exactly as Live stores Max for Live mappings only if the owner's oracle sets show the structure; otherwise LiveCraft stores them in its own namespaced element preserved by M09 (decision recorded in the expansion).
+- Modulators (LFO, Envelope Follower, Shaper, Expression Control, Envelope MIDI, Shaper MIDI) map to any parameter like Live's modulation devices: a mapping targets `(DeviceId, ParamId)` and modulates around the current value with depth; mappings save into `.als` exactly as Live stores Max for Live mappings only if the owner's oracle sets show the structure; otherwise LiveCraft stores them in its own namespaced element preserved by M09 (decision recorded in `reference/DECISIONS.md`).
 - DS drum synths are small instruments built with the M33 oscillator and envelope primitives.
 
 ## Devices

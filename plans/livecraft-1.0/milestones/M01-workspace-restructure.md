@@ -14,7 +14,7 @@ Out: crates with no code yet (`livecraft-time` M02, `livecraft-session` M04, `li
 
 ## Decisions
 
-- Moves use `git mv` so history follows files. Import paths are rewritten by a script the expansion writes (`plans/livecraft-1.0/tools/rewrite_imports.py`) that maps old paths to new ones from a table; the task lists the table.
+- Moves use `git mv` so history follows files. Each task lists the old-to-new import path table it rewrites.
 - File destinations:
 
   | From                                                                                                                   | To                                                                                              |
@@ -30,7 +30,7 @@ Out: crates with no code yet (`livecraft-time` M02, `livecraft-session` M04, `li
   | `crates/livecraft-cli/src/main.rs`, `tests/`                                                                           | `apps/livecraft/src/main.rs`, `apps/livecraft/tests/` (package `livecraft`, binary `livecraft`) |
 
 - Tests move with their code; `src/tests.rs` blocks are split per destination crate by test subject.
-- `LAYERS` in `xtask/src/main.rs` becomes: dsp [], model [], formats [model], devices [model, dsp], engine [model, dsp, devices, formats], ui [model, formats, engine], testkit [any, dev only, not listed as normal], livecraft [model, formats, engine, ui, devices, dsp], xtask []. (UI depending on engine is temporary until M04 introduces `livecraft-session`; the M04 expansion removes it.)
+- `LAYERS` in `xtask/src/main.rs` becomes: dsp [], model [], formats [model], devices [model, dsp], engine [model, dsp, devices, formats], ui [model, formats, engine], testkit [any, dev only, not listed as normal], livecraft [model, formats, engine, ui, devices, dsp], xtask []. (UI depending on engine is temporary until M04 introduces `livecraft-session`; M04 removes it.)
 - `livecraft-testkit` gets the first shared helper: `render_project_summary(project: &Project, bars: u32, sample_rate: u32) -> RenderSummary { rms_l, rms_r, peak_l, peak_r, frames }` used by characterisation tests.
 
 ## Task Outline

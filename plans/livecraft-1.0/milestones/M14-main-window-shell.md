@@ -10,7 +10,7 @@ The window frame, menu bar, Control Bar (all nine sections), Status Bar and Info
 ## Decisions
 
 - Menu bar: Live's menus and items for Windows (File, Edit, Create, View, Options, Help on 12.4; confirm the exact list from captures). Items not yet implemented are shown disabled with the milestone in their tooltip in debug builds only.
-- Control Bar sections in Live's order (manual 3.1 lists nine sections: browser options, tempo and metronome group, scale, follow and position, transport, loop, overdub and automation and capture, tools such as draw and keyboard and key or MIDI map, CPU and disk and MIDI indicators, plus view selectors; quote the manual list exactly in the expansion).
+- Control Bar sections in Live's order (manual 3.1 lists nine sections: browser options, tempo and metronome group, scale, follow and position, transport, loop, overdub and automation and capture, tools such as draw and keyboard and key or MIDI map, CPU and disk and MIDI indicators, plus view selectors; quote the manual list exactly in the code comment or test).
 - Shortcut registry: generated table `crates/livecraft-ui/src/shortcuts/table.rs` produced by `tools/extract_shortcuts.py` from manual chapter 42 (Windows and Mac columns); each entry maps to a command name; unimplemented commands are listed in a test report, not silently dropped. This task replaces `docs/keyboard-shortcuts.md` with a generated complete version.
 - Keyboard focus model per manual 41.4 and 42.2 (Tab moves focus between views when the setting is enabled; arrow navigation in lists).
 - Info View: hovering any widget shows its title and description; texts are written by LiveCraft from the manual's descriptions (paraphrased, not copied verbatim beyond short labels).

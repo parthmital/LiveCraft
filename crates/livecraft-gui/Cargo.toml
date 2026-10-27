@@ -10,7 +10,7 @@ publish.workspace = true
 [dependencies]
 livecraft-model = { path = "../livecraft-model" }
 livecraft-formats = { path = "../livecraft-formats" }
-livecraft-dsp = { path = "../livecraft-dsp" }
+livecraft-engine.workspace = true
 eframe.workspace = true
 egui.workspace = true
 log.workspace = true

@@ -27,7 +27,7 @@ VST3 and CLAP plug-ins (and AU on macOS) scan, load, show their editors, automat
 7. AU on macOS (24.4).
 8. Plug-in settings tab (2.3.8) and folders (24.3.1).
 9. `.als` mapping for plug-in devices.
-10. Milestone verification with three free plug-ins listed in the expansion (owner installs them).
+10. Milestone verification with three free plug-ins listed when the milestone starts (owner installs them).
 
 ## Acceptance Criteria
 

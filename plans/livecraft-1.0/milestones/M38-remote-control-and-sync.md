@@ -12,7 +12,7 @@ MIDI Map and Key Map modes, the computer MIDI keyboard, control surface support 
 - New crate `livecraft-control` (depends on time, model; `LAYERS` updated).
 - MIDI and Key mappings are model data saved in `.als` where Live stores them (structure from oracle sets).
 - Control surface scripts are Rhai scripts (D24) with an API for parameter banks, transport, clip launch, and feedback; generic scripts for common controllers ship with LiveCraft; Live's Python remote scripts are not executed (proprietary and outside scope).
-- Push 2: MIDI and display protocol as published by Ableton's open Push 2 interface documentation (the expansion confirms licence and availability; if not available under permissive terms, Push support is Out of Scope). Push 1 likewise.
+- Push 2: MIDI and display protocol as published by Ableton's open Push 2 interface documentation (implementation first confirms licence and availability; if not available under permissive terms, Push support is Out of Scope). Push 1 likewise.
 - Sync: MIDI clock out and in with song position pointer (37.3); Tempo Follower from audio input (37.2) using M23 tempo detection; Link and Link Audio only with feature `link` (D14, D-OWN-1).
 
 ## Task Outline

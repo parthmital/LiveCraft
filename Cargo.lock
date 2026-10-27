@@ -1514,7 +1514,8 @@ dependencies = [
  "env_logger",
  "hound",
  "insta",
- "livecraft-dsp",
+ "livecraft-devices",
+ "livecraft-engine",
  "livecraft-formats",
  "livecraft-gui",
  "livecraft-model",
@@ -1527,6 +1528,7 @@ dependencies = [
 name = "livecraft-devices"
 version = "0.1.0"
 dependencies = [
+ "livecraft-dsp",
  "livecraft-model",
  "log",
 ]
@@ -1534,12 +1536,17 @@ dependencies = [
 [[package]]
 name = "livecraft-dsp"
 version = "0.1.0"
+
+[[package]]
+name = "livecraft-engine"
+version = "0.1.0"
 dependencies = [
  "anyhow",
  "cpal",
  "crossbeam-channel",
  "hound",
  "livecraft-devices",
+ "livecraft-dsp",
  "livecraft-model",
  "log",
 ]
@@ -1564,7 +1571,7 @@ dependencies = [
  "eframe",
  "egui",
  "image",
- "livecraft-dsp",
+ "livecraft-engine",
  "livecraft-formats",
  "livecraft-model",
  "log",
@@ -1581,7 +1588,7 @@ dependencies = [
 name = "livecraft-testkit"
 version = "0.1.0"
 dependencies = [
- "livecraft-dsp",
+ "livecraft-engine",
  "livecraft-model",
 ]
 

@@ -15,7 +15,7 @@ Any `.als` written by Live 12.x opens in LiveCraft and saves back with zero XML 
 - Templates for new elements (an empty MIDI track, a MIDI clip, a device of each kind LiveCraft knows) are LiveCraft-authored XML fragments in `livecraft-formats/templates/`, written by hand from the structure of owner-provided sets (never copied wholesale from Live's resources). Each fragment is checked by a HUMAN test: a set using it opens in Live.
 - Unknown devices (third-party plug-ins, Max for Live) become `DeviceKind::Unknown { tag }` placeholders that keep their node.
 - Pretty XML export for version control (B10): `livecraft convert --pretty-xml in.als out.xml` and back, stable attribute order, and `livecraft diff a.als b.als` printing a musical summary (tracks, clips, notes, devices, parameters changed).
-- Oracle corpus: the owner saves a set of `.als` files from Live 12.4 covering features as they land (list in the expansion), stored in `.agent-local/reference/sets/` (never committed, they may contain the owner's content). Committed fixtures are LiveCraft-authored only.
+- Oracle corpus: the owner saves a set of `.als` files from Live 12.4 covering features as they land (list recorded when the milestone starts), stored in `.agent-local/reference/sets/` (never committed, they may contain the owner's content). Committed fixtures are LiveCraft-authored only.
 - quick-xml 0.42.0 (already upgraded in P0-11). The old `AlsParser` is deleted at the end of this milestone.
 
 ## Task Outline

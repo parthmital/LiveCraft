@@ -81,4 +81,4 @@ Rename `crates/livecraft-gui` to `crates/livecraft-ui` using `git mv`, update cr
 
 ## If Something Fails
 
-- Run the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.
+- Read the whole error and find the root cause. If this file is wrong (an anchor, API, or expected value changed), correct it and add `Revision <date>: <what and why>` at its end. If the line still cannot be finished, log it under Blockers in `CHECKLIST.md`.

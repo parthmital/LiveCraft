@@ -1,6 +1,6 @@
 ## Description
 
-Summarise the change and link the plan task (`plans/livecraft-1.0/tasks/<id>.md`) or issue it completes.
+Summarise the change and link the `plans/livecraft-1.0/CHECKLIST.md` line or issue it completes.
 
 ## Checklist
 

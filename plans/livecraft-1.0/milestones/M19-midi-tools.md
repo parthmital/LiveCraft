@@ -11,7 +11,7 @@ All 12 transformations and 5 generators exist with Live's parameters, ranges, de
 
 - Crate location: `livecraft-model/src/midi_tools/` (pure functions on note lists, no UI or engine), one module per tool: `fn apply(notes: &[Note], selection: TimeRange, params: &XParams, ctx: &ToolContext) -> Vec<Note>`; `ToolContext` carries scale, grid, and a seeded PRNG.
 - Parameters, ranges, and defaults are transcribed from each manual section into a `ParamSpec` table per tool, with the manual page in a comment.
-- Algorithms: where the manual describes behaviour but not the algorithm (for example Seed, Shape, Recombine), the expansion writes the algorithm from the manual's description and verifies it against HUMAN oracle examples: the owner applies the tool in Live to fixture clips with fixed settings and exports the result as `.alc` into `.agent-local/reference/midi-tools/`; tests compare structure (note count, pitch set, timing grid) where randomness is involved, and exact notes where it is not.
+- Algorithms: where the manual describes behaviour but not the algorithm (for example Seed, Shape, Recombine), implementation writes the algorithm from the manual's description and verifies it against HUMAN oracle examples: the owner applies the tool in Live to fixture clips with fixed settings and exports the result as `.alc` into `.agent-local/reference/midi-tools/`; tests compare structure (note count, pitch set, timing grid) where randomness is involved, and exact notes where it is not.
 - Euclidean uses the Bjorklund algorithm with Live's rotation and voice semantics from 11.3.5.
 - Panels UI (8.6) uses the M13 widget kit.
 

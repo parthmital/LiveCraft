@@ -11,10 +11,10 @@ One tested crate owns musical time: positions, tempo and time-signature maps, be
 
 - `Beats(f64)`: quarter-note beats from the song start, matching `.als`. `Samples(i64)`: sample frames from the song start.
 - `TempoMap`: ordered breakpoints `(Beats, bpm: f64, ramp_to_next: bool)`, at least one point; Live allows tempo automation with linear ramps in beats. Conversion beat to seconds integrates exactly for constant and linear segments (closed form for linear tempo: t = integral of 60/bpm(b) db, logarithmic for linear bpm ramps).
-- Tempo range 20 to 999 BPM (Live's Control Bar range; confirm on manual page 35 during expansion and record the quote).
+- Tempo range 20 to 999 BPM (Live's Control Bar range; confirm on manual page 35 when the milestone starts and record the quote).
 - `TimeSignatureMap`: changes `(bar index, numerator 1..99, denominator in {1,2,4,8,16})` at bar boundaries, as in manual 6.5.
 - `BarBeatSixteenth { bar: i32, beat: i32, sixteenth: i32, ticks: f64 }` with `format_position()` producing Live's `1. 1. 1` style, one-based, and `format_length()` producing `0. 0. 0` style, zero-based. Exact string formats come from reference captures in M12; until then from the manual's Control Bar description.
-- `Grid` (`None`, `Bars(u32)`, `Fraction { num: u32, den: u32 }`, `Triplet` flag) and `LaunchQuantization` with Live's menu entries: None, 8 Bars, 4 Bars, 2 Bars, 1 Bar, 1/2, 1/2T, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, plus Global for clips. The exact list is quoted from manual 16.4 during expansion.
+- `Grid` (`None`, `Bars(u32)`, `Fraction { num: u32, den: u32 }`, `Triplet` flag) and `LaunchQuantization` with Live's menu entries: None, 8 Bars, 4 Bars, 2 Bars, 1 Bar, 1/2, 1/2T, 1/4, 1/4T, 1/8, 1/8T, 1/16, 1/16T, 1/32, plus Global for clips. The exact list is quoted from manual 16.4 when the milestone starts.
 - No dependency on any other workspace crate. `proptest` 1.12.0 as dev-dependency.
 
 ## Interfaces

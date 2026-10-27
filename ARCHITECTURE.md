@@ -1,7 +1,7 @@
 # Architecture
 
 Purpose: how the code is organised today and why, and where it falls short. Read when: adding a module, moving code, or changing dependencies between parts.
-Last verified: 2026-10-27.
+Last verified: 2026-10-28.
 
 The target architecture that replaces this one is defined in `plans/livecraft-1.0/reference/TARGET-ARCHITECTURE.md`. Update this file as each plan task lands, so it always describes the code as it is.
 
@@ -10,7 +10,7 @@ The target architecture that replaces this one is defined in `plans/livecraft-1.
 One process, three kinds of threads:
 
 - UI thread: `eframe` runs `LiveCraftApp::update` once per frame. It owns the `Project` and mutates it directly.
-- Audio thread: `cpal` calls `write_audio` (`crates/livecraft-dsp/src/engine.rs`) for every hardware buffer. It drains `AudioParamMsg` messages and renders the `AudioGraph`.
+- Audio thread: `cpal` calls `write_audio` (`crates/livecraft-engine/src/engine.rs`) for every hardware buffer. It drains `AudioParamMsg` messages and renders the `AudioGraph`.
 - CLI: runs the same `AudioGraph` offline through `OfflineBouncer`, or opens the GUI.
 
 ```text
@@ -22,47 +22,51 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 
 ## Module Map
 
-| Crate or path                                     | Responsibility                                                                               | Main public API                                                            | May depend on          |
-| ------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------- |
-| `crates/livecraft-core/src/model.rs`              | Document model, MIDI transformations, scales, Scala tuning                                   | `Project`, `Track`, `Clip`, `ClipSlot`, `Device`, `TuningSystem`           | serde                  |
-| `crates/livecraft-core/src/command.rs`            | `Command` enum and `CommandHistory` undo and redo                                            | `Command`, `CommandHistory`                                                | model                  |
-| `crates/livecraft-core/src/als.rs`                | `.als` gzip XML read and write                                                               | `AlsParser::load_project`, `save_project_to_als`                           | quick-xml, flate2      |
-| `crates/livecraft-core/src/theme.rs`              | `.ask` theme parsing                                                                         | `AbletonTheme`                                                             | quick-xml              |
-| `crates/livecraft-dsp/src/engine.rs`              | `cpal` stream and parameter queue                                                            | `AudioEngine`, `AudioParamMsg`                                             | graph, cpal, crossbeam |
-| `crates/livecraft-dsp/src/graph.rs`               | Per-track state, clip playback, voices, mixing, meters                                       | `AudioGraph`, `TrackDspState`                                              | processor, instruments |
-| `crates/livecraft-dsp/src/processor.rs`           | `DspProcessor` trait and factory from `Device`                                               | `DspProcessor`, `create_processor`                                         | effect modules         |
-| `crates/livecraft-dsp/src/{effect}.rs`            | One effect or instrument per file                                                            | `<Name>Effect`, `OperatorSynth`, `SimplerInstrument`, `DrumRackInstrument` | biquad                 |
-| `crates/livecraft-dsp/src/bouncer.rs`             | Offline render and stems                                                                     | `OfflineBouncer`                                                           | graph, hound           |
-| `crates/livecraft-gui/src/app.rs`                 | Frame loop, shortcuts, panel layout, engine wiring                                           | `LiveCraftApp`                                                             | all GUI modules        |
-| `crates/livecraft-gui/src/{view}.rs`              | One view or panel per file (transport, session, arrange, mixer, devices, pianoroll, browser) | `render_*` functions                                                       | widgets, style         |
-| `crates/livecraft-gui/src/widgets.rs`, `style.rs` | Knobs, faders, meters, LCD fields; palettes                                                  | `live_knob`, `live_fader`, `LivePalette`                                   | egui                   |
-| `crates/livecraft-cli/src/main.rs`                | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | every crate            |
-| `xtask/src/main.rs`                               | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                   |
+| Crate or path                                         | Responsibility                                                                               | Main public API                                                            | May depend on (internal)             |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
+| `crates/livecraft-model/src/model.rs`                 | Document model, MIDI transformations, scales, Scala tuning                                   | `Project`, `Track`, `Clip`, `ClipSlot`, `Device`, `TuningSystem`           | none                                 |
+| `crates/livecraft-model/src/command.rs`               | `Command` enum and `CommandHistory` undo and redo                                            | `Command`, `CommandHistory`                                                | none                                 |
+| `crates/livecraft-formats/src/als.rs`                 | `.als` gzip XML read and write                                                               | `AlsParser::load_project`, `save_project_to_als`                           | model                                |
+| `crates/livecraft-formats/src/theme.rs`               | `.ask` theme parsing                                                                         | `AbletonTheme`                                                             | model                                |
+| `crates/livecraft-dsp/src/biquad.rs`                  | DSP primitives (biquad filter)                                                               | `BiquadFilter`, `FilterType`                                               | none                                 |
+| `crates/livecraft-devices/src/processor.rs`           | `DspProcessor` trait and factory from `Device`                                               | `DspProcessor`, `create_processor`                                         | model, dsp                           |
+| `crates/livecraft-devices/src/{effects,instruments}/` | One effect or instrument per file                                                            | `<Name>Effect`, `OperatorSynth`, `SimplerInstrument`, `DrumRackInstrument` | model, dsp                           |
+| `crates/livecraft-engine/src/engine.rs`               | `cpal` stream and parameter queue                                                            | `AudioEngine`, `AudioParamMsg`                                             | model, dsp, devices, formats         |
+| `crates/livecraft-engine/src/graph.rs`                | Per-track state, clip playback, voices, mixing, meters                                       | `AudioGraph`, `TrackDspState`, `TrackMeter`                                | as above                             |
+| `crates/livecraft-engine/src/audio_clip.rs`           | WAV sample cache with a 2^28-sample limit                                                    | `AudioSampleCache`                                                         | as above                             |
+| `crates/livecraft-engine/src/bouncer.rs`              | Offline render and stems                                                                     | `OfflineBouncer`, `RenderOptions`                                          | as above                             |
+| `crates/livecraft-gui/src/app.rs`                     | Frame loop, shortcuts, panel layout, engine wiring                                           | `LiveCraftApp`                                                             | model, formats, engine               |
+| `crates/livecraft-gui/src/{view}.rs`                  | One view or panel per file (transport, session, arrange, mixer, devices, pianoroll, browser) | `render_*` functions                                                       | as above                             |
+| `crates/livecraft-gui/src/widgets.rs`, `style.rs`     | Knobs, faders, meters, LCD fields; palettes                                                  | `live_knob`, `live_fader`, `LivePalette`                                   | as above                             |
+| `crates/livecraft-cli/src/main.rs`                    | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | model, formats, engine, devices, gui |
+| `crates/livecraft-testkit/src/lib.rs`                 | Test helpers shared across crates                                                            | `render_project_summary`, `RenderSummary`                                  | model, engine                        |
+| `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules
 
-- `livecraft-core` has no audio, UI, or OS dependencies.
-- `livecraft-dsp` never depends on `livecraft-gui`.
+- `livecraft-model` and `livecraft-dsp` have no internal dependencies and no audio, UI, or OS dependencies.
+- Layers run model and dsp, then formats and devices, then engine, then gui, then cli. Never add a reverse edge.
 - Only `livecraft-cli` produces a binary.
-- Enforced by `cargo xtask layering` (part of `cargo xtask ci`): the `LAYERS` table in `xtask/src/main.rs` lists each package's allowed workspace dependencies.
+- Enforced by `cargo xtask layering` (part of `cargo xtask ci`): the `LAYERS` table in `xtask/src/main.rs` is the source of truth.
 
 ## Where New Code Goes
 
-- New document data or edit operation: `livecraft-core/src/model.rs`, with a `Command` variant in `command.rs`.
-- New effect: a new file in `livecraft-dsp/src/`, a `DspProcessor` impl in `processor.rs`, a `DeviceType` variant in `model.rs`.
+- New document data or edit operation: `livecraft-model/src/model.rs`, with a `Command` variant in `command.rs`.
+- New DSP building block (filter, oscillator, envelope): `livecraft-dsp/src/`.
+- New effect or instrument: a file in `livecraft-devices/src/effects/` or `instruments/`, a `DspProcessor` impl in `processor.rs`, a `DeviceType` variant in `livecraft-model`.
 - New view or panel: a new file in `livecraft-gui/src/`, called from `app.rs`.
 - New CLI subcommand: `livecraft-cli/src/main.rs` plus a test in `crates/livecraft-cli/tests/cli_tests.rs`.
 
 ## Decisions
 
-- Rust workspace with separate core, DSP, GUI, and CLI crates: keeps the model testable without audio or UI.
+- Rust workspace with separate model, formats, DSP, devices, engine, GUI, and CLI crates: keeps the model and DSP testable without audio or UI.
 - `egui` immediate-mode GUI: fully custom painting suits Live's flat, dense look; used by the Storytold Craft apps. See `RESEARCH.md#gui-toolkit-2026-10-27`.
 - `.als` support through `quick-xml` and `flate2`: a Live Set is gzip-compressed XML.
 - wgpu renderer with DX12 default on Windows: Vulkan crashed on the reference machine (DECISIONS.md D12).
 
 ## Known Violations
 
-Each is scheduled in `plans/livecraft-1.0/`.
+Each is scheduled in [plans/livecraft-1.0/PLAN.md](plans/livecraft-1.0/PLAN.md).
 
 | Problem                                                                                                              | Where                                                   | Plan phase   |
 | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------ |
@@ -76,11 +80,10 @@ Each is scheduled in `plans/livecraft-1.0/`.
 | Entity identity is `usize` indexes in commands and messages, which break on insert or delete                         | `command.rs`, `engine.rs`                               | 1            |
 | `.als` writer regenerates XML from the model; every unknown element is lost                                          | `als.rs`                                                | 2            |
 | Session clip slots without an active clip are played back as a sequential timeline                                   | `graph.rs` `dispatch_clip_events`                       | 1            |
-| Large files mixing concerns: `model.rs` (1208 lines), `graph.rs` (1072), `devices.rs` (990)                          | as listed                                               | 1            |
+| Large files mixing concerns: `model.rs` (1214 lines), `graph.rs` (1080), `als.rs` (1008), `devices.rs` (995)         | as listed                                               | 1            |
 | GUI layout uses estimated sizes and colours, not measurements of Live                                                | `crates/livecraft-gui/src/*.rs`                         | 3            |
 
 ## Growth Signals
 
 - Any source file over 800 lines, or a module with more than one reason to change: split it.
 - A second front end (for example a control server) needs state that lives in `LiveCraftApp`: move that state into a UI-independent crate (planned as `livecraft-app`).
-- Device count past about 20: move devices out of `livecraft-dsp` into their own crate (planned as `livecraft-devices`).

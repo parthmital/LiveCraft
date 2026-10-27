@@ -14,7 +14,8 @@ path = "src/main.rs"
 [dependencies]
 livecraft-model = { path = "../livecraft-model" }
 livecraft-formats = { path = "../livecraft-formats" }
-livecraft-dsp = { path = "../livecraft-dsp" }
+livecraft-engine.workspace = true
+livecraft-devices.workspace = true
 livecraft-gui = { path = "../livecraft-gui" }
 clap.workspace = true
 anyhow.workspace = true

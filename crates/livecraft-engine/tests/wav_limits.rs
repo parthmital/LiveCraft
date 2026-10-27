@@ -1,4 +1,4 @@
-use livecraft_dsp::audio_clip::AudioSampleCache;
+use livecraft_engine::audio_clip::AudioSampleCache;
 use std::path::PathBuf;
 
 fn write_test_wav(name: &str, frames: u32) -> PathBuf {

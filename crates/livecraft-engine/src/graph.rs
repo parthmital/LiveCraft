@@ -1,21 +1,21 @@
 use crate::audio_clip::AudioSampleCache;
-use crate::autofilter::AutoFilterEffect;
-use crate::autopan::AutoPanEffect;
-use crate::chorus::ChorusEffect;
-use crate::compressor::CompressorEffect;
-use crate::delay::DelayEffect;
-use crate::drumrack::DrumRackInstrument;
 use crate::engine::AudioParamMsg;
-use crate::eq3::EqThreeEffect;
-use crate::eq8::EqEight;
-use crate::gate::GateEffect;
-use crate::limiter::{LimiterEffect, UtilityEffect};
-use crate::operator::OperatorSynth;
-use crate::processor::{DspProcessor, create_processor};
-use crate::redux::ReduxEffect;
-use crate::reverb::ReverbEffect;
-use crate::saturator::SaturatorEffect;
-use crate::simpler::SimplerInstrument;
+use livecraft_devices::autofilter::AutoFilterEffect;
+use livecraft_devices::autopan::AutoPanEffect;
+use livecraft_devices::chorus::ChorusEffect;
+use livecraft_devices::compressor::CompressorEffect;
+use livecraft_devices::delay::DelayEffect;
+use livecraft_devices::drumrack::DrumRackInstrument;
+use livecraft_devices::eq3::EqThreeEffect;
+use livecraft_devices::eq8::EqEight;
+use livecraft_devices::gate::GateEffect;
+use livecraft_devices::limiter::{LimiterEffect, UtilityEffect};
+use livecraft_devices::operator::OperatorSynth;
+use livecraft_devices::processor::{DspProcessor, create_processor};
+use livecraft_devices::redux::ReduxEffect;
+use livecraft_devices::reverb::ReverbEffect;
+use livecraft_devices::saturator::SaturatorEffect;
+use livecraft_devices::simpler::SimplerInstrument;
 use livecraft_model::model::*;
 
 /// Replaces NaN and infinity with silence; finite samples pass through bit-exactly.

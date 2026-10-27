@@ -1,4 +1,4 @@
-pub mod biquad;
+pub use livecraft_dsp::biquad;
 pub mod effects;
 pub mod instruments;
 pub mod processor;

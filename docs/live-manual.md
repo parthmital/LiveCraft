@@ -1,7 +1,7 @@
 # Live 12 Reference Manual Guide
 
 Purpose: where each topic is in the Live 12 reference manual and how to read it from the command line. Read when: implementing or checking any Live feature.
-Last verified: 2026-10-27.
+Last verified: 2026-10-28.
 
 ## The File
 
@@ -11,7 +11,7 @@ Last verified: 2026-10-27.
 
 ## Querying
 
-Use the repo-local Python environment (setup in `plans/livecraft-1.0/START-HERE.md#project-facts`). On macOS or Linux replace `./.venv/Scripts/python` with `./.venv/bin/python`.
+Use the repo-local Python environment (setup in `README.md#prerequisites`). On macOS or Linux replace `./.venv/Scripts/python` with `./.venv/bin/python`.
 
 | Need                    | Command                                                                                                               |
 | ----------------------- | --------------------------------------------------------------------------------------------------------------------- |

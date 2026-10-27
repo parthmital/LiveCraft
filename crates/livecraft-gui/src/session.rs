@@ -3,7 +3,7 @@ use crate::mixer::{
 };
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
-use livecraft_dsp::graph::TrackMeter;
+use livecraft_engine::graph::TrackMeter;
 use livecraft_formats::theme::parse_hex_color;
 use livecraft_model::model::{Clip, Project, TrackType};
 

@@ -15,22 +15,35 @@ use std::process::{Command, ExitCode};
 const LAYERS: &[(&str, &[&str])] = &[
     ("livecraft-model", &[]),
     ("livecraft-formats", &["livecraft-model"]),
-    ("livecraft-devices", &["livecraft-model"]),
-    ("livecraft-dsp", &["livecraft-model", "livecraft-devices"]),
+    ("livecraft-dsp", &[]),
+    ("livecraft-devices", &["livecraft-model", "livecraft-dsp"]),
+    (
+        "livecraft-engine",
+        &[
+            "livecraft-model",
+            "livecraft-dsp",
+            "livecraft-devices",
+            "livecraft-formats",
+        ],
+    ),
     (
         "livecraft-gui",
-        &["livecraft-model", "livecraft-formats", "livecraft-dsp"],
+        &["livecraft-model", "livecraft-formats", "livecraft-engine"],
     ),
     (
         "livecraft-cli",
         &[
             "livecraft-model",
             "livecraft-formats",
-            "livecraft-dsp",
+            "livecraft-engine",
+            "livecraft-devices",
             "livecraft-gui",
         ],
     ),
-    ("livecraft-testkit", &["livecraft-model", "livecraft-dsp"]),
+    (
+        "livecraft-testkit",
+        &["livecraft-model", "livecraft-engine"],
+    ),
     ("xtask", &[]),
 ];
 
@@ -260,7 +273,7 @@ mod tests {
         assert!(
             violations(
                 "livecraft-gui",
-                &["livecraft-model", "livecraft-formats", "livecraft-dsp"]
+                &["livecraft-model", "livecraft-formats", "livecraft-engine"]
             )
             .is_empty()
         );

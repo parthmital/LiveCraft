@@ -28,22 +28,22 @@ Verify every M01 acceptance criterion with recorded evidence, update `ARCHITECTU
    - Check packages: `cargo metadata --format-version 1 --no-deps | jq -r '.packages[].name' | sort`
    - Check legacy names: `git grep -E "livecraft_core|livecraft_gui|livecraft_cli" -- "*.rs"` -> empty.
 
-2. Create `plans/livecraft-1.0/milestones/M01-review.md`:
+2. Create `plans/livecraft-1.0/milestones/M01-review.md` from the outputs of step 1. Fill every cell from what the commands printed; never write `Yes` for a check that did not run or did not pass:
 
    ```markdown
    # Milestone M01 Review: Workspace Restructure
 
-   Date: 2026-10-27. Commit: <git rev-parse --short HEAD>.
+   Date: <date>. Commit: <git rev-parse --short HEAD>.
 
-   | Acceptance criterion                       | Met | Evidence                                                                                                                                  |
-   | ------------------------------------------ | --- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-   | cargo xtask ci passes                      | Yes | xtask: all checks passed, 55 tests                                                                                                        |
-   | Characterisation tests pass unchanged      | Yes | 2 passed in apps/livecraft/tests/characterisation.rs                                                                                      |
-   | Target packages match target architecture  | Yes | livecraft, livecraft-devices, livecraft-dsp, livecraft-engine, livecraft-formats, livecraft-model, livecraft-testkit, livecraft-ui, xtask |
-   | No legacy crate names in Rust source files | Yes | git grep returned 0 matches                                                                                                               |
-   | ARCHITECTURE.md module map matches layout  | Yes | Module map and dependency rules updated                                                                                                   |
+   | Acceptance criterion                       | Met      | Evidence                 |
+   | ------------------------------------------ | -------- | ------------------------ |
+   | cargo xtask ci passes                      | <Yes/No> | <final line, test count> |
+   | Characterisation tests pass unchanged      | <Yes/No> | <test output>            |
+   | Target packages match target architecture  | <Yes/No> | <sorted package list>    |
+   | No legacy crate names in Rust source files | <Yes/No> | <git grep output>        |
+   | ARCHITECTURE.md module map matches layout  | <Yes/No> | <sections updated>       |
 
-   Test counts: livecraft 6 (4 unit/integration + 2 characterisation), livecraft-model 9, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 16, livecraft-engine 11 (9 unit + 2 wav_limits), livecraft-ui 2, xtask 4; total 55.
+   Test counts: <per-package counts from cargo test>.
    ```
 
 3. Update `ARCHITECTURE.md`:
@@ -68,11 +68,11 @@ Verify every M01 acceptance criterion with recorded evidence, update `ARCHITECTU
 
 ## Verify
 
-| Command                                           | Expected result                      |
-| ------------------------------------------------- | ------------------------------------ |
-| `git grep -E "livecraft_core                      | livecraft_gui                        | livecraft_cli" -- "*.rs"` | no output |
-| `cargo test -p livecraft --test characterisation` | 2 passed                             |
-| `cargo xtask ci`                                  | `xtask: all checks passed`, 55 tests |
+| Command                                                                | Expected result                      |
+| ---------------------------------------------------------------------- | ------------------------------------ |
+| `git grep -E "livecraft_core\|livecraft_gui\|livecraft_cli" -- "*.rs"` | no output                            |
+| `cargo test -p livecraft --test characterisation`                      | 2 passed                             |
+| `cargo xtask ci`                                                       | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 
@@ -92,4 +92,4 @@ Verify every M01 acceptance criterion with recorded evidence, update `ARCHITECTU
 
 ## If Something Fails
 
-- Run the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.
+- Read the whole error and find the root cause. If this file is wrong (an anchor, API, or expected value changed), correct it and add `Revision <date>: <what and why>` at its end. If the line still cannot be finished, log it under Blockers in `CHECKLIST.md`.

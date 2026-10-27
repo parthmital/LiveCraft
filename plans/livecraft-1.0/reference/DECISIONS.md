@@ -1,6 +1,6 @@
 # Decisions
 
-Purpose: every plan-wide decision with its reason, so no task re-decides it. Read when: a task or expansion needs a choice not stated in its own file.
+Purpose: every plan-wide decision with its reason, so no task re-decides it. Read when: a task or milestone needs a choice not stated in its own file.
 Last verified: 2026-10-27.
 
 Library evidence and alternatives are in the root `RESEARCH.md`. Architecture decisions are in `TARGET-ARCHITECTURE.md`. A decision changes only through a new entry here that marks the old one Superseded.
@@ -39,12 +39,12 @@ Library evidence and alternatives are in the root `RESEARCH.md`. Architecture de
 | D24 | Scripting: `rhai` 1.27.0 (MIT OR Apache-2.0) for MIDI tools and control scripts in M42; audio-rate user DSP only through CLAP plug-ins.                                                                                             | Pure Rust, sandboxed; audio-rate scripting is unsafe for real time.                                                                              |
 | D26 | Control server: JSON-RPC 2.0 over stdio and localhost TCP written on `serde_json` without an async runtime; MCP through `rmcp` 3.8.0 in a separate optional binary mode.                                                            | The registry is synchronous; an async runtime in the app core adds risk for no gain.                                                             |
 | D27 | Test temp files: `tempfile` 3.27.0 (dev-dependency). Hashes for downloads and golden files: `sha2` 0.11.1.                                                                                                                          | Current versions on 2026-10-27.                                                                                                                  |
-| D28 | Version rule for later milestones: a milestone expansion may move a pinned version forward to the latest release that is at least 14 days old, recording the change here as a new row.                                              | Long plan; versions age.                                                                                                                         |
+| D28 | Version rule for later milestones: a milestone may move, when it starts, a pinned version forward to the latest release that is at least 14 days old, recording the change here as a new row.                                       | Long plan; versions age.                                                                                                                         |
 | D25 | Note naming: MIDI 60 is C3 in every UI, CLI help, and file.                                                                                                                                                                         | Live's convention (manual chapter 10).                                                                                                           |
 
 ## Owner Decisions
 
-The executor never answers these and never waits for them: it builds with the default, and implements features whose default is off behind their Cargo feature or setting. The owner may answer at any time (queue rows Q01 and Q02); only the public v1.0.0 release waits for D-OWN-3.
+Implementation never answers these and never waits for them: it builds with the default, and implements features whose default is off behind their Cargo feature or setting. The owner may answer at any time (queue rows Q01 and Q02); only the public v1.0.0 release waits for D-OWN-3.
 
 | ID      | Question                                                                                                                  | Default until decided                                  | Needed by |
 | ------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------- |

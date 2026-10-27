@@ -5,7 +5,7 @@ Last verified: 2026-10-27.
 
 ## Definition Of Done (every task)
 
-1. `cargo xtask ci` passes (before Task P0-07: the four commands in `START-HERE.md#project-facts`).
+1. `cargo xtask ci` passes.
 2. New behaviour has tests written in the same commit; bug fixes have a test that failed before the fix.
 3. Docs affected by the change are updated in the same commit (`AGENTS.md`, `ARCHITECTURE.md`, `DESIGN.md`, `SECURITY.md`, `README.md`, `docs/`, the parity matrix).
 4. One commit, pushed, checklist ticked.
@@ -74,4 +74,4 @@ Reference machine: the owner's Windows PC. Measured with `criterion` and the eng
 
 ## Milestone Review
 
-After the last task of a milestone, the Milestone Review prompt in `START-HERE.md` records each acceptance criterion as met or not met with evidence. Unmet criteria become new tasks before the next milestone starts.
+After the last task of a milestone, a review appended to the milestone file records each acceptance criterion as met or not met with evidence. Unmet criteria become new tasks before the next milestone starts.

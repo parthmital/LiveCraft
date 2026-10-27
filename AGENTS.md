@@ -1,15 +1,15 @@
 # Agent Guide
 
 Purpose: rules and commands every agent task in this repository needs. Read when: always.
-Last verified: 2026-10-27.
+Last verified: 2026-10-28.
 
 ## Commands
 
 - Format check: `cargo fmt --all -- --check` (fix: `cargo fmt --all`)
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
 - Test all: `cargo test --workspace`
-- Test one crate: `cargo test -p livecraft-core` (also `livecraft-dsp`, `livecraft-gui`, `livecraft-cli`)
-- Test one test: `cargo test -p livecraft-dsp test_eq8_processing`
+- Test one crate: `cargo test -p livecraft-model` (also `livecraft-formats`, `livecraft-dsp`, `livecraft-devices`, `livecraft-engine`, `livecraft-gui`, `livecraft-cli`)
+- Test one test: `cargo test -p livecraft-devices test_eq8_processing`
 - Release build: `cargo build --release --workspace`
 - Toolchain: pinned to Rust 1.99.1 by `rust-toolchain.toml`; crate metadata comes from `[workspace.package]` in `Cargo.toml`.
 - Run: `cargo run --bin livecraft -- <subcommand>`; GUI frame capture: `cargo run --bin livecraft -- gui --screenshot out.png --view session --theme dark`
@@ -23,16 +23,19 @@ Last verified: 2026-10-27.
 
 ## Implementation Plan
 
-- Work comes from `plans/livecraft-1.0/`. Read its `START-HERE.md` before any plan task; `CHECKLIST.md` is the only source of task status.
-- One prompt runs the whole checklist (`START-HERE.md#prompts`); one commit per task, never skip or reorder lines. Owner-only work goes to `plans/livecraft-1.0/OWNER-QUEUE.md` and never stops the run.
+- Work comes from `plans/livecraft-1.0/`: phases in `PLAN.md`, status only in `CHECKLIST.md`. Take the first `[ ]` line; never skip or reorder lines.
+- Task line: do what its `tasks/<id>.md` says. Milestone line: implement its `milestones/<id>-*.md` Outline in order, one commit per Outline item, until every Acceptance criterion holds; append a review with evidence to the milestone file before ticking it.
+- Read `reference/` files when a milestone names them; they hold plan-wide decisions (`TARGET-ARCHITECTURE.md`, `DECISIONS.md`, `QUALITY-GATES.md`, `UI-FIDELITY.md`, `PARITY-MATRIX.md`, `BEYOND-LIVE.md`).
+- Owner-only work (captures of Live, measurements, legal advice, certificates): do every part a model can, add a row to `OWNER-QUEUE.md`, mark the line `[~]`, and continue. Never fake owner input.
+- A line that cannot be finished after finding the root cause: log it under Blockers in `CHECKLIST.md`.
 
 ## Conventions
 
-- Crate direction: `livecraft-core` depends on nothing internal; `livecraft-dsp` on core; `livecraft-gui` on core and dsp; `livecraft-cli` on all. Never add a reverse edge.
+- Crate direction: see `ARCHITECTURE.md#dependency-rules`; `LAYERS` in `xtask/src/main.rs` enforces it. Never add a reverse edge.
 - Tests live in a `#[cfg(test)] mod tests` block of the module they test, or in `crates/<crate>/tests/` for cross-module behaviour. Every new behaviour gets a test in the same commit.
 - Errors: library code returns `Result` with `thiserror` enums or `anyhow::Result`; no `unwrap()` or `expect()` outside tests.
 - Logging: library crates use `log::error!`, `log::warn!`, `log::info!`, `log::debug!`; never `eprintln!` or `println!`. Only `crates/livecraft-cli` prints to the terminal. Never log on the audio thread.
-- Audio callback code (`write_audio*` in `engine.rs` and everything it calls) must not allocate, lock, log, or do I/O. See `ARCHITECTURE.md#known-violations` for where today's code breaks this.
+- Audio callback code (`write_audio*` in `crates/livecraft-engine/src/engine.rs` and everything it calls) must not allocate, lock, log, or do I/O. See `ARCHITECTURE.md#known-violations` for where today's code breaks this.
 - Live terms are used exactly as the manual spells them (Session View, Clip View, Track Activator, Main track).
 - MIDI note names follow Live: note 60 is C3.
 
@@ -46,7 +49,7 @@ Last verified: 2026-10-27.
 ## Gotchas
 
 - **`docs/ableton-live-12-reference-manual.pdf` missing**: it is Git-ignored (108 MB). Ask the owner for it; do not download from unofficial sources.
-- **Manual screenshots are tiled into many small images**: render whole pages to PNG instead of extracting images (`plans/livecraft-1.0/tools/render_manual_pages.py`).
+- **Manual screenshots are tiled into many small images**: render whole pages to PNG instead of extracting images (`plans/livecraft-1.0/tools/manual.py render`).
 - **`test_parse_real_ableton_template` passes without asserting anything**: it only asserts when Live 12 Suite is installed at `C:\ProgramData\Ableton\Live 12 Suite`.
 - **GUI screenshot needs a display and a GPU**: `--screenshot` opens a real window and saves frame 5. wgpu uses DX12 on Windows by default (Vulkan crashed on the reference machine); override with `WGPU_BACKEND=gl` or `vulkan`.
 - **Line-ending-only diffs**: `.gitattributes` sets `text=auto`; use `git diff --ignore-cr-at-eol --stat`.

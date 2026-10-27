@@ -13,7 +13,7 @@ The engine implements Live's transport, tempo and time-signature changes, arrang
 - Launch scheduler: per track, at most one playing clip and one queued clip (Session), with quantized launch times computed by `livecraft-time::quantize_launch`; scenes launch every clip in the row plus scene tempo and signature.
 - Launch modes Trigger, Gate, Toggle, Repeat; Legato mode; launch velocity amount; clip nudge (manual 16.2 to 16.6). Each mode is a pure state machine with table-driven tests from manual sentences.
 - Follow Actions (manual 16.7): actions, chance A and B, Follow Action time, linked and unlinked, global enable; random choices use a seeded PRNG (`rand_pcg` style algorithm implemented in-house, 64-bit PCG, so renders stay deterministic with a stored seed).
-- Metronome: click sound synthesised in-house (no samples copied from Live); options from the manual: count-in, rhythm, sound, volume, enabled only while recording; exact option list quoted during expansion.
+- Metronome: click sound synthesised in-house (no samples copied from Live); options from the manual: count-in, rhythm, sound, volume, enabled only while recording; exact option list quoted when the milestone starts.
 - Arrangement playback vs Session clips: a track plays its Session clip until "Back to Arrangement" (manual 6.x and 7.x); implement the override flag per track.
 
 ## Task Outline

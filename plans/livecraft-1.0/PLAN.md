@@ -1,7 +1,7 @@
 # Plan Overview
 
-Purpose: the phases, milestones, order, and exit criteria from today's code to LiveCraft 1.0. Read when: starting the plan, expanding a milestone, or reviewing progress.
-Last verified: 2026-10-27.
+Purpose: the phases, milestones, order, and exit criteria from today's code to LiveCraft 1.0. Read when: starting a milestone or reviewing progress.
+Last verified: 2026-10-28.
 
 ## Starting Point (2026-10-27, commit `1735fa8`)
 
@@ -12,10 +12,10 @@ Last verified: 2026-10-27.
 ## Strategy
 
 1. **Foundation first** (Phase 0): tooling, CI, security, and dependency upgrades, fully specified as tasks now.
-2. **Rolling-wave detail**: Phases 1 to 8 are milestones. Each milestone file fixes scope, decisions, interfaces, and acceptance criteria; an Expand line turns it into tasks just before execution, against the code as it then exists, and the executor continues straight into those tasks in the same run. This keeps every task exact without writing thousands of tasks against code that will have changed.
+2. **Rolling-wave detail**: Phases 1 to 8 are milestones. Each milestone file fixes scope, decisions, interfaces, and acceptance criteria; it is implemented directly from its Outline against the code as it then exists, so no task is written against code that will have changed.
 3. **Engine and model before UI**: the real-time engine, document model, commands, and lossless file I/O are the parts every feature depends on and the hardest to change later.
 4. **Measure, don't guess**: parity is proven against the manual and the installed Live (`reference/QUALITY-GATES.md`, `reference/UI-FIDELITY.md`).
-5. **One run, no waiting**: one prompt runs every line to the release. Owner-only work (captures, oracle renders, measurements, legal advice, certificates) is queued in `OWNER-QUEUE.md` and finished by Reference pass lines; owner decisions use their defaults.
+5. **No waiting on the owner**: owner-only work (captures, oracle renders, measurements, legal advice, certificates) is queued in `OWNER-QUEUE.md` and finished by Owner review lines; owner decisions use their defaults.
 6. **Parity, then beyond**: improvements in `reference/BEYOND-LIVE.md` are scheduled after the parity work they extend, except where cheaper to build in from the start (plug-in sandboxing, autosave, the control server).
 
 ## Phases And Milestones
@@ -74,7 +74,7 @@ Order rule: milestones run in table order. A milestone may start only when no ea
 
 ## Phase Exit Criteria
 
-| Phase | Exit criteria (all measured by commands or recorded owner checks; owner-gated criteria close in the Reference pass after the phase)                                                                                                           |
+| Phase | Exit criteria (all measured by commands or recorded owner checks; owner-gated criteria close in the Owner review after the phase)                                                                                                             |
 | ----- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | 0     | `cargo xtask ci` passes locally and in CI on Windows, Ubuntu, macOS; `cargo-deny` clean; edition 2024; egui 0.37 with wgpu; SECURITY.md findings LC-001 to LC-004 fixed with tests.                                                           |
 | 1     | Target crate layout enforced by the layering check; audio callback runs under `assert_no_alloc` in tests with zero violations; every model edit is a registered command with an undo test; offline renders are bit-identical across two runs. |

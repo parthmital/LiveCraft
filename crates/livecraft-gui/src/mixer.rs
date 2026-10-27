@@ -3,7 +3,7 @@ use crate::widgets::{
     db_to_norm, live_fader, live_knob, live_stereo_meter, live_toggle_button, norm_to_db,
 };
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Stroke, Ui, Vec2};
-use livecraft_dsp::graph::TrackMeter;
+use livecraft_engine::graph::TrackMeter;
 use livecraft_formats::theme::parse_hex_color;
 use livecraft_model::model::{MonitoringMode, Track};
 

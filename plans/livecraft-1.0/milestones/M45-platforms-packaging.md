@@ -9,7 +9,7 @@ Signed installers for Windows, macOS, and Linux, file associations for `.als`, a
 
 ## Decisions
 
-- Build and package through `cargo xtask package <target>`: Windows MSI (WiX toolset, research licence at expansion) and portable ZIP; macOS universal app bundle in a DMG, notarised (owner provides Apple Developer credentials as CI secrets; HUMAN); Linux AppImage and tarball, plus Flatpak if time allows.
+- Build and package through `cargo xtask package <target>`: Windows MSI (WiX toolset, research licence when the milestone starts) and portable ZIP; macOS universal app bundle in a DMG, notarised (owner provides Apple Developer credentials as CI secrets; HUMAN); Linux AppImage and tarball, plus Flatpak if time allows.
 - Code signing: Windows Authenticode certificate provided by the owner (HUMAN); unsigned builds are labelled as such.
 - Updates: an opt-in check of the GitHub Releases API with the user's consent stored in Preferences; no automatic download without a click; no telemetry of any kind (B14).
 - File associations: `.als`, `.alc`, `.adg`, `.adv` open in LiveCraft only if the user chooses it during install (Live may be installed too).

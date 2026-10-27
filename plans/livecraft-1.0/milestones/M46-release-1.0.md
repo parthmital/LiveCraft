@@ -10,7 +10,7 @@ Prove parity and the improvements with evidence, close every open finding, and r
 ## Decisions
 
 - Parity audit: every parity matrix row is Done or Out of Scope with a decision ID; no Missing, Prototype, or In Progress rows remain.
-- Blind tests (run by the owner from materials the executor prepares; owner-gated rows in `OWNER-QUEUE.md`):
+- Blind tests (run by the owner from materials the implementation prepares; owner-gated rows in `OWNER-QUEUE.md`):
   - Visual: 10 experienced Live users each see 30 pairs of screenshots (LiveCraft vs Live, same state, random order) and pick Live; pass if the correct-pick rate is not significantly above chance (two-sided binomial test, p greater than 0.05).
   - Audio: ABX tests on 20 oracle renders (devices and mixes); pass if listeners cannot distinguish at p greater than 0.05.
   - Workflow: the same users complete 10 scripted tasks in both apps; pass if no task fails in LiveCraft and median time is within 20 percent of Live's.

@@ -11,7 +11,7 @@ Loudness and true-peak metering on any track and in renders, and DAWproject impo
 
 - Loudness: ITU-R BS.1770-4 K-weighting and gating (momentary 400 ms, short-term 3 s, integrated), true peak with 4x oversampling; the `livecraft-dsp` metric functions from M08 become real-time meters (allocation-free) shown in a mixer section that is hidden by default (Live parity default).
 - Renders can embed a loudness report in the M08 render report.
-- DAWproject: the open format's published XML schema (research at expansion: confirm the current version and licence of the specification and reference files); import maps tracks, clips, notes, automation, and plug-in references to the model; export writes the same subset; unsupported elements reported.
+- DAWproject: the open format's published XML schema (research when the milestone starts: confirm the current version and licence of the specification and reference files); import maps tracks, clips, notes, automation, and plug-in references to the model; export writes the same subset; unsupported elements reported.
 
 ## Task Outline
 
