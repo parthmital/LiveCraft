@@ -145,10 +145,10 @@ fn docs() -> Result {
         let text = std::fs::read_to_string(path).map_err(|e| format!("{file}: {e}"))?;
         let base = path.parent().unwrap_or_else(|| Path::new(""));
         for link in markdown_links(&text) {
-            if let Some(target) = local_target(&link) {
-                if !base.join(target).exists() {
-                    errors.push(format!("{file}: broken link `{link}`"));
-                }
+            if let Some(target) = local_target(&link)
+                && !base.join(target).exists()
+            {
+                errors.push(format!("{file}: broken link `{link}`"));
             }
         }
     }

@@ -1,6 +1,6 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Sense, Stroke, Ui, Vec2};
-use livecraft_core::model::{Clip, ClipPayload, MidiNote, ScaleConfig, ScaleType, NOTE_NAMES};
+use livecraft_core::model::{Clip, ClipPayload, MidiNote, NOTE_NAMES, ScaleConfig, ScaleType};
 use livecraft_core::theme::parse_hex_color;
 
 pub fn render_piano_roll(
@@ -418,31 +418,31 @@ pub fn render_piano_roll(
                             );
 
                             // Click to delete
-                            if grid_resp.clicked() {
-                                if let Some(pos) = grid_resp.interact_pointer_pos() {
-                                    if n_rect.contains(pos) {
-                                        note_to_remove = Some(n_idx);
-                                    }
-                                }
+                            if grid_resp.clicked()
+                                && let Some(pos) = grid_resp.interact_pointer_pos()
+                                && n_rect.contains(pos)
+                            {
+                                note_to_remove = Some(n_idx);
                             }
                         }
                     }
 
                     // Click to add note if not clicking on an existing note
-                    if grid_resp.clicked() && note_to_remove.is_none() {
-                        if let Some(pos) = grid_resp.interact_pointer_pos() {
-                            let rel_x = pos.x - grid_rect.min.x;
-                            let rel_y = pos.y - grid_rect.min.y;
+                    if grid_resp.clicked()
+                        && note_to_remove.is_none()
+                        && let Some(pos) = grid_resp.interact_pointer_pos()
+                    {
+                        let rel_x = pos.x - grid_rect.min.x;
+                        let rel_y = pos.y - grid_rect.min.y;
 
-                            let beat_clicked = ((rel_x / sixteenth_w).floor() * 0.25) as f64;
-                            let row_clicked = (rel_y / row_height).floor() as usize;
+                        let beat_clicked = ((rel_x / sixteenth_w).floor() * 0.25) as f64;
+                        let row_clicked = (rel_y / row_height).floor() as usize;
 
-                            if row_clicked < visible_pitches.len() {
-                                let pitch = visible_pitches[row_clicked];
-                                midi_data
-                                    .notes
-                                    .push(MidiNote::new(pitch, beat_clicked, 1.0, 100));
-                            }
+                        if row_clicked < visible_pitches.len() {
+                            let pitch = visible_pitches[row_clicked];
+                            midi_data
+                                .notes
+                                .push(MidiNote::new(pitch, beat_clicked, 1.0, 100));
                         }
                     }
 

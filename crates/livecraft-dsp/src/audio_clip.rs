@@ -36,10 +36,13 @@ impl AudioSampleCache {
     pub fn get_or_load<P: AsRef<Path>>(&mut self, path: P) -> Option<&DecodedAudio> {
         let p_str = path.as_ref().to_string_lossy().to_string();
         if !self.cache.contains_key(&p_str) {
-            if let Ok(decoded) = Self::load_file(path.as_ref()) {
-                self.cache.insert(p_str.clone(), decoded);
-            } else {
-                return None;
+            match Self::load_file(path.as_ref()) {
+                Ok(decoded) => {
+                    self.cache.insert(p_str.clone(), decoded);
+                }
+                _ => {
+                    return None;
+                }
             }
         }
         self.cache.get(&p_str)

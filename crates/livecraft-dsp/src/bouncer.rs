@@ -47,10 +47,10 @@ impl OfflineBouncer {
 
         // Auto-trigger slot 0 on all tracks that have clips
         for (trk_idx, trk) in project.tracks.iter().enumerate() {
-            if let Some(slot) = trk.clip_slots.first() {
-                if slot.clip.is_some() {
-                    graph.trigger_clip(trk_idx, 0);
-                }
+            if let Some(slot) = trk.clip_slots.first()
+                && slot.clip.is_some()
+            {
+                graph.trigger_clip(trk_idx, 0);
             }
         }
 

@@ -7,8 +7,8 @@ use livecraft_dsp::operator::{OperatorSynth, Waveform};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::Duration;
 
@@ -168,12 +168,12 @@ fn load_project_from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Project> {
         anyhow::bail!("File not found: {}", p.display());
     }
 
-    if let Some(ext) = p.extension().and_then(|s| s.to_str()) {
-        if ext.eq_ignore_ascii_case("json") {
-            let data = fs::read_to_string(p)?;
-            let proj: Project = serde_json::from_str(&data)?;
-            return Ok(proj);
-        }
+    if let Some(ext) = p.extension().and_then(|s| s.to_str())
+        && ext.eq_ignore_ascii_case("json")
+    {
+        let data = fs::read_to_string(p)?;
+        let proj: Project = serde_json::from_str(&data)?;
+        return Ok(proj);
     }
 
     // Default to .als parser
@@ -229,13 +229,13 @@ fn main() -> anyhow::Result<()> {
             let mut proj = Project::new_default(name);
             proj.transport.bpm = bpm;
 
-            if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
-                if ext.eq_ignore_ascii_case("json") {
-                    let json = serde_json::to_string_pretty(&proj)?;
-                    fs::write(&path, json)?;
-                    println!("Created new LiveCraft JSON project: {}", path.display());
-                    return Ok(());
-                }
+            if let Some(ext) = path.extension().and_then(|s| s.to_str())
+                && ext.eq_ignore_ascii_case("json")
+            {
+                let json = serde_json::to_string_pretty(&proj)?;
+                fs::write(&path, json)?;
+                println!("Created new LiveCraft JSON project: {}", path.display());
+                return Ok(());
             }
 
             AlsParser::save_project_to_als(&proj, &path)?;
@@ -488,10 +488,10 @@ fn run_terminal_player(project: &Project, max_duration: u64) -> anyhow::Result<(
 
     // Trigger first available clip on each track
     for (trk_idx, trk) in project.tracks.iter().enumerate() {
-        if let Some(slot) = trk.clip_slots.first() {
-            if slot.clip.is_some() {
-                engine.trigger_clip(trk_idx, 0);
-            }
+        if let Some(slot) = trk.clip_slots.first()
+            && slot.clip.is_some()
+        {
+            engine.trigger_clip(trk_idx, 0);
         }
     }
     engine.play();

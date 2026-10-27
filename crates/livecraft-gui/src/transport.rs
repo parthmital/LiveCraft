@@ -1,7 +1,7 @@
 use crate::style::LivePalette;
 use crate::widgets::{live_divider, live_lcd_box, live_toggle_button};
 use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Sense, Stroke, Ui, Vec2};
-use livecraft_core::model::{Project, ScaleType, NOTE_NAMES};
+use livecraft_core::model::{NOTE_NAMES, Project, ScaleType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {

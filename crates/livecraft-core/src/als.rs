@@ -1,7 +1,7 @@
 use crate::model::*;
+use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use flate2::Compression;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::reader::Reader;
 use quick_xml::writer::Writer;
@@ -79,7 +79,7 @@ fn handle_value_element(
             *bpm = val;
         }
     } else if parent_tag == "On" {
-        if let Some(ref mut dev) = current_device {
+        if let Some(dev) = current_device {
             dev.is_enabled = val_str == "true" || val_str == "1";
         }
     } else if parent_tag == "Volume" {
@@ -89,7 +89,7 @@ fn handle_value_element(
             } else {
                 20.0 * val.log10()
             };
-            if let Some(ref mut trk) = current_track {
+            if let Some(trk) = current_track {
                 trk.volume_db = vol_db;
             } else {
                 master_track.volume_db = vol_db;
@@ -98,37 +98,37 @@ fn handle_value_element(
     } else if parent_tag == "Pan" {
         if let Ok(val) = val_str.parse::<f32>() {
             let pan = val.clamp(-1.0, 1.0);
-            if let Some(ref mut trk) = current_track {
+            if let Some(trk) = current_track {
                 trk.pan = pan;
             } else {
                 master_track.pan = pan;
             }
         }
-    } else if let Some(ref mut dev) = current_device {
-        if let Ok(val) = val_str.parse::<f32>() {
-            let param_name = match parent_tag {
-                "FilterCutoff" | "Cutoff" => Some("filter_cutoff"),
-                "FilterResonance" | "Resonance" => Some("filter_resonance"),
-                "Attack" => Some("attack_ms"),
-                "Decay" => Some("decay_ms"),
-                "Sustain" => Some("sustain"),
-                "Release" => Some("release_ms"),
-                "Drive" => Some("drive_db"),
-                "Feedback" => Some("feedback"),
-                "DryWet" | "Dry/Wet" => Some("dry_wet"),
-                "Time" => Some("time_ms"),
-                "Threshold" => Some("threshold_db"),
-                "Ratio" => Some("ratio"),
-                "RoomSize" => Some("room_size"),
-                "Damping" => Some("damping"),
-                "StereoWidth" => Some("stereo_width"),
-                "Ceiling" => Some("ceiling_db"),
-                "Gain" => Some("gain_db"),
-                _ => None,
-            };
-            if let Some(pname) = param_name {
-                dev.set_param(pname, val);
-            }
+    } else if let Some(dev) = current_device
+        && let Ok(val) = val_str.parse::<f32>()
+    {
+        let param_name = match parent_tag {
+            "FilterCutoff" | "Cutoff" => Some("filter_cutoff"),
+            "FilterResonance" | "Resonance" => Some("filter_resonance"),
+            "Attack" => Some("attack_ms"),
+            "Decay" => Some("decay_ms"),
+            "Sustain" => Some("sustain"),
+            "Release" => Some("release_ms"),
+            "Drive" => Some("drive_db"),
+            "Feedback" => Some("feedback"),
+            "DryWet" | "Dry/Wet" => Some("dry_wet"),
+            "Time" => Some("time_ms"),
+            "Threshold" => Some("threshold_db"),
+            "Ratio" => Some("ratio"),
+            "RoomSize" => Some("room_size"),
+            "Damping" => Some("damping"),
+            "StereoWidth" => Some("stereo_width"),
+            "Ceiling" => Some("ceiling_db"),
+            "Gain" => Some("gain_db"),
+            _ => None,
+        };
+        if let Some(pname) = param_name {
+            dev.set_param(pname, val);
         }
     }
 }
@@ -283,10 +283,10 @@ impl AlsParser {
                         | "Redux" | "Limiter" => {
                             let mut dev_id = 0u64;
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"Id" {
-                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
-                                        dev_id = s.parse().unwrap_or(0);
-                                    }
+                                if attr.key.as_ref() == b"Id"
+                                    && let Ok(s) = std::str::from_utf8(&attr.value)
+                                {
+                                    dev_id = s.parse().unwrap_or(0);
                                 }
                             }
                             if dev_id == 0 {
@@ -305,18 +305,18 @@ impl AlsParser {
                                 ""
                             };
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"Value" {
-                                    if let Ok(val_str) = std::str::from_utf8(&attr.value) {
-                                        handle_value_element(
-                                            parent_tag,
-                                            val_str,
-                                            in_tempo,
-                                            &mut bpm,
-                                            &mut current_device,
-                                            &mut current_track,
-                                            &mut master_track,
-                                        );
-                                    }
+                                if attr.key.as_ref() == b"Value"
+                                    && let Ok(val_str) = std::str::from_utf8(&attr.value)
+                                {
+                                    handle_value_element(
+                                        parent_tag,
+                                        val_str,
+                                        in_tempo,
+                                        &mut bpm,
+                                        &mut current_device,
+                                        &mut current_track,
+                                        &mut master_track,
+                                    );
                                 }
                             }
                         }
@@ -401,15 +401,12 @@ impl AlsParser {
                                 }
                             }
 
-                            if let Some(ref mut clip) = current_clip {
-                                if let ClipPayload::Midi(ref mut mdata) = clip.payload {
-                                    mdata.notes.push(MidiNote::new(
-                                        current_midi_key,
-                                        time,
-                                        dur,
-                                        vel,
-                                    ));
-                                }
+                            if let Some(ref mut clip) = current_clip
+                                && let ClipPayload::Midi(ref mut mdata) = clip.payload
+                            {
+                                mdata
+                                    .notes
+                                    .push(MidiNote::new(current_midi_key, time, dur, vel));
                             }
                         }
                         "Scene" => {
@@ -425,27 +422,27 @@ impl AlsParser {
                     if tag_name == "Manual" || tag_name == "Value" {
                         let parent_tag = current_tag_stack.last().map(|s| s.as_str()).unwrap_or("");
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value" {
-                                if let Ok(val_str) = std::str::from_utf8(&attr.value) {
-                                    handle_value_element(
-                                        parent_tag,
-                                        val_str,
-                                        in_tempo,
-                                        &mut bpm,
-                                        &mut current_device,
-                                        &mut current_track,
-                                        &mut master_track,
-                                    );
-                                }
+                            if attr.key.as_ref() == b"Value"
+                                && let Ok(val_str) = std::str::from_utf8(&attr.value)
+                            {
+                                handle_value_element(
+                                    parent_tag,
+                                    val_str,
+                                    in_tempo,
+                                    &mut bpm,
+                                    &mut current_device,
+                                    &mut current_track,
+                                    &mut master_track,
+                                );
                             }
                         }
                     } else if let Some(dtype) = map_ableton_tag_to_device_type(&tag_name) {
                         let mut dev_id = 0u64;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Id" {
-                                if let Ok(s) = std::str::from_utf8(&attr.value) {
-                                    dev_id = s.parse().unwrap_or(0);
-                                }
+                            if attr.key.as_ref() == b"Id"
+                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            {
+                                dev_id = s.parse().unwrap_or(0);
                             }
                         }
                         if dev_id == 0 {
@@ -460,10 +457,10 @@ impl AlsParser {
                         }
                     } else if tag_name == "MidiKey" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value" {
-                                if let Ok(s) = std::str::from_utf8(&attr.value) {
-                                    current_midi_key = s.parse().unwrap_or(60);
-                                }
+                            if attr.key.as_ref() == b"Value"
+                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            {
+                                current_midi_key = s.parse().unwrap_or(60);
                             }
                         }
                     } else if tag_name == "MidiNoteEvent" {
@@ -493,12 +490,12 @@ impl AlsParser {
                             }
                         }
 
-                        if let Some(ref mut clip) = current_clip {
-                            if let ClipPayload::Midi(ref mut mdata) = clip.payload {
-                                mdata
-                                    .notes
-                                    .push(MidiNote::new(current_midi_key, time, dur, vel));
-                            }
+                        if let Some(ref mut clip) = current_clip
+                            && let ClipPayload::Midi(ref mut mdata) = clip.payload
+                        {
+                            mdata
+                                .notes
+                                .push(MidiNote::new(current_midi_key, time, dur, vel));
                         }
                     } else if tag_name == "Parameter" {
                         let mut p_name = String::new();
@@ -516,17 +513,17 @@ impl AlsParser {
                                 _ => {}
                             }
                         }
-                        if !p_name.is_empty() {
-                            if let Some(ref mut dev) = current_device {
-                                dev.set_param(p_name, p_val);
-                            }
+                        if !p_name.is_empty()
+                            && let Some(ref mut dev) = current_device
+                        {
+                            dev.set_param(p_name, p_val);
                         }
                     } else if tag_name == "RootNote" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value" {
-                                if let Ok(s) = std::str::from_utf8(&attr.value) {
-                                    scale.root_note = s.parse().unwrap_or(0);
-                                }
+                            if attr.key.as_ref() == b"Value"
+                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            {
+                                scale.root_note = s.parse().unwrap_or(0);
                             }
                         }
                     } else if tag_name == "ScaleType"
@@ -548,10 +545,10 @@ impl AlsParser {
                         }
                     } else if tag_name == "IsActive" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value" {
-                                if let Ok(s) = std::str::from_utf8(&attr.value) {
-                                    scale.is_active = s == "true" || s == "1";
-                                }
+                            if attr.key.as_ref() == b"Value"
+                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            {
+                                scale.is_active = s == "true" || s == "1";
                             }
                         }
                     } else if tag_name == "UserName" || tag_name == "EffectiveName" {
@@ -600,14 +597,14 @@ impl AlsParser {
                             }
                         }
                         "MidiClip" | "AudioClip" => {
-                            if let Some(clip) = current_clip.take() {
-                                if let Some(ref mut trk) = current_track {
-                                    if current_clip_slot_idx < trk.clip_slots.len() {
-                                        trk.clip_slots[current_clip_slot_idx].clip = Some(clip);
-                                    } else {
-                                        let slot_id = (trk.id * 1000) + trk.clip_slots.len() as u64;
-                                        trk.clip_slots.push(ClipSlot::with_clip(slot_id, clip));
-                                    }
+                            if let Some(clip) = current_clip.take()
+                                && let Some(ref mut trk) = current_track
+                            {
+                                if current_clip_slot_idx < trk.clip_slots.len() {
+                                    trk.clip_slots[current_clip_slot_idx].clip = Some(clip);
+                                } else {
+                                    let slot_id = (trk.id * 1000) + trk.clip_slots.len() as u64;
+                                    trk.clip_slots.push(ClipSlot::with_clip(slot_id, clip));
                                 }
                             }
                             current_clip_slot_idx += 1;

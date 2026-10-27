@@ -1,7 +1,7 @@
 use crate::graph::AudioGraph;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig};
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, bounded};
 use livecraft_core::model::Project;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -230,13 +230,16 @@ fn write_audio(
     graph_arc: &Arc<Mutex<AudioGraph>>,
     param_rx: &Receiver<AudioParamMsg>,
 ) {
-    if let Ok(mut graph) = graph_arc.try_lock() {
-        while let Ok(msg) = param_rx.try_recv() {
-            graph.apply_param_msg(msg);
+    match graph_arc.try_lock() {
+        Ok(mut graph) => {
+            while let Ok(msg) = param_rx.try_recv() {
+                graph.apply_param_msg(msg);
+            }
+            graph.process_buffer_interleaved(data, channels);
         }
-        graph.process_buffer_interleaved(data, channels);
-    } else {
-        data.fill(0.0);
+        _ => {
+            data.fill(0.0);
+        }
     }
 }
 
@@ -246,13 +249,16 @@ fn write_audio_i16(
     graph_arc: &Arc<Mutex<AudioGraph>>,
     param_rx: &Receiver<AudioParamMsg>,
 ) {
-    if let Ok(mut graph) = graph_arc.try_lock() {
-        while let Ok(msg) = param_rx.try_recv() {
-            graph.apply_param_msg(msg);
+    match graph_arc.try_lock() {
+        Ok(mut graph) => {
+            while let Ok(msg) = param_rx.try_recv() {
+                graph.apply_param_msg(msg);
+            }
+            graph.process_buffer_interleaved_i16(data, channels);
         }
-        graph.process_buffer_interleaved_i16(data, channels);
-    } else {
-        data.fill(0);
+        _ => {
+            data.fill(0);
+        }
     }
 }
 
@@ -262,12 +268,15 @@ fn write_audio_u16(
     graph_arc: &Arc<Mutex<AudioGraph>>,
     param_rx: &Receiver<AudioParamMsg>,
 ) {
-    if let Ok(mut graph) = graph_arc.try_lock() {
-        while let Ok(msg) = param_rx.try_recv() {
-            graph.apply_param_msg(msg);
+    match graph_arc.try_lock() {
+        Ok(mut graph) => {
+            while let Ok(msg) = param_rx.try_recv() {
+                graph.apply_param_msg(msg);
+            }
+            graph.process_buffer_interleaved_u16(data, channels);
         }
-        graph.process_buffer_interleaved_u16(data, channels);
-    } else {
-        data.fill(32768);
+        _ => {
+            data.fill(32768);
+        }
     }
 }

@@ -388,12 +388,12 @@ impl SimplerInstrument {
                 }
             }
             SimplerPlaybackMode::OneShot => {
-                if self.gate_mode {
-                    if let Some(v) = self.voices.get_mut(0) {
-                        if v.note == note && v.is_active {
-                            v.stage = EnvStage::Release;
-                        }
-                    }
+                if self.gate_mode
+                    && let Some(v) = self.voices.get_mut(0)
+                    && v.note == note
+                    && v.is_active
+                {
+                    v.stage = EnvStage::Release;
                 }
             }
             SimplerPlaybackMode::Slicing => {

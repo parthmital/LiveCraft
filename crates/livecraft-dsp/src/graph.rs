@@ -11,7 +11,7 @@ use crate::eq8::EqEight;
 use crate::gate::GateEffect;
 use crate::limiter::{LimiterEffect, UtilityEffect};
 use crate::operator::OperatorSynth;
-use crate::processor::{create_processor, DspProcessor};
+use crate::processor::{DspProcessor, create_processor};
 use crate::redux::ReduxEffect;
 use crate::reverb::ReverbEffect;
 use crate::saturator::SaturatorEffect;
@@ -229,8 +229,10 @@ impl TrackDspState {
                     existing.update_param(k, *v);
                 }
                 new_processors.push(existing);
-            } else if let Some(proc) = create_processor(dev, sample_rate) {
-                new_processors.push(proc);
+            } else {
+                if let Some(proc) = create_processor(dev, sample_rate) {
+                    new_processors.push(proc);
+                }
             }
         }
         self.processors = new_processors;

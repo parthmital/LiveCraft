@@ -3,8 +3,8 @@ use crate::browser::LiveBrowser;
 use crate::devices::render_device_chain;
 use crate::pianoroll::render_piano_roll;
 use crate::session::render_session_view;
-use crate::style::{apply_live_style, LivePalette};
-use crate::transport::{render_transport_bar, ViewMode};
+use crate::style::{LivePalette, apply_live_style};
+use crate::transport::{ViewMode, render_transport_bar};
 use eframe::egui::{self, Color32, Key, Vec2};
 use livecraft_core::als::AlsParser;
 use livecraft_core::command::CommandHistory;
@@ -187,27 +187,27 @@ impl LiveCraftApp {
         }
 
         // 0 -> Toggle Mute / Track Activator on selected track (Chapter 42.19)
-        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::Num0)) {
-            if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
-                trk.is_muted = !trk.is_muted;
-                self.status_message = format!("Track {} muted: {}", trk.name, trk.is_muted);
-            }
+        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::Num0))
+            && let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx)
+        {
+            trk.is_muted = !trk.is_muted;
+            self.status_message = format!("Track {} muted: {}", trk.name, trk.is_muted);
         }
 
         // S -> Toggle Solo on selected track (Chapter 42.19)
-        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::S)) {
-            if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
-                trk.is_soloed = !trk.is_soloed;
-                self.status_message = format!("Track {} soloed: {}", trk.name, trk.is_soloed);
-            }
+        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::S))
+            && let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx)
+        {
+            trk.is_soloed = !trk.is_soloed;
+            self.status_message = format!("Track {} soloed: {}", trk.name, trk.is_soloed);
         }
 
         // C -> Toggle Arm on selected track (Chapter 42.19)
-        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::C)) {
-            if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
-                trk.is_armed = !trk.is_armed;
-                self.status_message = format!("Track {} armed: {}", trk.name, trk.is_armed);
-            }
+        if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::C))
+            && let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx)
+        {
+            trk.is_armed = !trk.is_armed;
+            self.status_message = format!("Track {} armed: {}", trk.name, trk.is_armed);
         }
 
         // Ctrl+Z -> Undo
@@ -343,26 +343,27 @@ impl eframe::App for LiveCraftApp {
 
         ctx.input(|i| {
             for event in &i.raw.events {
-                if let egui::Event::Screenshot { image, .. } = event {
-                    if let Some(ref path) = self.screenshot_path {
-                        let width = image.width() as u32;
-                        let height = image.height() as u32;
-                        let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                        for p in &image.pixels {
-                            rgba.push(p.r());
-                            rgba.push(p.g());
-                            rgba.push(p.b());
-                            rgba.push(p.a());
-                        }
-                        if let Some(parent) = path.parent() {
-                            let _ = std::fs::create_dir_all(parent);
-                        }
-                        if let Err(e) =
-                            image::save_buffer(path, &rgba, width, height, image::ColorType::Rgba8)
-                        {
+                if let egui::Event::Screenshot { image, .. } = event
+                    && let Some(ref path) = self.screenshot_path
+                {
+                    let width = image.width() as u32;
+                    let height = image.height() as u32;
+                    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
+                    for p in &image.pixels {
+                        rgba.push(p.r());
+                        rgba.push(p.g());
+                        rgba.push(p.b());
+                        rgba.push(p.a());
+                    }
+                    if let Some(parent) = path.parent() {
+                        let _ = std::fs::create_dir_all(parent);
+                    }
+                    match image::save_buffer(path, &rgba, width, height, image::ColorType::Rgba8) {
+                        Err(e) => {
                             log::error!("Failed to save screenshot: {e}");
                             std::process::exit(1);
-                        } else {
+                        }
+                        _ => {
                             println!("Screenshot successfully saved to: {}", path.display());
                             std::process::exit(0);
                         }
@@ -383,14 +384,23 @@ impl eframe::App for LiveCraftApp {
         }
 
         // Query real-time playhead and meters from engine
-        let (playhead_beats, track_meters, master_meter, active_slots) = if let Some(ref eng) =
-            self.engine
-        {
-            if let Ok(g) = eng.graph.try_lock() {
-                let t_meters = g.track_states.iter().map(|s| s.meter.clone()).collect();
-                let m_meter = g.master_meter.clone();
-                let a_slots: Vec<_> = g.track_states.iter().map(|s| s.active_clip_slot).collect();
-                (g.playhead_beats, t_meters, m_meter, a_slots)
+        let (playhead_beats, track_meters, master_meter, active_slots) =
+            if let Some(ref eng) = self.engine {
+                match eng.graph.try_lock() {
+                    Ok(g) => {
+                        let t_meters = g.track_states.iter().map(|s| s.meter.clone()).collect();
+                        let m_meter = g.master_meter.clone();
+                        let a_slots: Vec<_> =
+                            g.track_states.iter().map(|s| s.active_clip_slot).collect();
+                        (g.playhead_beats, t_meters, m_meter, a_slots)
+                    }
+                    _ => (
+                        self.project.transport.playhead_beats,
+                        Vec::new(),
+                        TrackMeter::default(),
+                        Vec::new(),
+                    ),
+                }
             } else {
                 (
                     self.project.transport.playhead_beats,
@@ -398,15 +408,7 @@ impl eframe::App for LiveCraftApp {
                     TrackMeter::default(),
                     Vec::new(),
                 )
-            }
-        } else {
-            (
-                self.project.transport.playhead_beats,
-                Vec::new(),
-                TrackMeter::default(),
-                Vec::new(),
-            )
-        };
+            };
 
         self.project.transport.playhead_beats = playhead_beats;
 
@@ -427,19 +429,19 @@ impl eframe::App for LiveCraftApp {
                     self.browser_visible = !self.browser_visible;
                 }
 
-                if t_resp.play_toggled {
-                    if let Some(ref eng) = self.engine {
-                        if self.project.transport.is_playing {
-                            eng.play();
-                        } else {
-                            eng.stop();
-                        }
-                    }
-                }
-                if t_resp.stop_clicked {
-                    if let Some(ref eng) = self.engine {
+                if t_resp.play_toggled
+                    && let Some(ref eng) = self.engine
+                {
+                    if self.project.transport.is_playing {
+                        eng.play();
+                    } else {
                         eng.stop();
                     }
+                }
+                if t_resp.stop_clicked
+                    && let Some(ref eng) = self.engine
+                {
+                    eng.stop();
                 }
                 if let Some(mode) = t_resp.view_mode_changed {
                     self.view_mode = mode;
@@ -497,7 +499,9 @@ impl eframe::App for LiveCraftApp {
                         "Device View",
                         Vec2::new(88.0, 22.0),
                     );
-                    if dev_btn.clicked() { self.bottom_tab = 0; }
+                    if dev_btn.clicked() {
+                        self.bottom_tab = 0;
+                    }
 
                     let clip_btn = crate::widgets::live_toggle_button(
                         ui,
@@ -506,7 +510,9 @@ impl eframe::App for LiveCraftApp {
                         "Clip View",
                         Vec2::new(76.0, 22.0),
                     );
-                    if clip_btn.clicked() { self.bottom_tab = 1; }
+                    if clip_btn.clicked() {
+                        self.bottom_tab = 1;
+                    }
 
                     if let Some(trk) = self.project.tracks.get(self.selected_track_idx) {
                         crate::widgets::live_divider(ui, 20.0);
@@ -531,19 +537,15 @@ impl eframe::App for LiveCraftApp {
                     // Clip View / Piano Roll
                     if let Some((t_idx, s_idx)) = self.selected_clip {
                         let scale = &mut self.project.scale;
-                        if let Some(trk) = self.project.tracks.get_mut(t_idx) {
-                            if let Some(slot) = trk.clip_slots.get_mut(s_idx) {
-                                if let Some(ref mut clip) = slot.clip {
-                                    render_piano_roll(
-                                        ui,
-                                        clip,
-                                        scale,
-                                        playhead_beats,
-                                        &self.palette,
-                                    );
-                                } else {
-                                    ui.label("Empty slot. Double-click in Session View to create a clip.");
-                                }
+                        if let Some(trk) = self.project.tracks.get_mut(t_idx)
+                            && let Some(slot) = trk.clip_slots.get_mut(s_idx)
+                        {
+                            if let Some(ref mut clip) = slot.clip {
+                                render_piano_roll(ui, clip, scale, playhead_beats, &self.palette);
+                            } else {
+                                ui.label(
+                                    "Empty slot. Double-click in Session View to create a clip.",
+                                );
                             }
                         }
                     } else {
@@ -564,11 +566,11 @@ impl eframe::App for LiveCraftApp {
                         &self.palette,
                     );
 
-                    if let Some(dev) = action.add_device {
-                        if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
-                            trk.device_chain.push(dev);
-                            self.status_message = "Device added to track".to_string();
-                        }
+                    if let Some(dev) = action.add_device
+                        && let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx)
+                    {
+                        trk.device_chain.push(dev);
+                        self.status_message = "Device added to track".to_string();
                     }
 
                     if let Some(ttype) = action.add_track {
@@ -599,27 +601,27 @@ impl eframe::App for LiveCraftApp {
                         &self.palette,
                     );
 
-                    if let Some((t, s)) = sess_action.trigger_clip {
-                        if let Some(ref eng) = self.engine {
-                            eng.trigger_clip(t, s);
-                            eng.play();
-                        }
+                    if let Some((t, s)) = sess_action.trigger_clip
+                        && let Some(ref eng) = self.engine
+                    {
+                        eng.trigger_clip(t, s);
+                        eng.play();
                     }
-                    if let Some(t) = sess_action.stop_clip {
-                        if let Some(ref eng) = self.engine {
-                            eng.stop_clip(t);
-                        }
+                    if let Some(t) = sess_action.stop_clip
+                        && let Some(ref eng) = self.engine
+                    {
+                        eng.stop_clip(t);
                     }
-                    if let Some(sc) = sess_action.trigger_scene {
-                        if let Some(ref eng) = self.engine {
-                            eng.trigger_scene(sc);
-                            eng.play();
-                        }
+                    if let Some(sc) = sess_action.trigger_scene
+                        && let Some(ref eng) = self.engine
+                    {
+                        eng.trigger_scene(sc);
+                        eng.play();
                     }
-                    if sess_action.stop_all_clips {
-                        if let Some(ref eng) = self.engine {
-                            eng.stop();
-                        }
+                    if sess_action.stop_all_clips
+                        && let Some(ref eng) = self.engine
+                    {
+                        eng.stop();
                     }
                     if let Some(t) = sess_action.select_track {
                         self.selected_track_idx = t;
@@ -648,10 +650,10 @@ impl eframe::App for LiveCraftApp {
                         &self.palette,
                     );
 
-                    if let Some(beats) = arr_action.set_playhead {
-                        if let Some(ref eng) = self.engine {
-                            eng.set_playhead(beats);
-                        }
+                    if let Some(beats) = arr_action.set_playhead
+                        && let Some(ref eng) = self.engine
+                    {
+                        eng.set_playhead(beats);
                     }
                     if let Some(t) = arr_action.select_track {
                         self.selected_track_idx = t;

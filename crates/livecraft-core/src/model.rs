@@ -79,10 +79,10 @@ impl MidiClipData {
     pub fn transpose(&mut self, semitones: i8, scale: Option<&ScaleConfig>) {
         for note in &mut self.notes {
             let mut new_pitch = (note.pitch as i16 + semitones as i16).clamp(0, 127) as u8;
-            if let Some(sc) = scale {
-                if sc.is_active {
-                    new_pitch = sc.snap_to_scale(new_pitch);
-                }
+            if let Some(sc) = scale
+                && sc.is_active
+            {
+                new_pitch = sc.snap_to_scale(new_pitch);
             }
             note.pitch = new_pitch;
         }
@@ -319,10 +319,10 @@ impl MidiClipData {
     ) {
         for &degree in chord_degrees {
             let mut pitch = (root_pitch as i16 + degree as i16).clamp(0, 127) as u8;
-            if let Some(sc) = scale {
-                if sc.is_active {
-                    pitch = sc.snap_to_scale(pitch);
-                }
+            if let Some(sc) = scale
+                && sc.is_active
+            {
+                pitch = sc.snap_to_scale(pitch);
             }
             self.notes
                 .push(MidiNote::new(pitch, 0.0, duration_beats, velocity));
@@ -550,7 +550,7 @@ impl ArrangementClip {
         second.clip.end_marker_beat = second.clip.start_marker_beat + second_len;
 
         // Adjust internal markers & payload
-        if let (ClipPayload::Midi(ref mut m1), ClipPayload::Midi(ref mut m2)) =
+        if let (ClipPayload::Midi(m1), ClipPayload::Midi(m2)) =
             (&mut first.clip.payload, &mut second.clip.payload)
         {
             let rel_split = first_len;

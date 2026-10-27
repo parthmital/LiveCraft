@@ -31,35 +31,34 @@ impl DspProcessor for EqEight {
     fn update_param(&mut self, key: &str, value: f32) {
         if key.starts_with("band_") {
             let parts: Vec<&str> = key.split('_').collect();
-            if parts.len() >= 3 {
-                if let Ok(band_num) = parts[1].parse::<usize>() {
-                    if (1..=8).contains(&band_num) {
-                        let band_idx = band_num - 1;
-                        match parts[2] {
-                            "freq" => {
-                                if let Some(band) = self.bands.get_mut(band_idx) {
-                                    band.freq = value;
-                                    band.filter.set_params(band.freq, band.gain_db, band.q);
-                                }
-                            }
-                            "gain" => {
-                                if let Some(band) = self.bands.get_mut(band_idx) {
-                                    band.gain_db = value;
-                                    band.filter.set_params(band.freq, band.gain_db, band.q);
-                                }
-                            }
-                            "q" => {
-                                if let Some(band) = self.bands.get_mut(band_idx) {
-                                    band.q = value;
-                                    band.filter.set_params(band.freq, band.gain_db, band.q);
-                                }
-                            }
-                            "enabled" => {
-                                self.set_band_enabled(band_idx, value > 0.5);
-                            }
-                            _ => {}
+            if parts.len() >= 3
+                && let Ok(band_num) = parts[1].parse::<usize>()
+                && (1..=8).contains(&band_num)
+            {
+                let band_idx = band_num - 1;
+                match parts[2] {
+                    "freq" => {
+                        if let Some(band) = self.bands.get_mut(band_idx) {
+                            band.freq = value;
+                            band.filter.set_params(band.freq, band.gain_db, band.q);
                         }
                     }
+                    "gain" => {
+                        if let Some(band) = self.bands.get_mut(band_idx) {
+                            band.gain_db = value;
+                            band.filter.set_params(band.freq, band.gain_db, band.q);
+                        }
+                    }
+                    "q" => {
+                        if let Some(band) = self.bands.get_mut(band_idx) {
+                            band.q = value;
+                            band.filter.set_params(band.freq, band.gain_db, band.q);
+                        }
+                    }
+                    "enabled" => {
+                        self.set_band_enabled(band_idx, value > 0.5);
+                    }
+                    _ => {}
                 }
             }
         }

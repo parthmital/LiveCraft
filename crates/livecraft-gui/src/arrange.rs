@@ -147,12 +147,12 @@ pub fn render_arrangement_view(
                         );
                     }
 
-                    if ruler_resp.clicked() || ruler_resp.dragged() {
-                        if let Some(pos) = ruler_resp.interact_pointer_pos() {
-                            let rel_x = (pos.x - ruler_rect.min.x).max(0.0);
-                            let new_beats = (rel_x / pixels_per_beat) as f64;
-                            action.set_playhead = Some(new_beats);
-                        }
+                    if (ruler_resp.clicked() || ruler_resp.dragged())
+                        && let Some(pos) = ruler_resp.interact_pointer_pos()
+                    {
+                        let rel_x = (pos.x - ruler_rect.min.x).max(0.0);
+                        let new_beats = (rel_x / pixels_per_beat) as f64;
+                        action.set_playhead = Some(new_beats);
                     }
 
                     // Track header top toolbar on RIGHT (Ableton Live 12 layout)
@@ -373,13 +373,13 @@ pub fn render_arrangement_view(
                             );
                         }
 
-                        if lane_resp.clicked() {
-                            if let Some(pos) = lane_resp.interact_pointer_pos() {
-                                let rel_x = (pos.x - lane_rect.min.x).max(0.0);
-                                let new_beats = (rel_x / pixels_per_beat) as f64;
-                                action.set_playhead = Some(new_beats);
-                                action.select_track = Some(trk_idx);
-                            }
+                        if lane_resp.clicked()
+                            && let Some(pos) = lane_resp.interact_pointer_pos()
+                        {
+                            let rel_x = (pos.x - lane_rect.min.x).max(0.0);
+                            let new_beats = (rel_x / pixels_per_beat) as f64;
+                            action.set_playhead = Some(new_beats);
+                            action.select_track = Some(trk_idx);
                         }
 
                         // B. Right Track Header Strip (Ableton Live 12 layout)
