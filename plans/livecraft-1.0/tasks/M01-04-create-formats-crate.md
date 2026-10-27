@@ -28,14 +28,21 @@ Create `crates/livecraft-formats`, move `als.rs` and `theme.rs` into it via `git
    name = "livecraft-formats"
    version.workspace = true
    edition.workspace = true
+   rust-version.workspace = true
    license.workspace = true
    repository.workspace = true
+   publish.workspace = true
 
    [dependencies]
-   livecraft-model.workspace = true
+   livecraft-model = { path = "../livecraft-model" }
    quick-xml.workspace = true
    flate2.workspace = true
    thiserror.workspace = true
+   serde.workspace = true
+   anyhow.workspace = true
+
+   [lints]
+   workspace = true
    ```
 
 2. In root `Cargo.toml`, under `[workspace.dependencies]`, add:

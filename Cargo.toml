@@ -42,3 +42,4 @@ egui = "0.37.0"
 insta = { version = "1.49.0", features = ["json"] }
 livecraft-testkit = { path = "crates/livecraft-testkit" }
 livecraft-model = { path = "crates/livecraft-model" }
+livecraft-formats = { path = "crates/livecraft-formats" }

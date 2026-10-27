@@ -1,4 +1,6 @@
-use super::*;
+use crate::als::*;
+use crate::theme::*;
+use livecraft_model::model::*;
 
 #[test]
 fn test_theme_colors() {
@@ -12,11 +14,14 @@ fn test_theme_colors() {
 #[test]
 fn test_theme_hex_variants() {
     // 6-digit hex
-    assert_eq!(theme::parse_hex_color("#ff0000"), [255, 0, 0, 255]);
+    assert_eq!(crate::theme::parse_hex_color("#ff0000"), [255, 0, 0, 255]);
     // 8-digit hex with alpha
-    assert_eq!(theme::parse_hex_color("#00ff0080"), [0, 255, 0, 128]);
+    assert_eq!(crate::theme::parse_hex_color("#00ff0080"), [0, 255, 0, 128]);
     // Invalid fallback
-    assert_eq!(theme::parse_hex_color("invalid"), [255, 255, 255, 255]);
+    assert_eq!(
+        crate::theme::parse_hex_color("invalid"),
+        [255, 255, 255, 255]
+    );
 }
 
 #[test]
