@@ -1,132 +1,87 @@
-# LiveCraft Architecture and Research Dossier
+# Research
 
-**Tier: Full** (Creative workstation application, native Rust stack, real-time DSP, file reverse engineering, CLI and GUI).
+Purpose: dated evidence behind technology and design decisions. Read when: choosing or revisiting a library, service, model, dataset, or approach.
 
-## 1. Executive Summary and Goals
+Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superseded by the sections below. Versions were read from crates.io with `cargo search` and `cargo info` on 2026-10-27.
 
-LiveCraft is a clean-room, native Rust recreation of Ableton Live, inspired by the architecture of `storytold` projects (`PhotoCraft`, `FilmCraft`).
-It provides:
+## Target Version (2026-10-27)
 
-1. Headless and Scriptable First: Full command-line interface (CLI) for parsing, inspecting, rendering, stem exporting, and playback of Ableton projects.
-2. Deterministic Document and Command Architecture: Pure-data document model with stable command IDs, full undo/redo history, and zero-allocation real-time audio thread communication.
-3. Ableton Compatibility: Native `.als` parser and generator (gzipped XML) supporting Live 10, 11, and 12 sets, plus Live 12 theme (`.ask`) parsing.
-4. Authentic Ableton Live UI: Custom immediate-mode interface (`egui`/`eframe`) implementing Session View (clip launcher matrix), Arrangement View (timeline), mixer, piano roll, and bottom device chain.
-5. Real-Time and Offline DSP: Complete suite of studio devices conforming to Ableton Live 12 Manual specifications.
+**Brief:** which Live release defines parity.
+**Findings:** Latest stable is Live 12.4.7 (2026-10-22); 12.4 shipped 2026-05-05 with Link Audio, Erosion and Chorus-Ensemble and Delay updates, Stem Separation on time selections, and Learn View replacing Help View. The local manual (`docs/ableton-live-12-reference-manual.pdf`, 1039 pages) documents Learn View and Link Audio, so it is the 12.4 edition. The owner's machine has Live 12 Suite 12.4 installed (`C:\ProgramData\Ableton\Live 12 Suite`).
+**Decision:** Parity target is Live 12.4 Suite as documented by the local manual. Point releases after 12.4.7 are tracked in the plan's parity matrix as they appear.
+**Sources:** [Live 12 release notes](https://www.ableton.com/en/release-notes/live-12/), [Live 12.4 is out now](https://www.ableton.com/en/blog/live-12-4-is-out-now/).
 
-## 2. Hard Constraints and Manual Grounding
+## Reference Projects (2026-10-27)
 
-- Language: Pure Rust 2021 edition, 100% native.
-- Platform: Windows primary (WASAPI/DirectSound via CPAL), portable to macOS (CoreAudio) and Linux (ALSA and JACK).
-- Audio Thread Safety (Manual Chapter 38): The audio callback must never allocate, block on a mutex, or perform disk or network I/O. Inter-thread communication uses atomic variables or lock-free ring buffers.
-- Neutral DSP Operations (Manual Chapter 39): Neutral operations (gain at 0.0 dB, bypassed devices, undithered 32-bit float rendering) must pass audio bit-for-bit without distortion or coloration.
-- Sample-Accurate MIDI Timing (Manual Chapter 40): Note events are scheduled at exact sample offsets within audio buffer blocks rather than iterating over note vectors per sample.
-- File Compatibility: Direct parsing of real Ableton Live `.als` files decompressed via gzip.
-- Offline Rendering: High-speed, sample-accurate, non-realtime rendering to 24-bit/32-bit float WAV files approximately 133 times faster than real-time.
+**Brief:** learn from the Storytold "Craft" apps that inspire this project.
+**Findings:** `storytold/filmcraft` is a clean-room Rust reimplementation of Premiere Pro, MIT OR Apache-2.0, with a layered workspace (foundations, engine with command registry, session, undo, jobs; `ui-egui` front end; CLI; MCP automation; `testkit` and `golden` crates), a `cargo xtask ci` that enforces layering, `AGENTS.md` with clean-room and asset rules, golden-image tests, oracle tests against ffmpeg, and a `docs/target-app-parity.md` tracker. Every front end dispatches the same engine commands (650+). Meadowlark, a Rust DAW, paused after its author found the scope too large for one person, which argues for strict sequencing and reuse.
+**Decision:** Borrow FilmCraft's structure: layered crates with an enforced dependency check, one command registry shared by GUI, CLI, and a control server, golden tests, and a parity tracker. Build the LiveCraft specifics.
+**Sources:** [storytold/filmcraft](https://github.com/storytold/filmcraft), [Meadowlark](https://github.com/fwcd/meadowlark), [Why I'm taking a break from Meadowlark](https://billydm.github.io/blog/why-im-taking-a-break-from-meadowlark).
 
-## 3. Technology Evaluation and Selection
+## GUI Toolkit (2026-10-27)
 
-### 3.1 Audio I/O and Offline Audio
+**Brief:** pixel-faithful recreation of Live's custom-drawn UI, native, testable headlessly.
+**Findings:** `egui` 0.37.0 is current (repo pins 0.29). Breaking changes since 0.29 include `Rounding` renamed to `CornerRadius` with integer fields (0.31), `StrokeKind` required for rect strokes (0.31), `Panel` replacing `SidePanel` and `TopBottomPanel` (0.34 to 0.35), deprecated items removed (0.35), `ViewportCommand::Screenshot` taking a callback and `default_fonts` no longer default (0.37). `egui_kittest` 0.37.0 (MIT OR Apache-2.0, MSRV 1.95) drives egui through AccessKit and renders snapshot images with the `wgpu` feature. Vizia and Iced are viable but would mean a rewrite; Yarrow (Meadowlark's author) is not mature.
+**Trial (2026-10-27, throwaway worktree):** the 0.29 to 0.37 port needed about 230 mechanical renames plus a new `App::ui` entry point and callback screenshots; afterwards clippy was clean and all tests passed. With wgpu on the reference Windows machine the Vulkan backend crashed (segmentation fault after loader warnings) while DX12 and GL rendered correctly. eframe's `accesskit` feature pulled in `zvariant`, `zbus_names`, `zvariant_derive`, flagged unmaintained (RUSTSEC-2026-0370 to 0372).
+**Decision:** Adapt. Keep `egui` and `eframe`, upgrade to 0.37.0, switch the renderer from glow to wgpu with DX12 as the Windows default, keep `accesskit` off until M40, and use `egui_kittest` for interaction and snapshot tests. Runner-up: Vizia.
+**Sources:** [egui CHANGELOG](https://github.com/emilk/egui/blob/main/CHANGELOG.md), [egui_kittest docs](https://docs.rs/egui_kittest).
 
-- Selected: `cpal` + `hound`
-  - CPAL: Industry standard Rust low-latency audio device abstraction. Supports WASAPI, ASIO, CoreAudio, ALSA, JACK. Actively maintained by RustAudio.
-  - Hound: Pure Rust WAV encoder and decoder. Zero unsafe dependencies, fast, deterministic.
-  - Decision: Adopted. CPAL for real-time output stream, Hound for sample loading and offline bouncing.
+## Audio I/O (2026-10-27)
 
-### 3.2 Graphical User Interface (GUI)
+**Brief:** low-latency output and input on Windows, macOS, Linux.
+**Findings:** `cpal` 0.18.2 is current (repo pins 0.15). Its `asio` feature needs the Steinberg ASIO SDK, which is GPLv3 or proprietary since October 2025. WASAPI, CoreAudio, ALSA, and JACK need no extra SDK.
+**Decision:** Adopt `cpal` 0.18. ASIO only behind an opt-in Cargo feature `asio`, off by default, because enabling it makes distributed binaries GPLv3. The owner decides whether release builds enable it.
+**Sources:** [cpal docs](https://docs.rs/cpal), [VST 3 and ASIO licensing press release](https://sonicstate.com/news/2025/10/30/vst-3-now-available-under-mit-license).
 
-- Selected: `egui` and `eframe`
-  - Immediate-mode, fast rendering via `glow`.
-  - Zero state-synchronization lag with audio engine parameters.
-  - Used by `storytold` in `PhotoCraft` and `FilmCraft`.
-  - Highly customizable styling, allowing exact replication of Ableton Live 12 flat, high-contrast, compact look.
-  - Decision: Adopted.
+## Real-Time Concurrency (2026-10-27)
 
-### 3.3 File Format and Theme Parsing
+**Brief:** audio thread must never lock, allocate, or free.
+**Findings:** `rtrb` 0.4.1 (MIT OR Apache-2.0) is a wait-free SPSC ring buffer. `basedrop` 0.1.3 (MIT/Apache-2.0) defers frees to a collector thread. `triple_buffer` 9.0.0 (MPL-2.0) publishes latest-value snapshots. `assert_no_alloc` 1.1.2 (BSD-1-Clause, last release 2021, small and stable) aborts on allocation inside a guarded scope in debug builds. Common pattern: build graphs off-thread, send them over `rtrb`, return the old one for freeing elsewhere.
+**Decision:** Adopt all four: `rtrb` for commands and events, `basedrop` for shared immutable data such as samples and graph snapshots, `triple_buffer` for meters and transport position, `assert_no_alloc` in debug and test builds around the callback. Runner-up: hand-written lock-free queues (rejected, more risk).
+**Sources:** [rtrb](https://docs.rs/rtrb), [basedrop write-up](https://glowcoil.com/posts/basedrop), [assert_no_alloc](https://docs.rs/assert_no_alloc).
 
-- Selected: `flate2` + `quick-xml`
-  - `flate2` (`miniz_oxide` backend): Pure Rust gzip decompression and compression.
-  - `quick-xml`: High throughput streaming XML parser. Parses multi-megabyte Ableton XML projects in milliseconds.
-  - Decision: Adopted.
+## Live Set Format (2026-10-27)
 
-### 3.4 CLI Framework
+**Brief:** open and save `.als` without losing anything Live wrote.
+**Findings:** A `.als` is gzip-compressed XML. Live 12.4's default template has 484 distinct element names and about 180 KB of XML, far more than any model can map. Open-source readers exist (`ableton` npm, `pyableton`, `daw-schemas` JSON schemas inferred from sample sets, `bravoh-daw` in Rust) but none preserve unknown content. Header of a 12.4 template: `MajorVersion="5" MinorVersion="12.0_12117" SchemaChangeCount="10"`.
+**Decision:** Build a lossless approach: parse into a generic XML tree that keeps every node, attribute, and order; map the model onto that tree; write by patching the tree. Borrow element knowledge from `daw-schemas`. Upgrade `quick-xml` to 0.42.0.
+**Sources:** [daw-schemas](https://pypi.org/project/daw-schemas/), [bravoh-daw](https://docs.rs/crate/bravoh-daw/0.1.0), [ableton npm](https://npmjs.com/package/ableton).
 
-- Selected: `clap` (derive)
-  - De facto standard for Rust CLIs. Clean subcommand architecture (`info`, `inspect`, `render`, `stems`, `play`, `synth`, `convert`, `gui`).
-  - Decision: Adopted.
+## Audio Files, Resampling, Time-Stretch (2026-10-27)
 
-## 4. Architectural Blueprint
+**Brief:** decode common formats, convert sample rates, and warp like Live's six warp modes.
+**Findings:** `symphonia` 0.6.1 (MPL-2.0, MSRV 1.85) decodes WAV, AIFF, FLAC, MP3, AAC, ALAC, Vorbis, and more. `rubato` 5.0.1 (MIT OR Apache-2.0) does real-time-safe sinc and FFT resampling. `signalsmith-stretch` 0.1.3 (MIT) wraps Signalsmith Stretch, a polyphonic phase-vocoder time-stretch and pitch-shift. `realfft` 3.5.1 and `rustfft` 6.4.1 cover FFT needs. `hound` 3.5.1 stays for WAV writing.
+**Decision:** Adopt `symphonia` for decoding (MPL-2.0 is file-level copyleft, compatible with distributing an MIT or Apache binary when its files are unmodified), `rubato` for resampling, `signalsmith-stretch` as the basis for Complex and Complex Pro. Build Beats, Tones, Texture, and Re-Pitch from the manual's descriptions.
+**Sources:** [symphonia](https://docs.rs/symphonia), [rubato](https://docs.rs/rubato), [signalsmith-stretch](https://docs.rs/signalsmith-stretch).
 
-```text
-LiveCraft/
-|-- docs/                   # Authoritative manual suite
-|   |-- ableton-live-12-reference-manual.pdf
-|   |-- ABLETON_12_SPECIFICATION.md
-|   |-- DEVICES_REFERENCE.md
-|   |-- MIDI_TOOLS_AND_TUNING.md
-|   |-- KEYBOARD_SHORTCUTS.md
-|   |-- ARCHITECTURE.md
-|   `-- README.md
-|-- crates/
-|   |-- livecraft-core/     # Pure data document model, ALS/ASK parser, command system
-|   |   `-- src/
-|   |       |-- model.rs    # Project, Track, Clip, Scale, Tuning, Device, Automation
-|   |       |-- als.rs      # Ableton .als XML deserializer and serializer
-|   |       |-- theme.rs    # .ask Theme parser and palette mapping
-|   |       |-- command.rs  # Command history with capacity limits, Undo/Redo stack
-|   |       `-- lib.rs
-|   |-- livecraft-dsp/      # Audio graph, DSP units, synths, audio engine
-|   |   `-- src/
-|   |       |-- engine.rs   # Real-time CPAL stream and lock-free parameter dispatch
-|   |       |-- graph.rs    # Multi-track audio rendering pipeline and voice allocation
-|   |       |-- processor.rs# DspProcessor trait and dynamic modular chain
-|   |       |-- audio_clip.rs# Sample cache and Hermite continuous interpolation
-|   |       |-- bouncer.rs  # Offline faster-than-realtime WAV and stem exporter
-|   |       |-- autopan.rs  # Auto Pan-Tremolo LFO stereo panner
-|   |       |-- gate.rs     # Noise gate with hysteresis and hold
-|   |       |-- eq3.rs      # 3-band DJ style isolator equalizer
-|   |       |-- redux.rs    # Sample rate and bitcrusher effect
-|   |       |-- eq8.rs      # 8-band parametric biquad equalizer and response curve
-|   |       |-- compressor.rs# Dynamic compressor with knee and metering
-|   |       |-- saturator.rs # Waveshaping harmonic distortion
-|   |       |-- autofilter.rs# Resonant multi-mode filter with LFO and envelope
-|   |       |-- chorus.rs   # Multi-delay chorus ensemble
-|   |       |-- delay.rs    # Stereo ping-pong and tempo-synced delay
-|   |       |-- reverb.rs   # Algorithmic room and hall reverb
-|   |       |-- limiter.rs  # Lookahead brickwall limiter and utility effect
-|   |       |-- operator.rs # 4-operator FM synthesizer with 11 routing algorithms
-|   |       |-- drumrack.rs # 16-pad drum machine with choke groups and solo/mute
-|   |       |-- simpler.rs  # Polyphonic sampler with Classic, 1-Shot, Slicing modes
-|   |       `-- lib.rs
-|   |-- livecraft-gui/      # Ableton Live 12 GUI recreation with egui/eframe
-|   |   `-- src/
-|   |       |-- app.rs      # Main eframe application loop and keyboard shortcuts
-|   |       |-- transport.rs# Top transport bar (Play, Stop, BPM, Metronome, CPU)
-|   |       |-- session.rs  # Session View (clip grid, launch buttons, scenes)
-|   |       |-- arrange.rs  # Arrangement View (timeline tracks, clips, ruler)
-|   |       |-- mixer.rs    # Track strips, volume faders, VU meters, pan, mute/solo
-|   |       |-- devices.rs  # Bottom device chain rack and parameter controls
-|   |       |-- pianoroll.rs# Clip detail, scale fold, and MIDI transformation tools
-|   |       |-- browser.rs  # Left file and library browser
-|   |       |-- style.rs    # Ableton Live 12 theme and widget styling
-|   |       `-- widgets.rs  # Custom rotary knobs, faders, and meters
-|   `-- livecraft-cli/      # Headless CLI entry point and subcommands
-|       `-- src/
-|           `-- main.rs     # CLI subcommands: info, inspect, render, stems, play, gui
-|-- tasks/                  # Autonomous implementation tasks, manifest and state
-`-- scripts/                # Task runner and automation verification
-```
+## Plug-In Hosting (2026-10-27)
 
-## 5. Verification Strategy
+**Brief:** host third-party instruments and effects as Live does (VST2, VST3, AU) and better.
+**Findings:** `clack-host` 0.2.0 (MIT OR Apache-2.0, MSRV 1.85) is the only functional safe Rust CLAP host library. The VST3 SDK is MIT since version 3.8 (2025-10-29); `vst3` 0.3.0 (MIT OR Apache-2.0) provides Rust bindings. The VST2 SDK is no longer licensable.
+**Decision:** Adopt `clack-host` for CLAP and `vst3` bindings for VST3, both in an out-of-process host so a crashing plug-in cannot take down the audio engine (Live hosts in-process). AU on macOS later. No VST2.
+**Sources:** [clack](https://github.com/prokopyl/clack), [vst3-rs](https://github.com/coupler-rs/vst3-rs), [VST 3 license](https://steinbergmedia.github.io/vst3_dev_portal/pages/VST+3+Licensing/VST3+License).
 
-1. Unit and Integration Tests:
-   - Test `.als` decompression and extraction against official Ableton Live 12 template sets.
-   - Test DSP filter responses, oscillator waveforms, and mixer summing without clipping.
-   - Test offline rendering output byte-for-byte in WAV format.
-   - Test MIDI Transformations and Scala `.scl` tuning calculations.
-   - All 42 unit and integration tests across the workspace must pass clean.
-2. CLI Verification:
-   - Run `livecraft info` on Ableton templates.
-   - Run `livecraft render` to bounce audio to WAV.
-   - Inspect output WAV headers and audio samples.
-3. GUI Verification:
-   - Build native Windows executable and verify UI rendering, transport control, and real-time audio playback.
+## MIDI (2026-10-27)
+
+**Findings:** `midir` 0.11.1 (MIT) provides MIDI I/O on WinMM, CoreMIDI, ALSA, and optional JACK and WinRT.
+**Decision:** Adopt `midir`.
+**Sources:** [midir](https://docs.rs/midir).
+
+## Sync and Ableton Link (2026-10-27)
+
+**Brief:** Live syncs via Link, Link Audio, Tempo Follower, and MIDI clock.
+**Findings:** Ableton Link is GPL-2.0-or-later, or available under a proprietary licence from Ableton (link-devs@ableton.com). `rusty_link` 0.4.9 wraps it and is GPL-2.0-or-later.
+**Decision:** MIDI clock and Tempo Follower are built in. Link and Link Audio only behind an opt-in Cargo feature `link`, off by default, because enabling it makes distributed binaries GPL. Owner decision required before release.
+**Sources:** [rusty_link](https://docs.rs/crate/rusty_link/latest).
+
+## Stem Separation (2026-10-27)
+
+**Findings:** `stem-splitter-core` 1.2.0 (MIT OR Apache-2.0) runs HT-Demucs through ONNX Runtime (`ort` 2.0.0-rc.15) and downloads a roughly 200 MB model on first use. The HT-Demucs ONNX conversion is Apache-2.0.
+**Decision:** Adapt: use `stem-splitter-core` behind a Cargo feature `stems`, with the model downloaded only after explicit user consent and verified by SHA-256, never at build time.
+**Sources:** [stem-splitter-core](https://docs.rs/crate/stem-splitter-core/1.2.0), [htdemucs-ort](https://huggingface.co/gridshiftstudio/htdemucs-ort/blob/main/README.md).
+
+## Real-Time Safe Rust Patterns For The Audio Graph (2026-10-27)
+
+**Findings:** Firewheel 0.12.1 (BillyDM) is a no-mutex Rust audio graph engine aimed at games; its design (graph compiled off-thread, nodes processed in blocks, parameters as events) matches what a DAW needs, but its scope and node API target games.
+**Decision:** Borrow the design, build LiveCraft's graph, because Live's routing, PDC, and per-track threading needs are specific.
+**Sources:** [Firewheel](https://github.com/BillyDM/firewheel).
