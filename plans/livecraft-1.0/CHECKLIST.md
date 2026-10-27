@@ -18,7 +18,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 - [x] P0-12 Add cargo-deny to cargo xtask ci ([task](tasks/P0-12-cargo-deny.md))
 - [x] P0-13 Rewrite CI with pinned actions and three platforms ([task](tasks/P0-13-ci-workflow.md))
 - [x] P0-14 Cap .als decompression size ([task](tasks/P0-14-cap-als-decompression.md))
-- [ ] P0-15 One WAV loader with a size limit ([task](tasks/P0-15-wav-loader-limit-and-dedupe.md))
+- [x] P0-15 One WAV loader with a size limit ([task](tasks/P0-15-wav-loader-limit-and-dedupe.md))
 - [ ] P0-16 Never send NaN or infinity to the driver or a render ([task](tasks/P0-16-non-finite-output-guard.md))
 - [ ] P0-17 Full security audit and SECURITY.md update ([task](tasks/P0-17-security-audit.md))
 - [ ] P0-18 Verify Phase 0 and bring the docs up to date ([task](tasks/P0-18-phase-0-verification.md))

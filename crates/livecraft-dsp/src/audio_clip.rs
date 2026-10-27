@@ -48,9 +48,30 @@ impl AudioSampleCache {
         self.cache.get(&p_str)
     }
 
-    fn load_file(path: &Path) -> anyhow::Result<DecodedAudio> {
+    /// Most samples (all channels together) a WAV file may hold to be decoded into memory:
+    /// 2^28 samples, 1 GiB as `f32`. Longer files need disk streaming (milestone M11).
+    pub const MAX_WAV_SAMPLES: u64 = 1 << 28;
+
+    /// Decodes a WAV file into de-interleaved left and right channels (mono is copied to both).
+    pub fn load_file(path: &Path) -> anyhow::Result<DecodedAudio> {
+        Self::load_file_with_limit(path, Self::MAX_WAV_SAMPLES)
+    }
+
+    /// Like [`Self::load_file`], but rejects a file holding more than `max_samples` samples
+    /// before reading any sample data.
+    pub fn load_file_with_limit(path: &Path, max_samples: u64) -> anyhow::Result<DecodedAudio> {
         let mut reader = WavReader::open(path)?;
         let spec = reader.spec();
+        let total = u64::from(reader.duration()) * u64::from(spec.channels);
+        if total > max_samples {
+            anyhow::bail!(
+                "{} holds {total} samples, over the limit of {max_samples}",
+                path.display()
+            );
+        }
+        if spec.channels == 0 {
+            anyhow::bail!("{} has no audio channels", path.display());
+        }
         let channels = spec.channels;
         let sample_rate = spec.sample_rate;
 

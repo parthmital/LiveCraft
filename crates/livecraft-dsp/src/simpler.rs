@@ -19,13 +19,8 @@ pub enum EnvStage {
     Release,
 }
 
-#[derive(Debug, Clone)]
-pub struct SimplerSample {
-    pub channels: u16,
-    pub sample_rate: u32,
-    pub samples_l: Vec<f32>,
-    pub samples_r: Vec<f32>,
-}
+/// Decoded sample data played by Simpler; the same type the audio clip cache uses.
+pub type SimplerSample = crate::audio_clip::DecodedAudio;
 
 #[derive(Debug, Clone)]
 pub struct SimplerVoice {
@@ -194,58 +189,9 @@ impl SimplerInstrument {
     }
 
     pub fn load_wav<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {
-        let mut reader = hound::WavReader::open(path)?;
-        let spec = reader.spec();
-        let channels = spec.channels;
-        let srate = spec.sample_rate;
-
-        let mut samples_l = Vec::new();
-        let mut samples_r = Vec::new();
-
-        let max_val = match spec.bits_per_sample {
-            16 => i16::MAX as f32,
-            24 => 8388607.0,
-            32 => i32::MAX as f32,
-            _ => 32767.0,
-        };
-
-        if spec.sample_format == hound::SampleFormat::Float {
-            let mut ch = 0;
-            for sample in reader.samples::<f32>() {
-                let s = sample.unwrap_or(0.0);
-                if ch == 0 {
-                    samples_l.push(s);
-                    if channels == 1 {
-                        samples_r.push(s);
-                    }
-                } else {
-                    samples_r.push(s);
-                }
-                ch = (ch + 1) % channels;
-            }
-        } else {
-            let mut ch = 0;
-            for sample in reader.samples::<i32>() {
-                let s = sample.unwrap_or(0) as f32 / max_val;
-                if ch == 0 {
-                    samples_l.push(s);
-                    if channels == 1 {
-                        samples_r.push(s);
-                    }
-                } else {
-                    samples_r.push(s);
-                }
-                ch = (ch + 1) % channels;
-            }
-        }
-
-        self.sample = Some(SimplerSample {
-            channels,
-            sample_rate: srate,
-            samples_l,
-            samples_r,
-        });
-
+        self.sample = Some(crate::audio_clip::AudioSampleCache::load_file(
+            path.as_ref(),
+        )?);
         Ok(())
     }
 
