@@ -12,7 +12,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 - [x] P0-06 Remove trademark branding and use Live's note names ([task](tasks/P0-06-branding-and-note-names.md))
 - [x] P0-07 Add cargo xtask ci, the layering check, and cargo dev ([task](tasks/P0-07-xtask-ci-runner.md))
 - [x] P0-08 Migrate the workspace to Rust edition 2024 ([task](tasks/P0-08-edition-2024.md))
-- [ ] P0-09 Upgrade cpal to 0.18 and thiserror to 2 ([task](tasks/P0-09-upgrade-cpal-and-thiserror.md))
+- [x] P0-09 Upgrade cpal to 0.18 and thiserror to 2 ([task](tasks/P0-09-upgrade-cpal-and-thiserror.md))
 - [ ] P0-10 Upgrade egui and eframe to 0.37 with wgpu ([task](tasks/P0-10-upgrade-egui-and-wgpu.md))
 - [ ] P0-11 Upgrade quick-xml to 0.42 to fix two advisories ([task](tasks/P0-11-upgrade-quick-xml.md))
 - [ ] P0-12 Add cargo-deny to cargo xtask ci ([task](tasks/P0-12-cargo-deny.md))

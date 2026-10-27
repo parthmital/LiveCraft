@@ -73,7 +73,7 @@ impl AudioEngine {
             .ok_or_else(|| anyhow::anyhow!("No default audio output device found"))?;
 
         let supported_config = device.default_output_config()?;
-        let sample_rate = supported_config.sample_rate().0 as f32;
+        let sample_rate = supported_config.sample_rate() as f32;
         let channels = supported_config.channels() as usize;
         let sample_format = supported_config.sample_format();
 
@@ -91,7 +91,7 @@ impl AudioEngine {
 
         let stream = match sample_format {
             SampleFormat::F32 => device.build_output_stream(
-                &config,
+                config,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     write_audio(data, channels, &graph_cb, &param_rx_cb);
                 },
@@ -99,7 +99,7 @@ impl AudioEngine {
                 None,
             )?,
             SampleFormat::I16 => device.build_output_stream(
-                &config,
+                config,
                 move |data: &mut [i16], _: &cpal::OutputCallbackInfo| {
                     write_audio_i16(data, channels, &graph_cb, &param_rx_cb);
                 },
@@ -107,7 +107,7 @@ impl AudioEngine {
                 None,
             )?,
             SampleFormat::U16 => device.build_output_stream(
-                &config,
+                config,
                 move |data: &mut [u16], _: &cpal::OutputCallbackInfo| {
                     write_audio_u16(data, channels, &graph_cb, &param_rx_cb);
                 },
