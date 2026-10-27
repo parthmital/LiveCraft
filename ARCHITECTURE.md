@@ -75,7 +75,7 @@ Each is scheduled in `plans/livecraft-1.0/`.
 | `.als` writer regenerates XML from the model; every unknown element is lost                                                        | `als.rs`                                                | 2            |
 | `.als` decompression has no size limit                                                                                             | `als.rs` `decompress_to_xml`                            | 0            |
 | Session clip slots without an active clip are played back as a sequential timeline                                                 | `graph.rs` `dispatch_clip_events`                       | 1            |
-| Large files mixing concerns: `model.rs` (1208 lines), `graph.rs` (1072), `devices.rs` (990), `dsp/src/lib.rs` (800 lines of tests) | as listed                                               | 0 and 1      |
+| Large files mixing concerns: `model.rs` (1208 lines), `graph.rs` (1072), `devices.rs` (990)                                        | as listed                                               | 1            |
 | GUI layout uses estimated sizes and colours, not measurements of Live                                                              | `crates/livecraft-gui/src/*.rs`                         | 3            |
 | Window title and status bar use the Ableton trademark as branding                                                                  | `livecraft-gui/src/lib.rs`, `app.rs`                    | 0            |
 
