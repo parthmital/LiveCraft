@@ -26,12 +26,17 @@ Create `crates/livecraft-testkit` with `RenderSummary` and `render_project_summa
    name = "livecraft-testkit"
    version.workspace = true
    edition.workspace = true
+   rust-version.workspace = true
    license.workspace = true
    repository.workspace = true
+   publish.workspace = true
 
    [dependencies]
-   livecraft-core.workspace = true
-   livecraft-dsp.workspace = true
+   livecraft-core = { path = "../livecraft-core" }
+   livecraft-dsp = { path = "../livecraft-dsp" }
+
+   [lints]
+   workspace = true
    ```
 
 2. Create `crates/livecraft-testkit/src/lib.rs`:

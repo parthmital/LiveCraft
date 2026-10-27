@@ -1517,6 +1517,7 @@ dependencies = [
  "livecraft-core",
  "livecraft-dsp",
  "livecraft-gui",
+ "livecraft-testkit",
  "log",
  "serde_json",
 ]
@@ -1556,6 +1557,14 @@ dependencies = [
  "livecraft-core",
  "livecraft-dsp",
  "log",
+]
+
+[[package]]
+name = "livecraft-testkit"
+version = "0.1.0"
+dependencies = [
+ "livecraft-core",
+ "livecraft-dsp",
 ]
 
 [[package]]

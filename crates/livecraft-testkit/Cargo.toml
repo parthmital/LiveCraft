@@ -1,0 +1,15 @@
+[package]
+name = "livecraft-testkit"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+livecraft-core = { path = "../livecraft-core" }
+livecraft-dsp = { path = "../livecraft-dsp" }
+
+[lints]
+workspace = true

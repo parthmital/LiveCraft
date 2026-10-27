@@ -24,6 +24,7 @@ hound.workspace = true
 
 [dev-dependencies]
 insta.workspace = true
+livecraft-testkit.workspace = true
 
 [lints]
 workspace = true

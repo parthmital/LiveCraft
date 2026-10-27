@@ -20,6 +20,7 @@ const LAYERS: &[(&str, &[&str])] = &[
         "livecraft-cli",
         &["livecraft-core", "livecraft-dsp", "livecraft-gui"],
     ),
+    ("livecraft-testkit", &["livecraft-core", "livecraft-dsp"]),
     ("xtask", &[]),
 ];
 
