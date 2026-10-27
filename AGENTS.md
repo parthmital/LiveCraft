@@ -11,6 +11,7 @@ Last verified: 2026-10-27.
 - Test one crate: `cargo test -p livecraft-core` (also `livecraft-dsp`, `livecraft-gui`, `livecraft-cli`)
 - Test one test: `cargo test -p livecraft-dsp test_eq8_processing`
 - Release build: `cargo build --release --workspace`
+- Toolchain: pinned to Rust 1.99.1 by `rust-toolchain.toml`; crate metadata comes from `[workspace.package]` in `Cargo.toml`.
 - Run: `cargo run --bin livecraft -- <subcommand>`; GUI frame capture: `cargo run --bin livecraft -- gui --screenshot out.png --view session --theme dark`
 - Query the Live 12 manual: see `docs/live-manual.md`.
 

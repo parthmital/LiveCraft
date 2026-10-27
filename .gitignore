@@ -1,6 +1,8 @@
-# LiveCraft - Native Rust Implementation of Ableton Live
-
+# Build output
 /target/
+
+# Repo-local tool installs (cargo-deny and other CLI tools, see AGENTS.md)
+/.tools/
 /.agent-local/
 /.cache/
 /.venv/

@@ -4,7 +4,7 @@ Tick a box (`- [x]`) in the same commit that completes the line. Work strictly t
 
 ## Phase 0: Production foundation
 
-- [ ] P0-01 Pin the toolchain and share package metadata ([task](tasks/P0-01-pin-toolchain-and-package-metadata.md))
+- [x] P0-01 Pin the toolchain and share package metadata ([task](tasks/P0-01-pin-toolchain-and-package-metadata.md))
 - [ ] P0-02 Configure logging without set_var and replace eprintln in libraries ([task](tasks/P0-02-logging-without-set-var.md))
 - [ ] P0-03 Remove unused dependencies ([task](tasks/P0-03-remove-unused-dependencies.md))
 - [ ] P0-04 Add workspace lints ([task](tasks/P0-04-workspace-lints.md))
