@@ -9,7 +9,7 @@ Every security checklist category has a recorded status in `SECURITY.md`, backed
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-16 is ticked and P0-17 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-16 is `[x]` or `[~]` and P0-17 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`, 53 tests.
 
 ## Context
@@ -31,7 +31,7 @@ Every security checklist category has a recorded status in `SECURITY.md`, backed
 
    Expected: `gitleaks_8.30.1_windows_x64.zip: OK`, then `./.tools/bin/gitleaks.exe version` prints `8.30.1`. If `gh` is not authenticated, download the two files from `https://github.com/gitleaks/gitleaks/releases/tag/v8.30.1` in a browser into `./.tools/downloads/` and continue with the checksum line.
 
-2. Scan the whole history: `./.tools/bin/gitleaks git . --redact --report-path .agent-local/output/p0-17/gitleaks.json`. Expected: `no leaks found`. If leaks are found: do not print or commit them; append a blocker `P0-17: gitleaks found N potential secrets, report in .agent-local/output/p0-17/gitleaks.json; owner must review and rotate` and stop (rotation and history rewriting need the owner).
+2. Scan the whole history: `./.tools/bin/gitleaks git . --redact --report-path .agent-local/output/p0-17/gitleaks.json`. Expected: `no leaks found`. If leaks are found: do not print or commit them; append an `OWNER-QUEUE.md` row `Review N potential secrets found by gitleaks (report in .agent-local/output/p0-17/gitleaks.json) and rotate any real ones` (Needed by line P0-17, Status Open), add a SECURITY.md finding row with status Open, mark P0-17 `[~]` at the end, and continue (rotation and history rewriting need the owner; never rewrite history yourself).
 
 3. Dependencies: `./.tools/bin/cargo-deny check`. Expected: `advisories ok, bans ok, licenses ok, sources ok`.
 
@@ -107,10 +107,10 @@ Every security checklist category has a recorded status in `SECURITY.md`, backed
    - Add finding LC-006 (sample paths) as accepted until M10
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
 - A tool cannot be installed: record the category as Unverified in the table with the reason, and continue.
-- Any High or Critical finding: do not commit; append under Blockers in `CHECKLIST.md`: `P0-17, <date>: <category> High finding, details in .agent-local/output/p0-17/`. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- Any High or Critical finding: do not commit; append under Blockers in `CHECKLIST.md`: `P0-17, <date>: <category> High finding, details in .agent-local/output/p0-17/`. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.

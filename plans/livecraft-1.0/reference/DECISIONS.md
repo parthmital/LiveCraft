@@ -44,7 +44,7 @@ Library evidence and alternatives are in the root `RESEARCH.md`. Architecture de
 
 ## Owner Decisions
 
-Pending. The executor never decides these; tasks that depend on them stop with a HUMAN line.
+The executor never answers these and never waits for them: it builds with the default, and implements features whose default is off behind their Cargo feature or setting. The owner may answer at any time (queue rows Q01 and Q02); only the public v1.0.0 release waits for D-OWN-3.
 
 | ID      | Question                                                                                                                  | Default until decided                                  | Needed by |
 | ------- | ------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ | --------- |

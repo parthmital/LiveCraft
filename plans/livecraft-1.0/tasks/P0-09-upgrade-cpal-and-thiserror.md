@@ -9,7 +9,7 @@ The audio engine builds on `cpal` 0.18.2 and errors derive with `thiserror` 2, w
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-08 is ticked and P0-09 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-08 is `[x]` or `[~]` and P0-09 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`, 49 tests.
 
 ## Context
@@ -63,10 +63,10 @@ The audio engine builds on `cpal` 0.18.2 and errors derive with `thiserror` 2, w
    - Bump thiserror to 2 with no code changes
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
 - Other compile errors from cpal: read the cpal 0.18 docs with `cargo doc -p cpal --no-deps --open` or the error text, fix only in `engine.rs`, at most 3 attempts.
-- Still failing: do not commit code. Append under Blockers in `CHECKLIST.md`: `P0-09, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: do not commit code. Append under Blockers in `CHECKLIST.md`: `P0-09, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.

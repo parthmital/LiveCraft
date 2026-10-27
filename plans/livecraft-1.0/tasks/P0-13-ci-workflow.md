@@ -9,7 +9,7 @@ CI runs `cargo xtask ci --no-deny` on Windows, Ubuntu, and macOS, runs `cargo-de
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-12 is ticked and P0-13 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-12 is `[x]` or `[~]` and P0-13 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`.
 
 ## Context
@@ -107,10 +107,10 @@ CI runs `cargo xtask ci --no-deny` on Windows, Ubuntu, and macOS, runs `cargo-de
    - Add Dependabot for Cargo and GitHub Actions
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Then run the last Verify row.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Then run the last Verify row. Continue with the next line.
 
 ## If Something Fails
 
 - The CI run fails on one OS only: read the job log with `gh run view --log-failed`. If the fix is in the workflow, fix it (at most 3 attempts, one commit each with subject `Fix CI: <what>`). If the failure is in Rust code on macOS or Linux only, log a blocker with the log excerpt; do not change Rust code in this task.
 - `gh` is not authenticated: skip the last Verify row, write `CI run not verified: gh not authenticated` in the commit body, and continue.
-- Still failing: append under Blockers in `CHECKLIST.md`: `P0-13, <date>: <what failed>` and the last 20 lines of the failing log. Commit only `CHECKLIST.md`, push, stop.
+- Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: append under Blockers in `CHECKLIST.md`: `P0-13, <date>: <what failed>` and the last 20 lines of the failing log. Commit only `CHECKLIST.md`, push, end the run.

@@ -10,7 +10,7 @@ Depends on: <previous task ID>. Size: <N files, about M changed lines>. Mileston
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty (line-ending-only files excepted).
-2. In `plans/livecraft-1.0/CHECKLIST.md`, every line above <ID> is ticked and <ID> is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, no line above <ID> is `[ ]`, and <ID> is `[ ]`.
 3. Run `cargo xtask ci`. Expected: passes (<test count after the previous task> tests).
 
 ## Context
@@ -53,7 +53,7 @@ Depends on: <previous task ID>. Size: <N files, about M changed lines>. Mileston
 
 ## Commit And Push
 
-1. Tick <ID> in `plans/livecraft-1.0/CHECKLIST.md`.
+1. Tick <ID> in `plans/livecraft-1.0/CHECKLIST.md` (`[~]` if an Owner-gated row could not run; see `prompts/EXPAND-MILESTONE.md` step 4).
 2. `git add <each changed path>` (never `git add -A` or `git add .`).
 3. Commit:
 
@@ -63,11 +63,11 @@ Depends on: <previous task ID>. Size: <N files, about M changed lines>. Mileston
    - <change>
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
-- A Verify command fails: read the whole error, fix it within the files listed under "Do Not", rerun every Verify command. At most 3 attempts.
-- Still failing, or the fix needs another file: do not commit code. Append under Blockers in `CHECKLIST.md`: `<ID>, <date>: <what failed>`, the failing command, and the last 20 lines of its output. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- A Verify command fails: read the whole error, fix it within the files listed under "Do Not", rerun every Verify command. At most 3 attempts, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.
+- Still failing, or the fix needs another file after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: do not commit code. Append under Blockers in `CHECKLIST.md`: `<ID>, <date>: <what failed>`, the failing command, and the last 20 lines of its output. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.
 ````

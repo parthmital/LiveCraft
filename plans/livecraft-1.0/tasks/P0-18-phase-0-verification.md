@@ -9,7 +9,7 @@ Every Phase 0 exit criterion in `plans/livecraft-1.0/PLAN.md` is proven with rec
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-17 is ticked and P0-18 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-17 is `[x]` or `[~]` and P0-18 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`, 53 tests.
 
 ## Context
@@ -87,9 +87,9 @@ Expected test counts after Phase 0: livecraft-cli 4, livecraft-core 15, livecraf
    - Update test counts, repository structure, and decisions in the docs
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
-- A criterion is not met: append under Blockers in `CHECKLIST.md`: `P0-18, <date>: <criterion> not met`, with the evidence. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- A criterion is not met: fix it with the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md` (one `Fix <criterion>` commit per fix). Still not met: append under Blockers in `CHECKLIST.md`: `P0-18, <date>: <criterion> not met`, with the evidence. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.

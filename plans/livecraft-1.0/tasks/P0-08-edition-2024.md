@@ -9,7 +9,7 @@ Every crate builds with edition 2024, with clippy clean and the same test result
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-07 is ticked and P0-08 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-07 is `[x]` or `[~]` and P0-08 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`, 49 tests.
 
 ## Context
@@ -54,11 +54,11 @@ Every crate builds with edition 2024, with clippy clean and the same test result
    - Reformat with the 2024 style edition
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
 - `cargo clippy` still reports lints that `--fix` cannot apply: fix them by hand following the lint's suggestion text exactly, only in the files it names. At most 3 attempts.
 - Tests fail after the migration: run `git diff` on the failing crate, find the `cargo fix` change in the code path of the failing test, and log a blocker with that diff hunk; do not change test code.
-- Still failing: `git checkout -- .` to discard, append under Blockers in `CHECKLIST.md`: `P0-08, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: `git checkout -- .` to discard, append under Blockers in `CHECKLIST.md`: `P0-08, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.

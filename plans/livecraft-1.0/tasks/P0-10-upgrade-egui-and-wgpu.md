@@ -9,7 +9,7 @@ The GUI builds on egui and eframe 0.37.0, renders with wgpu (DX12 by default on 
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-09 is ticked and P0-10 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-09 is `[x]` or `[~]` and P0-10 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`, 49 tests.
 4. Capture "before" screenshots: `cargo dev -- gui --screenshot .agent-local/output/p0-10/before-session.png --view session` and the same with `--view arrangement` and `before-arrangement.png`.
 
@@ -91,11 +91,11 @@ The GUI builds on egui and eframe 0.37.0, renders with wgpu (DX12 by default on 
    - Render with wgpu, defaulting to DX12 on Windows unless WGPU_BACKEND is set
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
 - A script exits with `markers not found` or `already migrated`: run `git checkout -- crates/livecraft-gui` and log a blocker with the message.
 - The screenshot command crashes: retry with `WGPU_BACKEND=gl`. If that works, note it in the commit body and continue; if not, log a blocker.
-- Other failures: fix within the listed files, at most 3 attempts. Still failing: discard code changes (`git checkout -- .`), append under Blockers in `CHECKLIST.md`: `P0-10, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- Other failures: fix within the listed files, at most 3 attempts. Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: discard code changes (`git checkout -- .`), append under Blockers in `CHECKLIST.md`: `P0-10, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.

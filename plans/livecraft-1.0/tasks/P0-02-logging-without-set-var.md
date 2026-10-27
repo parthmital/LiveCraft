@@ -9,7 +9,7 @@ The CLI configures `env_logger` through its builder (no `std::env::set_var`, whi
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-01 is ticked and P0-02 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-01 is `[x]` or `[~]` and P0-02 is `[ ]`.
 3. Run `cargo test --workspace`. Expected: 44 tests pass.
 
 ## Context
@@ -143,10 +143,10 @@ The CLI configures `env_logger` through its builder (no `std::env::set_var`, whi
    - Document the logging rule in AGENTS.md
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
 - A Verify command fails: read the whole error, fix it within the listed files, rerun every Verify command. At most 3 attempts.
-- Still failing: do not commit code. Append under Blockers in `CHECKLIST.md`: `P0-02, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: do not commit code. Append under Blockers in `CHECKLIST.md`: `P0-02, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.

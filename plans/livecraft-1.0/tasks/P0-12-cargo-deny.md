@@ -9,7 +9,7 @@ Depends on: P0-11. Size: 6 files, about 70 changed lines. Milestone: P0.
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-11 is ticked and P0-12 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-11 is `[x]` or `[~]` and P0-12 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`, 49 tests.
 
 ## Context
@@ -173,10 +173,10 @@ Depends on: P0-11. Size: 6 files, about 70 changed lines. Milestone: P0.
    - Document setup and mark finding LC-003 fixed
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
-- A licence is rejected that is not in the allow-list: if it is permissive (for example `CDLA-Permissive-2.0`), log a blocker naming the crate and licence for the owner to approve; do not add it yourself.
-- Other failures: fix within the listed files, at most 3 attempts. Still failing: append under Blockers in `CHECKLIST.md`: `P0-12, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- A licence is rejected that is not in the allow-list: if it is OSI-approved and permissive (for example `CDLA-Permissive-2.0`, `Zlib`, `BSL-1.0`), add it to the `allow` list in `deny.toml` with a comment naming the crate, and append an `OWNER-QUEUE.md` row "Approve licence <licence> for <crate>" (Status Open, Needed by line none); otherwise (copyleft or unknown) follow the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.
+- Other failures: fix within the listed files, at most 3 attempts. Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: append under Blockers in `CHECKLIST.md`: `P0-12, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.

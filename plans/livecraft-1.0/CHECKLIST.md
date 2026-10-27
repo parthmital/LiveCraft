@@ -1,6 +1,6 @@
 # Checklist: LiveCraft 1.0
 
-Tick a box (`- [x]`) in the same commit that completes the line. Work strictly top to bottom. Line types: Task (do it), Expand (write the milestone's tasks with `prompts/EXPAND-MILESTONE.md`, insert them directly below the Expand line, stop), HUMAN (owner work from `prompts/OWNER-GUIDE.md`; the executor prints the instructions and stops).
+States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-QUEUE.md`. Change the box in the same commit that completes the line. Work strictly top to bottom, without stopping between lines. Line types: Task (do it), Expand (write the milestone's tasks with `prompts/EXPAND-MILESTONE.md`, insert them directly below the Expand line, commit, push, continue with the first new task), Reference pass (`tasks/REFERENCE-PASS.md`). Owner decisions use their defaults from `reference/DECISIONS.md#owner-decisions`; no line waits for them.
 
 ## Phase 0: Production foundation
 
@@ -30,7 +30,6 @@ Tick a box (`- [x]`) in the same commit that completes the line. Work strictly t
 - [ ] Expand M03 Document model v2 ([milestone](milestones/M03-document-model-v2.md))
 - [ ] Expand M04 Session, command registry, undo ([milestone](milestones/M04-session-and-commands.md))
 - [ ] Expand M05 Real-time engine core ([milestone](milestones/M05-realtime-engine-core.md))
-- [ ] HUMAN D-OWN-2 Decide ASIO support ([owner guide](prompts/OWNER-GUIDE.md#d-own-2))
 - [ ] Expand M06 Audio and MIDI I/O and device settings ([milestone](milestones/M06-audio-midi-io.md))
 - [ ] Expand M07 Transport, tempo, metronome, launch scheduler ([milestone](milestones/M07-transport-and-launch.md))
 - [ ] Expand M08 Offline render and export ([milestone](milestones/M08-offline-render-export.md))
@@ -40,12 +39,14 @@ Tick a box (`- [x]`) in the same commit that completes the line. Work strictly t
 - [ ] Expand M09 Lossless Live Set I/O ([milestone](milestones/M09-lossless-live-set-io.md))
 - [ ] Expand M10 Live Projects and file management ([milestone](milestones/M10-projects-and-file-management.md))
 - [ ] Expand M11 Audio files, sample cache, disk streaming ([milestone](milestones/M11-audio-files-and-streaming.md))
+- [ ] Reference pass after Phase 2 ([procedure](tasks/REFERENCE-PASS.md))
 
 ## Phase 3: UI foundation
 
 - [ ] Expand M12 UI reference capture and fidelity tooling ([milestone](milestones/M12-ui-reference-capture.md))
 - [ ] Expand M13 Design system ([milestone](milestones/M13-design-system.md))
 - [ ] Expand M14 Main window shell, menus, Control Bar, Info View, shortcuts ([milestone](milestones/M14-main-window-shell.md))
+- [ ] Reference pass after Phase 3 ([procedure](tasks/REFERENCE-PASS.md))
 
 ## Phase 4: Core workflows
 
@@ -58,8 +59,8 @@ Tick a box (`- [x]`) in the same commit that completes the line. Work strictly t
 - [ ] Expand M21 Recording, capture, comping ([milestone](milestones/M21-recording-and-comping.md))
 - [ ] Expand M22 Automation and clip envelopes ([milestone](milestones/M22-automation-and-clip-envelopes.md))
 - [ ] Expand M23 Warping and tempo ([milestone](milestones/M23-warping-and-tempo.md))
-- [ ] HUMAN D-OWN-6 Decide reading the installed Live library ([owner guide](prompts/OWNER-GUIDE.md#d-own-6))
 - [ ] Expand M24 Browser, library, Sound Similarity, preview, hot-swap ([milestone](milestones/M24-browser-and-library.md))
+- [ ] Reference pass after Phase 4 ([procedure](tasks/REFERENCE-PASS.md))
 
 ## Phase 5: Devices
 
@@ -73,18 +74,18 @@ Tick a box (`- [x]`) in the same commit that completes the line. Work strictly t
 - [ ] Expand M32 Instruments: sample based ([milestone](milestones/M32-instruments-sample-based.md))
 - [ ] Expand M33 Instruments: synthesizers ([milestone](milestones/M33-instruments-synthesizers.md))
 - [ ] Expand M34 Instruments: physical modelling and external ([milestone](milestones/M34-instruments-physical-modelling.md))
+- [ ] Reference pass after Phase 5 ([procedure](tasks/REFERENCE-PASS.md))
 
 ## Phase 6: Advanced features
 
 - [ ] Expand M35 Grooves, tuning systems, scale awareness ([milestone](milestones/M35-grooves-tuning-scales.md))
-- [ ] HUMAN D-OWN-5 Decide the stem separation model download ([owner guide](prompts/OWNER-GUIDE.md#d-own-5))
 - [ ] Expand M36 Audio to MIDI, stem separation, bounce, freeze ([milestone](milestones/M36-audio-to-midi-stems-bounce.md))
 - [ ] Expand M37 Plug-in hosting with sandboxing ([milestone](milestones/M37-plugin-hosting.md))
-- [ ] HUMAN D-OWN-1 Decide Ableton Link support ([owner guide](prompts/OWNER-GUIDE.md#d-own-1))
 - [ ] Expand M38 Remote control, control surfaces, synchronisation ([milestone](milestones/M38-remote-control-and-sync.md))
 - [ ] Expand M39 Video ([milestone](milestones/M39-video.md))
 - [ ] Expand M40 Settings, Learn View, accessibility, keyboard navigation ([milestone](milestones/M40-settings-learn-accessibility.md))
 - [ ] Expand M41 Performance ([milestone](milestones/M41-performance.md))
+- [ ] Reference pass after Phase 6 ([procedure](tasks/REFERENCE-PASS.md))
 
 ## Phase 7: Beyond Live
 
@@ -92,12 +93,13 @@ Tick a box (`- [x]`) in the same commit that completes the line. Work strictly t
 - [ ] Expand M43 Reliability ([milestone](milestones/M43-reliability.md))
 - [ ] Expand M44 Mixing and mastering extras ([milestone](milestones/M44-mixing-mastering-extras.md))
 - [ ] Expand M45 Platforms, packaging, updates ([milestone](milestones/M45-platforms-packaging.md))
+- [ ] Reference pass after Phase 7 ([procedure](tasks/REFERENCE-PASS.md))
 
 ## Phase 8: Release
 
-- [ ] HUMAN D-OWN-3 Get legal advice on interface and name replication ([owner guide](prompts/OWNER-GUIDE.md#d-own-3))
 - [ ] Expand M46 Release 1.0 ([milestone](milestones/M46-release-1.0.md))
+- [ ] Final reference pass: finish every `[~]` line whose owner input has arrived, including the M46 release steps ([procedure](tasks/REFERENCE-PASS.md))
 
 ## Blockers
 
-<!-- Executor: append "<line ID>, <date>: <what failed>", the failing command, and the last 20 lines of its output, then stop. -->
+<!-- Executor: only after the Unblock Procedure in START-HERE.md fails, append "<line ID>, <date>: <root cause>", the failing command, and the last 20 lines of its output, commit, push, and end the run. -->

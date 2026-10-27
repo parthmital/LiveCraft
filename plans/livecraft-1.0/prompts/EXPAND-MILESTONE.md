@@ -2,7 +2,7 @@
 
 Purpose: the exact procedure for an Expand line in `CHECKLIST.md`. Read when: the first unticked line is `Expand Mxx`.
 
-You are the planner for this milestone, not the implementer. You write task files; you change no product code in this session.
+In this step you are the planner for this milestone: you write task files and change no product code. When the expansion is committed and pushed, you continue the run with the first new task, in the same conversation.
 
 ## Inputs To Read (in this order)
 
@@ -16,7 +16,7 @@ You are the planner for this milestone, not the implementer. You write task file
 
 ## Procedure
 
-1. Run `cargo xtask ci` and record the result (test count) for the tasks' "Before You Start".
+1. Run `cargo xtask ci` and record the result (test count) for the first task's "Before You Start".
 2. Break the milestone's "Task Outline" into tasks. Each task:
    - has one observable outcome and ends in one commit that passes `cargo xtask ci`;
    - touches at most about 5 files and 200 changed lines (split otherwise; a mechanical rename across many files is allowed as one task if a script does it);
@@ -28,9 +28,16 @@ You are the planner for this milestone, not the implementer. You write task file
    - Tests first in the steps, with complete test code and expected values. DSP tests state the numeric expectation and tolerance.
    - A Verify table with exact commands and expected results, and an exact commit message.
    - Dependency additions name the exact version from `DECISIONS.md` (or move it forward under D28 and add the DECISIONS row in the same task).
-4. HUMAN work (owner captures, renders in Live, opening files in Live): write it as its own task file whose steps are instructions for the owner, with exact file names and where to put them, and mark its checklist line `HUMAN`.
-5. Insert the new lines into `CHECKLIST.md` directly below this Expand line, in order, in the same format as existing lines.
-6. Add the milestone's acceptance criteria as the last task (`Mxx-NN-milestone-verification.md`): run every acceptance check, update the parity matrix rows with evidence, update `ARCHITECTURE.md`, `README.md`, and other affected docs.
+   - Upgrades and migrations: write the steps from the crate's changelog and docs (in `~/.cargo/registry/src` once fetched, or docs.rs), list the expected compiler errors and fixes, and give a fallback. Do not trial the task while expanding: it runs straight after, and its fix attempts and the Unblock Procedure correct what the notes missed.
+4. Owner-only work: wherever the milestone says HUMAN, owner, oracle render, capture, measurement, credentials, or install checklist, no checklist line waits for it. Instead the task that needs it:
+   - implements everything with a fallback stated as fact: values from the manual, from `DESIGN.md`, or from a named standard (for example constant-power -3 dB pan law), and a test that pins the fallback;
+   - writes the comparison against the owner reference as steps and Verify rows marked `Owner-gated: Qnn`, with the exact command (`cargo xtask oracle <name>`, `tools/ui_diff.py <state>`) and threshold from `QUALITY-GATES.md` or `UI-FIDELITY.md`;
+   - appends a row Qnn to `OWNER-QUEUE.md` with the exact owner steps (copied from `prompts/OWNER-GUIDE.md` and the fixture names), the result path, and Status `Open`;
+   - ends with the line marked `[~]` instead of `[x]` when the gated rows cannot run yet.
+     Tools that compare against references (`cargo xtask oracle`, `ui_diff.py`) must report a missing reference as `PENDING <name>` with exit code 3, never as a pass, and `cargo xtask ci` never runs them.
+5. Owner decisions (D-OWN-1 to D-OWN-6): implement with the default in `reference/DECISIONS.md#owner-decisions`. Where the default turns a feature off, still implement it behind its Cargo feature or setting, with tests that run with the feature on wherever its dependencies build without the owner (an SDK that needs a licence acceptance gets an `OWNER-QUEUE.md` row instead), so the owner's answer only flips a default.
+6. Insert the new lines into `CHECKLIST.md` directly below this Expand line, in order, in the same format as the P0 lines: checkbox `[ ]`, the ID, the title, and a link labelled `task` to the new task file.
+7. Add the milestone's acceptance criteria as the last task (`Mxx-NN-milestone-verification.md`): run every acceptance check, update the parity matrix rows with evidence (owner-gated criteria as `Pending Qnn`), update `ARCHITECTURE.md`, `README.md`, and other affected docs.
 
 ## Cold-Read Review (do this before committing)
 
@@ -39,14 +46,16 @@ Read each task file as an executor that has only that file and `START-HERE.md`. 
 - any reference to unwritten context ("as above", "similar to Task 3", "etc.", "as needed", "appropriate", "choose", "TBD");
 - any path or command that neither exists now nor is created by an earlier task;
 - any step whose result cannot be checked by a command;
-- any task over the size limit.
+- any task over the size limit;
+- any step that waits for the owner instead of queueing.
 
-## Commit
+## Commit And Continue
 
 1. Tick the Expand line.
-2. `git add plans/livecraft-1.0/tasks/Mxx-* plans/livecraft-1.0/CHECKLIST.md` (and `reference/DECISIONS.md` if changed).
-3. Commit `Expand Mxx into N tasks` with one bullet per task title. Push. Stop.
+2. `git add plans/livecraft-1.0/tasks/Mxx-* plans/livecraft-1.0/CHECKLIST.md` (and `reference/DECISIONS.md` or `OWNER-QUEUE.md` if changed).
+3. Commit `Expand Mxx into N tasks` with one bullet per task title. Push.
+4. Continue the run with the first new task. Do not end your turn.
 
 ## If The Milestone File Is Wrong
 
-If the current code or the manual contradicts the milestone file (a decision cannot work, a section moved), do not improvise: correct the milestone file with the evidence in a short "Revision <date>" note at its end, then expand from the corrected file in the same commit. If the problem is a decision in `DECISIONS.md` or `TARGET-ARCHITECTURE.md`, log a blocker instead and stop; those change only with the owner or a stronger model.
+If the current code or the manual contradicts the milestone file (a decision cannot work, a section moved), do not improvise: correct the milestone file with the evidence in a short `Revision <date>` note at its end, then expand from the corrected file in the same commit. If the problem is a decision in `DECISIONS.md` or `TARGET-ARCHITECTURE.md`, change it minimally with the same revision note, add an `OWNER-QUEUE.md` row "Review revision of <file>" (non-blocking), and continue.

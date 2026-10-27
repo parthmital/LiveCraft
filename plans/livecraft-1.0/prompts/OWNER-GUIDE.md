@@ -1,16 +1,17 @@
 # Owner Guide
 
-Purpose: what the repository owner does that no executor can: run the plan, answer decisions, and produce references from the installed Live. Read when: starting the plan, or when the executor stops at a HUMAN line.
+Purpose: what the repository owner does that no executor can: start the run, fill the owner queue, and answer decisions. Read when: starting the plan, or when `OWNER-QUEUE.md` has new rows.
 
 ## Running The Plan
 
-1. Commit and push this plan folder before the first executor session (the executor pulls before every task).
-2. For each session: open Antigravity, new conversation, Gemini 3.8 Flash High, paste the `/goal` prompt from `START-HERE.md#antigravity-primary-executor-gemini-38-flash-high`.
-3. After each session check `CHECKLIST.md`: a new tick and a pushed commit, or a blocker entry. For a blocker, run the Blocked Task prompt with a stronger model, or fix it yourself.
-4. For Expand lines, use the strongest model you have; read the new task files before running them (10 minutes per milestone catches most planning errors).
-5. At HUMAN lines, do the work below, then tick the line yourself with a commit such as `Complete HUMAN <line>`.
+1. Commit and push this plan folder before starting (the executor pulls before every task).
+2. Open Antigravity, new conversation, Gemini 3.8 Flash High, and paste the one `/goal` prompt from `START-HERE.md#antigravity-primary-executor-gemini-38-flash-high`. It runs every line, Expand lines included, to the release.
+3. The run continues without you. When you have time, open `OWNER-QUEUE.md`, do the `Open` rows (types below), put each result where its row says, set the row to `Arrived <date>`, and push. The next Reference pass uses them. Pull before you push: the executor pushes often.
+4. If the conversation ends before the run is complete (context or quota limit), start a new conversation and paste the same prompt; it resumes at the first unticked line.
+5. If the run ends on a blocker in `CHECKLIST.md`, use the Blocked Run prompt in `START-HERE.md` with a stronger model, or fix it yourself, then paste the run prompt again.
+6. After the run, if `[~]` lines remain, finish their queue rows and paste the run prompt once more: it runs the final Reference pass, including the v1.0.0 release steps that wait on Q01 and the blind tests.
 
-## HUMAN Work Types
+## Owner Work Types
 
 ### Reference captures of Live (M12 onward)
 
@@ -40,7 +41,7 @@ Purpose: what the repository owner does that no executor can: run the plan, answ
 
 ## Owner Decisions
 
-Answer each when its HUMAN line comes up (or earlier). Record the answer by editing the row in `reference/DECISIONS.md#owner-decisions` (Answer column text in the Question cell, for example "Answered 2027-01-10: Yes, ship with Link under GPL").
+The executor uses each default from `reference/DECISIONS.md#owner-decisions` and never waits. Answer any time; features whose default is off are still built behind a feature or setting, so an answer only flips the default. Record the answer by editing the row in `reference/DECISIONS.md#owner-decisions` (Answer column text in the Question cell, for example "Answered 2027-01-10: Yes, ship with Link under GPL").
 
 ### D-OWN-1
 

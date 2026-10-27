@@ -9,7 +9,7 @@ There is one WAV decoding function, it rejects files holding more than 2^28 samp
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-14 is ticked and P0-15 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-14 is `[x]` or `[~]` and P0-15 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`, 50 tests.
 
 ## Context
@@ -159,10 +159,10 @@ There is one WAV decoding function, it rejects files holding more than 2^28 samp
    - Mark finding LC-002 fixed
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
 - `test_simpler_playback_modes` fails: log a blocker with its output (the scaling change was expected to be inaudible).
-- Other failures: fix within the listed files, at most 3 attempts. Still failing: append under Blockers in `CHECKLIST.md`: `P0-15, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- Other failures: fix within the listed files, at most 3 attempts. Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: append under Blockers in `CHECKLIST.md`: `P0-15, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.

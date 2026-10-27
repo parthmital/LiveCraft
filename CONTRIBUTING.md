@@ -9,7 +9,7 @@ Follow `README.md#quick-start` and `README.md#prerequisites`. Read `AGENTS.md`, 
 
 ## Workflow
 
-- Pick an unticked task from `plans/livecraft-1.0/CHECKLIST.md`, or open an issue first for anything outside the plan.
+- Pick an unticked task from `plans/livecraft-1.0/CHECKLIST.md` or an `Open` row in `plans/livecraft-1.0/OWNER-QUEUE.md`, or open an issue first for anything outside the plan.
 - Branch from `main`. One logical change per pull request.
 - Commit messages: a short imperative subject line, a blank line, then `- ` bullets describing each change.
 - Before pushing, run every check in `AGENTS.md#commands` and make them pass. Do not disable lints or tests.

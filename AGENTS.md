@@ -20,7 +20,7 @@ Run format check, lint, test, and release build before every commit. Baseline on
 ## Implementation Plan
 
 - Work comes from `plans/livecraft-1.0/`. Read its `START-HERE.md` before any plan task; `CHECKLIST.md` is the only source of task status.
-- One task per session, one commit per task, never skip or reorder tasks.
+- One prompt runs the whole checklist (`START-HERE.md#prompts`); one commit per task, never skip or reorder lines. Owner-only work goes to `plans/livecraft-1.0/OWNER-QUEUE.md` and never stops the run.
 
 ## Conventions
 

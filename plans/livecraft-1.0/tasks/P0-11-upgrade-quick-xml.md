@@ -9,7 +9,7 @@ Depends on: P0-10. Size: 5 files, about 90 changed lines (mostly by a validated 
 ## Before You Start
 
 1. `git pull --ff-only`, then `git status --short`: empty.
-2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-10 is ticked and P0-11 is not.
+2. In `plans/livecraft-1.0/CHECKLIST.md`, P0-10 is `[x]` or `[~]` and P0-11 is `[ ]`.
 3. Run `cargo xtask ci`. Expected: `xtask: all checks passed`, 49 tests.
 
 ## Context
@@ -59,10 +59,10 @@ Depends on: P0-10. Size: 5 files, about 90 changed lines (mostly by a validated 
    - Record finding LC-005
    ```
 
-4. `git push origin main`, then `git status --short --branch`: clean, not ahead.
+4. `git push origin main`, then `git status --short --branch`: clean, not ahead. Continue with the next line.
 
 ## If Something Fails
 
 - Tests fail after the change: compare the failing assertion with the parsed value; log a blocker with the test name and output (do not edit tests).
-- Other failures: fix within the listed files, at most 3 attempts. Still failing: discard code changes, append under Blockers in `CHECKLIST.md`: `P0-11, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, stop.
-- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, log a blocker, stop.
+- Other failures: fix within the listed files, at most 3 attempts. Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: discard code changes, append under Blockers in `CHECKLIST.md`: `P0-11, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, end the run.
+- `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.
