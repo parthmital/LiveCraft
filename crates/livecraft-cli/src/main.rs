@@ -183,10 +183,12 @@ fn load_project_from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Project> {
 fn main() -> anyhow::Result<()> {
     let args = Cli::parse();
 
+    let mut logger =
+        env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("error"));
     if args.verbose {
-        std::env::set_var("RUST_LOG", "debug");
+        logger.filter_level(log::LevelFilter::Debug);
     }
-    let _ = env_logger::try_init();
+    let _ = logger.try_init();
 
     match args.command {
         None => {

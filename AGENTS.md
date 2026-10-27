@@ -27,6 +27,7 @@ Run format check, lint, test, and release build before every commit. Baseline on
 - Crate direction: `livecraft-core` depends on nothing internal; `livecraft-dsp` on core; `livecraft-gui` on core and dsp; `livecraft-cli` on all. Never add a reverse edge.
 - Tests live in a `#[cfg(test)] mod tests` block of the module they test, or in `crates/<crate>/tests/` for cross-module behaviour. Every new behaviour gets a test in the same commit.
 - Errors: library code returns `Result` with `thiserror` enums or `anyhow::Result`; no `unwrap()` or `expect()` outside tests.
+- Logging: library crates use `log::error!`, `log::warn!`, `log::info!`, `log::debug!`; never `eprintln!` or `println!`. Only `crates/livecraft-cli` prints to the terminal. Never log on the audio thread.
 - Audio callback code (`write_audio*` in `engine.rs` and everything it calls) must not allocate, lock, log, or do I/O. See `ARCHITECTURE.md#known-violations` for where today's code breaks this.
 - Live terms are used exactly as the manual spells them (Session View, Clip View, Track Activator, Main track).
 - MIDI note names follow Live: note 60 is C3.

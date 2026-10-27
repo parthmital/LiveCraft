@@ -87,7 +87,7 @@ impl AudioEngine {
         let graph_cb = Arc::clone(&graph);
         let param_rx_cb = param_rx;
 
-        let err_fn = |err| eprintln!("Audio stream error: {}", err);
+        let err_fn = |err| log::error!("Audio stream error: {err}");
 
         let stream = match sample_format {
             SampleFormat::F32 => device.build_output_stream(
@@ -131,7 +131,7 @@ impl AudioEngine {
 
     pub fn send_param(&self, msg: AudioParamMsg) {
         if let Err(e) = self.param_tx.try_send(msg) {
-            eprintln!("Warning: Failed to send audio parameter update: {}", e);
+            log::warn!("Failed to send audio parameter update: {e}");
         }
     }
 

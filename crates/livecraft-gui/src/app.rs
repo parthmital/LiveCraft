@@ -336,7 +336,7 @@ impl eframe::App for LiveCraftApp {
                 ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
             }
             if self.frame_counter > 50 {
-                eprintln!("Screenshot timeout");
+                log::error!("Screenshot timeout");
                 std::process::exit(1);
             }
         }
@@ -360,7 +360,7 @@ impl eframe::App for LiveCraftApp {
                         if let Err(e) =
                             image::save_buffer(path, &rgba, width, height, image::ColorType::Rgba8)
                         {
-                            eprintln!("Failed to save screenshot: {}", e);
+                            log::error!("Failed to save screenshot: {e}");
                             std::process::exit(1);
                         } else {
                             println!("Screenshot successfully saved to: {}", path.display());
