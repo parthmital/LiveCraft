@@ -25,7 +25,17 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 
 ## Phase 1: Core architecture
 
-- [ ] Expand M01 Workspace restructure into target crates ([milestone](milestones/M01-workspace-restructure.md))
+- [x] Expand M01 Workspace restructure into target crates ([milestone](milestones/M01-workspace-restructure.md))
+- [ ] M01-01 Characterisation tests for render and inspection ([task](tasks/M01-01-characterisation-tests.md))
+- [ ] M01-02 Create livecraft-testkit crate ([task](tasks/M01-02-create-testkit.md))
+- [ ] M01-03 Create livecraft-model crate ([task](tasks/M01-03-create-model-crate.md))
+- [ ] M01-04 Create livecraft-formats crate ([task](tasks/M01-04-create-formats-crate.md))
+- [ ] M01-05 Remove livecraft-core crate ([task](tasks/M01-05-remove-core-crate.md))
+- [ ] M01-06 Create livecraft-devices crate ([task](tasks/M01-06-create-devices-crate.md))
+- [ ] M01-07 Create livecraft-engine crate and trim livecraft-dsp ([task](tasks/M01-07-create-engine-crate.md))
+- [ ] M01-08 Rename livecraft-gui to livecraft-ui ([task](tasks/M01-08-rename-gui-to-ui.md))
+- [ ] M01-09 Move CLI to apps/livecraft ([task](tasks/M01-09-move-cli-to-apps-livecraft.md))
+- [ ] M01-10 Verify M01 workspace restructure and update docs ([task](tasks/M01-10-milestone-verification.md))
 - [ ] Expand M02 Musical time foundation ([milestone](milestones/M02-musical-time.md))
 - [ ] Expand M03 Document model v2 ([milestone](milestones/M03-document-model-v2.md))
 - [ ] Expand M04 Session, command registry, undo ([milestone](milestones/M04-session-and-commands.md))
