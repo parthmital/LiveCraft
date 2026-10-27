@@ -127,7 +127,7 @@ No secrets, accounts, or network services are used.
 
 ## Testing and Code Quality
 
-`cargo xtask ci` runs all of these plus a crate layering check and a Markdown link check; run it before every commit. `cargo dev` launches the GUI. The CI workflow ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same checks. The individual commands are:
+`cargo xtask ci` runs all of these plus a crate layering check, a Markdown link check, and `cargo-deny`; run it before every commit. `cargo dev` launches the GUI. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs `cargo xtask ci --no-deny` on Windows, Ubuntu, and macOS, `cargo-deny` in a separate job, and uploads the Windows executable as an artifact. Dependabot proposes weekly dependency and action updates. The individual commands are:
 
 ```bash
 cargo fmt --all -- --check

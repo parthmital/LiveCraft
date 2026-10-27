@@ -18,7 +18,8 @@ Last verified: 2026-10-27.
 ## Controls
 
 - `unsafe_code = "forbid"` for every crate through `[workspace.lints]` in `Cargo.toml`.
-- CI runs `cargo clippy -D warnings` and tests on Windows and Ubuntu.
+- CI (`.github/workflows/ci.yml`) runs every check on Windows, Ubuntu, and macOS with read-only token permissions, SHA-pinned actions, and `persist-credentials: false`; a separate job runs `cargo-deny` (advisories, licences, bans, sources).
+- Dependabot (`.github/dependabot.yml`) proposes weekly Cargo and GitHub Actions updates.
 - `cargo-deny` (`deny.toml`) checks advisories, licences, bans, and sources in `cargo xtask ci`.
 - Planned in `plans/livecraft-1.0/` Phase 0: input size limits and a non-finite output guard.
 
