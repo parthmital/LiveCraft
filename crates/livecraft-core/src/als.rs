@@ -185,14 +185,15 @@ impl AlsParser {
         loop {
             match reader.read_event_into(&mut buf) {
                 Ok(Event::Start(ref e)) => {
-                    let tag_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let tag_name =
+                        String::from_utf8_lossy(e.name().as_ref().as_bytes()).to_string();
                     current_tag_stack.push(tag_name.clone());
 
                     match tag_name.as_str() {
                         "Ableton" => {
                             for attr in e.attributes().flatten() {
-                                let key = String::from_utf8_lossy(attr.key.as_ref());
-                                let val = String::from_utf8_lossy(&attr.value);
+                                let key = String::from_utf8_lossy(attr.key.as_ref().as_bytes());
+                                let val = String::from_utf8_lossy(attr.value.as_bytes());
                                 if key == "Creator" {
                                     creator = val.to_string();
                                 } else if key == "MinorVersion" {
@@ -240,8 +241,8 @@ impl AlsParser {
                                     == "ScaleInformation"
                             {
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == b"Value" {
-                                        let s = String::from_utf8_lossy(&attr.value);
+                                    if attr.key.as_ref() == "Value" {
+                                        let s = String::from_utf8_lossy(attr.value.as_bytes());
                                         for st in ScaleType::ALL {
                                             if st.name().eq_ignore_ascii_case(&s) {
                                                 scale.scale_type = *st;
@@ -253,8 +254,9 @@ impl AlsParser {
                                 }
                             } else {
                                 for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == b"Value" {
-                                        let val = String::from_utf8_lossy(&attr.value).to_string();
+                                    if attr.key.as_ref() == "Value" {
+                                        let val = String::from_utf8_lossy(attr.value.as_bytes())
+                                            .to_string();
                                         if !val.is_empty() {
                                             if let Some(ref mut dev) = current_device {
                                                 dev.name = val;
@@ -283,8 +285,8 @@ impl AlsParser {
                         | "Redux" | "Limiter" => {
                             let mut dev_id = 0u64;
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"Id"
-                                    && let Ok(s) = std::str::from_utf8(&attr.value)
+                                if attr.key.as_ref() == "Id"
+                                    && let Ok(s) = std::str::from_utf8(attr.value.as_bytes())
                                 {
                                     dev_id = s.parse().unwrap_or(0);
                                 }
@@ -305,8 +307,8 @@ impl AlsParser {
                                 ""
                             };
                             for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == b"Value"
-                                    && let Ok(val_str) = std::str::from_utf8(&attr.value)
+                                if attr.key.as_ref() == "Value"
+                                    && let Ok(val_str) = std::str::from_utf8(attr.value.as_bytes())
                                 {
                                     handle_value_element(
                                         parent_tag,
@@ -327,20 +329,22 @@ impl AlsParser {
                             let mut dev_enabled = true;
                             for attr in e.attributes().flatten() {
                                 match attr.key.as_ref() {
-                                    b"Id" => {
-                                        if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                    "Id" => {
+                                        if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                             dev_id = s.parse().unwrap_or(1);
                                         }
                                     }
-                                    b"Type" => {
+                                    "Type" => {
                                         dev_type_str =
-                                            String::from_utf8_lossy(&attr.value).to_string();
+                                            String::from_utf8_lossy(attr.value.as_bytes())
+                                                .to_string();
                                     }
-                                    b"Name" => {
-                                        dev_name = String::from_utf8_lossy(&attr.value).to_string();
+                                    "Name" => {
+                                        dev_name = String::from_utf8_lossy(attr.value.as_bytes())
+                                            .to_string();
                                     }
-                                    b"IsEnabled" => {
-                                        if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                    "IsEnabled" => {
+                                        if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                             dev_enabled = s == "true" || s == "1";
                                         }
                                     }
@@ -381,18 +385,18 @@ impl AlsParser {
 
                             for attr in e.attributes().flatten() {
                                 match attr.key.as_ref() {
-                                    b"Time" => {
-                                        if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                    "Time" => {
+                                        if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                             time = s.parse().unwrap_or(0.0);
                                         }
                                     }
-                                    b"Duration" => {
-                                        if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                    "Duration" => {
+                                        if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                             dur = s.parse().unwrap_or(1.0);
                                         }
                                     }
-                                    b"Velocity" => {
-                                        if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                    "Velocity" => {
+                                        if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                             let v: f32 = s.parse().unwrap_or(100.0);
                                             vel = v as u8;
                                         }
@@ -417,13 +421,14 @@ impl AlsParser {
                     }
                 }
                 Ok(Event::Empty(ref e)) => {
-                    let tag_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let tag_name =
+                        String::from_utf8_lossy(e.name().as_ref().as_bytes()).to_string();
 
                     if tag_name == "Manual" || tag_name == "Value" {
                         let parent_tag = current_tag_stack.last().map(|s| s.as_str()).unwrap_or("");
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value"
-                                && let Ok(val_str) = std::str::from_utf8(&attr.value)
+                            if attr.key.as_ref() == "Value"
+                                && let Ok(val_str) = std::str::from_utf8(attr.value.as_bytes())
                             {
                                 handle_value_element(
                                     parent_tag,
@@ -439,8 +444,8 @@ impl AlsParser {
                     } else if let Some(dtype) = map_ableton_tag_to_device_type(&tag_name) {
                         let mut dev_id = 0u64;
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Id"
-                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            if attr.key.as_ref() == "Id"
+                                && let Ok(s) = std::str::from_utf8(attr.value.as_bytes())
                             {
                                 dev_id = s.parse().unwrap_or(0);
                             }
@@ -457,8 +462,8 @@ impl AlsParser {
                         }
                     } else if tag_name == "MidiKey" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value"
-                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            if attr.key.as_ref() == "Value"
+                                && let Ok(s) = std::str::from_utf8(attr.value.as_bytes())
                             {
                                 current_midi_key = s.parse().unwrap_or(60);
                             }
@@ -470,18 +475,18 @@ impl AlsParser {
 
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"Time" => {
-                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                "Time" => {
+                                    if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                         time = s.parse().unwrap_or(0.0);
                                     }
                                 }
-                                b"Duration" => {
-                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                "Duration" => {
+                                    if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                         dur = s.parse().unwrap_or(1.0);
                                     }
                                 }
-                                b"Velocity" => {
-                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                "Velocity" => {
+                                    if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                         let v: f32 = s.parse().unwrap_or(100.0);
                                         vel = v as u8;
                                     }
@@ -502,11 +507,12 @@ impl AlsParser {
                         let mut p_val = 0.0f32;
                         for attr in e.attributes().flatten() {
                             match attr.key.as_ref() {
-                                b"Name" => {
-                                    p_name = String::from_utf8_lossy(&attr.value).to_string();
+                                "Name" => {
+                                    p_name =
+                                        String::from_utf8_lossy(attr.value.as_bytes()).to_string();
                                 }
-                                b"Value" => {
-                                    if let Ok(s) = std::str::from_utf8(&attr.value) {
+                                "Value" => {
+                                    if let Ok(s) = std::str::from_utf8(attr.value.as_bytes()) {
                                         p_val = s.parse().unwrap_or(0.0);
                                     }
                                 }
@@ -520,8 +526,8 @@ impl AlsParser {
                         }
                     } else if tag_name == "RootNote" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value"
-                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            if attr.key.as_ref() == "Value"
+                                && let Ok(s) = std::str::from_utf8(attr.value.as_bytes())
                             {
                                 scale.root_note = s.parse().unwrap_or(0);
                             }
@@ -532,8 +538,8 @@ impl AlsParser {
                                 == Some("ScaleInformation"))
                     {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value" {
-                                let s = String::from_utf8_lossy(&attr.value);
+                            if attr.key.as_ref() == "Value" {
+                                let s = String::from_utf8_lossy(attr.value.as_bytes());
                                 for st in ScaleType::ALL {
                                     if st.name().eq_ignore_ascii_case(&s) {
                                         scale.scale_type = *st;
@@ -545,16 +551,17 @@ impl AlsParser {
                         }
                     } else if tag_name == "IsActive" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value"
-                                && let Ok(s) = std::str::from_utf8(&attr.value)
+                            if attr.key.as_ref() == "Value"
+                                && let Ok(s) = std::str::from_utf8(attr.value.as_bytes())
                             {
                                 scale.is_active = s == "true" || s == "1";
                             }
                         }
                     } else if tag_name == "UserName" || tag_name == "EffectiveName" {
                         for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == b"Value" {
-                                let val = String::from_utf8_lossy(&attr.value).to_string();
+                            if attr.key.as_ref() == "Value" {
+                                let val =
+                                    String::from_utf8_lossy(attr.value.as_bytes()).to_string();
                                 if !val.is_empty() {
                                     if let Some(ref mut dev) = current_device {
                                         dev.name = val;
@@ -571,7 +578,8 @@ impl AlsParser {
                     }
                 }
                 Ok(Event::End(ref e)) => {
-                    let tag_name = String::from_utf8_lossy(e.name().as_ref()).to_string();
+                    let tag_name =
+                        String::from_utf8_lossy(e.name().as_ref().as_bytes()).to_string();
                     current_tag_stack.pop();
 
                     match tag_name.as_str() {

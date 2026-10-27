@@ -31,6 +31,7 @@ Preliminary review on 2026-10-27, not a full audit. The full audit is Phase 0 of
 | LC-002 | Low      | CWE-400  | Open   | WAV and sample loading in `livecraft-dsp`              | Cap file size and sample count before allocating                 |
 | LC-003 | Low      | CWE-1104 | Open   | Workspace dependencies                                 | Add `cargo-deny` advisories and licence checks to CI             |
 | LC-004 | Low      | CWE-20   | Open   | DSP output path                                        | Replace NaN and infinity with silence and clamp the final output |
+| LC-005 | Medium   | CWE-407  | Fixed  | `quick-xml` 0.36.2 (RUSTSEC-2026-0194, RUSTSEC-2026-0195) | Upgraded to 0.42.0 (Task P0-11) |
 
 ## Residual Risks And Required Actions
 

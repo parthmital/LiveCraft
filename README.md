@@ -74,7 +74,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 | `hound`               | 3.5                     | WAV read and write for render, stems, and samples                 |
 | `egui`, `eframe`      | 0.37 (wgpu renderer)    | Immediate-mode desktop GUI in `crates/livecraft-gui`              |
 | `image`               | 0.25 (PNG only)         | Saves `--screenshot` captures                                     |
-| `quick-xml`, `flate2` | 0.36, 1.0               | `.als` XML parsing and gzip in `crates/livecraft-core/src/als.rs` |
+| `quick-xml`, `flate2` | 0.42, 1.0               | `.als` XML parsing and gzip in `crates/livecraft-core/src/als.rs` |
 | `crossbeam-channel`   | 0.5                     | Bounded parameter queue from GUI or CLI to the audio callback     |
 | `clap`                | 4.5                     | CLI argument parsing in `crates/livecraft-cli`                    |
 | `serde`, `serde_json` | 1.0                     | JSON project format and `inspect --json`                          |
