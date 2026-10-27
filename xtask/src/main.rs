@@ -28,10 +28,10 @@ type Result<T = ()> = std::result::Result<T, String>;
 fn main() -> ExitCode {
     let command = std::env::args().nth(1);
     let result = match command.as_deref() {
-        Some("ci") => ci(),
+        Some("ci") => ci(std::env::args().any(|arg| arg == "--no-deny")),
         Some("layering") => layering(),
         Some("docs") => docs(),
-        _ => Err("usage: cargo xtask <ci|layering|docs>".to_string()),
+        _ => Err("usage: cargo xtask <ci [--no-deny]|layering|docs>".to_string()),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -42,7 +42,7 @@ fn main() -> ExitCode {
     }
 }
 
-fn ci() -> Result {
+fn ci(skip_deny: bool) -> Result {
     cargo(&["fmt", "--all", "--", "--check"])?;
     cargo(&[
         "clippy",
@@ -56,6 +56,11 @@ fn ci() -> Result {
     cargo(&["build", "--release", "--workspace"])?;
     layering()?;
     docs()?;
+    if skip_deny {
+        println!("xtask: skipping cargo-deny (--no-deny)");
+    } else {
+        deny()?;
+    }
     println!("xtask: all checks passed");
     Ok(())
 }
@@ -204,6 +209,35 @@ fn local_target(link: &str) -> Option<&str> {
     }
     let path = link.split('#').next().unwrap_or_default();
     (!path.is_empty()).then_some(path)
+}
+
+/// Runs `cargo-deny check` with the repo-local binary in `./.tools/bin` and `deny.toml`.
+fn deny() -> Result {
+    let exe = std::env::current_dir()
+        .map_err(|e| format!("no current directory: {e}"))?
+        .join(".tools")
+        .join("bin")
+        .join(if cfg!(windows) {
+            "cargo-deny.exe"
+        } else {
+            "cargo-deny"
+        });
+    if !exe.exists() {
+        return Err(format!(
+            "{} is missing; install it with `cargo install cargo-deny@0.20.2 --locked --root .tools`, or run `cargo xtask ci --no-deny`",
+            exe.display()
+        ));
+    }
+    println!("xtask: cargo-deny check");
+    let status = Command::new(&exe)
+        .arg("check")
+        .status()
+        .map_err(|e| format!("could not run cargo-deny: {e}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err("cargo-deny check failed".to_string())
+    }
 }
 
 #[cfg(test)]

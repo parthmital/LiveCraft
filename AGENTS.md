@@ -15,7 +15,9 @@ Last verified: 2026-10-27.
 - Run: `cargo run --bin livecraft -- <subcommand>`; GUI frame capture: `cargo run --bin livecraft -- gui --screenshot out.png --view session --theme dark`
 - Query the Live 12 manual: see `docs/live-manual.md`.
 
-- All checks in one command: `cargo xtask ci` (format check, clippy, tests, release build, crate layering, Markdown links). Run it before every commit.
+- All checks in one command: `cargo xtask ci` (format check, clippy, tests, release build, crate layering, Markdown links, cargo-deny). Run it before every commit.
+- First-time setup for cargo-deny: `cargo install cargo-deny@0.20.2 --locked --root .tools` (repo-local, Git-ignored). `cargo xtask ci --no-deny` skips it.
+- Dependency licence policy: `deny.toml`; never add a licence or advisory exception without a comment giving the reason.
 - Launch the app: `cargo dev` (GUI); `cargo dev -- <subcommand>` for the CLI, for example `cargo dev -- info demo.als`.
 - New crate: add it to `LAYERS` in `xtask/src/main.rs` with its allowed workspace dependencies, or `cargo xtask layering` fails.
 

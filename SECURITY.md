@@ -19,7 +19,8 @@ Last verified: 2026-10-27.
 
 - `unsafe_code = "forbid"` for every crate through `[workspace.lints]` in `Cargo.toml`.
 - CI runs `cargo clippy -D warnings` and tests on Windows and Ubuntu.
-- Planned in `plans/livecraft-1.0/` Phase 0: `cargo-deny` for advisories, licences, and sources; input size limits; `unsafe_code = "forbid"`; output safety limiter.
+- `cargo-deny` (`deny.toml`) checks advisories, licences, bans, and sources in `cargo xtask ci`.
+- Planned in `plans/livecraft-1.0/` Phase 0: input size limits and a non-finite output guard.
 
 ## Findings
 
@@ -29,7 +30,7 @@ Preliminary review on 2026-10-27, not a full audit. The full audit is Phase 0 of
 | ------ | -------- | -------- | ------ | ------------------------------------------------------ | ---------------------------------------------------------------- |
 | LC-001 | Medium   | CWE-409  | Open   | `crates/livecraft-core/src/als.rs` `decompress_to_xml` | Cap decompressed size and reject larger files                    |
 | LC-002 | Low      | CWE-400  | Open   | WAV and sample loading in `livecraft-dsp`              | Cap file size and sample count before allocating                 |
-| LC-003 | Low      | CWE-1104 | Open   | Workspace dependencies                                 | Add `cargo-deny` advisories and licence checks to CI             |
+| LC-003 | Low      | CWE-1104 | Fixed  | Workspace dependencies                                 | cargo-deny in cargo xtask ci (Task P0-12)                        |
 | LC-004 | Low      | CWE-20   | Open   | DSP output path                                        | Replace NaN and infinity with silence and clamp the final output |
 | LC-005 | Medium   | CWE-407  | Fixed  | `quick-xml` 0.36.2 (RUSTSEC-2026-0194, RUSTSEC-2026-0195) | Upgraded to 0.42.0 (Task P0-11) |
 
