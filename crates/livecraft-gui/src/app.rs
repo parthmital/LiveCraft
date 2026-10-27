@@ -468,12 +468,14 @@ impl eframe::App for LiveCraftApp {
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let engine_text = match &self.engine {
+                            Some(eng) => format!("{:.1} kHz", eng.sample_rate / 1000.0),
+                            None => "No audio device".to_string(),
+                        };
                         ui.label(
-                            egui::RichText::new(
-                                "Ableton Live 12 Compatible Engine | 44.1 kHz 24-bit",
-                            )
-                            .size(10.0)
-                            .color(Color32::from_rgb(0x70, 0x70, 0x70)),
+                            egui::RichText::new(engine_text)
+                                .size(10.0)
+                                .color(Color32::from_rgb(0x70, 0x70, 0x70)),
                         );
                     });
                 });

@@ -34,7 +34,7 @@ pub fn run_gui_with_options(options: GuiOptions) -> anyhow::Result<()> {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1280.0_f32, 800.0_f32])
             .with_min_inner_size([900.0_f32, 600.0_f32])
-            .with_title("LiveCraft - Ableton Live Workstation (Rust)"),
+            .with_title("LiveCraft"),
         ..Default::default()
     };
 

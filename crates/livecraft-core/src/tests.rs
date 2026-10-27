@@ -503,3 +503,12 @@ fn test_parse_real_ableton_template() {
         assert!(proj.tracks.len() >= 4);
     }
 }
+
+#[test]
+fn test_note_name_follows_live_convention() {
+    assert_eq!(note_name(60), "C3");
+    assert_eq!(note_name(69), "A3");
+    assert_eq!(note_name(0), "C-2");
+    assert_eq!(note_name(127), "G8");
+    assert_eq!(note_name(61), "C#3");
+}

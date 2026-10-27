@@ -152,7 +152,6 @@ Baseline on 2026-10-27: formatting clean, clippy clean, 44 tests pass. One test 
 - The audio callback locks a mutex shared with the GUI and outputs silence when it cannot get it, and it clones clip data every block. It is not real-time safe yet.
 - `.als` round trips are lossy, and only Live 12 sets were tested.
 - Most of Live 12 is missing: warping, recording, routing, racks, automation editing, most devices, plug-in hosting, MIDI input, and preferences. The [parity matrix](plans/livecraft-1.0/reference/PARITY-MATRIX.md) has the full list.
-- The CLI help says MIDI note 60 is C4. Live names it C3, and LiveCraft will follow Live.
 
 ## Contributing
 

@@ -698,6 +698,12 @@ pub const NOTE_NAMES: &[&str] = &[
     "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
 ];
 
+/// Note name in Live's convention, where MIDI note 60 is C3 and note 0 is C-2.
+pub fn note_name(pitch: u8) -> String {
+    let octave = i32::from(pitch / 12) - 2;
+    format!("{}{}", NOTE_NAMES[usize::from(pitch % 12)], octave)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ScaleConfig {
     pub root_note: u8, // 0 = C, 1 = C#, ..., 11 = B

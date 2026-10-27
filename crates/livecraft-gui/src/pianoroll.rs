@@ -258,8 +258,7 @@ pub fn render_piano_roll(
                         );
 
                         // Draw key note label
-                        let oct = (pitch / 12) as i32 - 1;
-                        let note_name = NOTE_NAMES[(pitch % 12) as usize];
+                        let label = livecraft_core::model::note_name(pitch);
                         let label_color = if is_root {
                             palette.amber
                         } else if is_black {
@@ -273,7 +272,7 @@ pub fn render_piano_roll(
                             painter.text(
                                 Pos2::new(k_rect.min.x + 3.0, k_rect.center().y),
                                 egui::Align2::LEFT_CENTER,
-                                format!("{}{}", note_name, oct),
+                                label,
                                 egui::FontId::proportional(8.5),
                                 label_color,
                             );
@@ -409,12 +408,11 @@ pub fn render_piano_roll(
                             );
 
                             // Note label
-                            let oct = (note.pitch / 12) as i32 - 1;
-                            let name = NOTE_NAMES[(note.pitch % 12) as usize];
+                            let label = livecraft_core::model::note_name(note.pitch);
                             grid_painter.text(
                                 Pos2::new(n_rect.min.x + 3.0, n_rect.center().y),
                                 egui::Align2::LEFT_CENTER,
-                                format!("{}{}", name, oct),
+                                label,
                                 egui::FontId::proportional(8.0),
                                 Color32::BLACK,
                             );

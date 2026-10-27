@@ -98,7 +98,7 @@ enum Commands {
     },
     /// Generate synth tone or phrase directly from CLI
     Synth {
-        /// MIDI note number (60 = C4, 69 = A4 440Hz)
+        /// MIDI note number (60 = C3, 69 = A3 = 440 Hz)
         #[arg(short, long, default_value_t = 60)]
         note: u8,
         /// Oscillator waveform
@@ -118,7 +118,7 @@ enum Commands {
         /// Output file (.als or .json)
         output: PathBuf,
     },
-    /// Launch the native Ableton Live 12 graphical desktop interface
+    /// Launch the desktop interface
     Gui {
         /// Optional project file to open
         project: Option<PathBuf>,
@@ -323,7 +323,7 @@ fn main() -> anyhow::Result<()> {
                 // Add demo notes
                 let mut clip = Clip::new_midi(1, "Lead Melody", 4.0);
                 if let ClipPayload::Midi(ref mut mdata) = clip.payload {
-                    mdata.notes.push(MidiNote::new(60, 0.0, 1.0, 100)); // C4
+                    mdata.notes.push(MidiNote::new(60, 0.0, 1.0, 100)); // C3
                     mdata.notes.push(MidiNote::new(62, 1.0, 1.0, 100)); // D4
                     mdata.notes.push(MidiNote::new(64, 2.0, 1.0, 100)); // E4
                     mdata.notes.push(MidiNote::new(67, 3.0, 1.0, 100)); // G4
