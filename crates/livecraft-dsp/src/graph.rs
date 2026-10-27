@@ -18,6 +18,12 @@ use crate::saturator::SaturatorEffect;
 use crate::simpler::SimplerInstrument;
 use livecraft_core::model::*;
 
+/// Replaces NaN and infinity with silence; finite samples pass through bit-exactly.
+#[inline]
+pub fn sanitize_output_sample(sample: f32) -> f32 {
+    if sample.is_finite() { sample } else { 0.0 }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct TrackMeter {
     pub peak_l: f32,
@@ -691,8 +697,8 @@ impl AudioGraph {
         self.process_buffer(&mut scratch_l[..frames], &mut scratch_r[..frames]);
 
         for (frame_idx, chunk) in data.chunks_mut(channels).enumerate() {
-            let l = scratch_l[frame_idx];
-            let r = scratch_r[frame_idx];
+            let l = sanitize_output_sample(scratch_l[frame_idx]);
+            let r = sanitize_output_sample(scratch_r[frame_idx]);
             if channels >= 2 {
                 chunk[0] = l;
                 chunk[1] = r;

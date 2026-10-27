@@ -799,3 +799,13 @@ fn test_simpler_playback_modes() {
     }
     assert!(slice_energy > 0.01);
 }
+
+#[test]
+fn test_sanitize_output_sample() {
+    assert_eq!(sanitize_output_sample(f32::NAN), 0.0);
+    assert_eq!(sanitize_output_sample(f32::INFINITY), 0.0);
+    assert_eq!(sanitize_output_sample(f32::NEG_INFINITY), 0.0);
+    for value in [0.0_f32, -0.0, 0.5, -1.0, 3.75, f32::MIN_POSITIVE, f32::MAX] {
+        assert_eq!(sanitize_output_sample(value).to_bits(), value.to_bits());
+    }
+}

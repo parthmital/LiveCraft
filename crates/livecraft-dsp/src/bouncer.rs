@@ -73,8 +73,8 @@ impl OfflineBouncer {
             graph.process_buffer(active_l, active_r);
 
             for i in 0..to_render {
-                let s_l = active_l[i].clamp(-1.0, 1.0);
-                let s_r = active_r[i].clamp(-1.0, 1.0);
+                let s_l = crate::graph::sanitize_output_sample(active_l[i]).clamp(-1.0, 1.0);
+                let s_r = crate::graph::sanitize_output_sample(active_r[i]).clamp(-1.0, 1.0);
 
                 if options.bits_per_sample == 16 {
                     writer.write_sample((s_l * 32767.0) as i16)?;

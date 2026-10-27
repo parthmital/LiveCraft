@@ -21,7 +21,7 @@ Last verified: 2026-10-27.
 - CI (`.github/workflows/ci.yml`) runs every check on Windows, Ubuntu, and macOS with read-only token permissions, SHA-pinned actions, and `persist-credentials: false`; a separate job runs `cargo-deny` (advisories, licences, bans, sources).
 - Dependabot (`.github/dependabot.yml`) proposes weekly Cargo and GitHub Actions updates.
 - `cargo-deny` (`deny.toml`) checks advisories, licences, bans, and sources in `cargo xtask ci`.
-- Planned in `plans/livecraft-1.0/` Phase 0: input size limits and a non-finite output guard.
+- Input size limits for `.als` (512 MiB XML) and WAV (2^28 samples), and a non-finite output guard on the driver and render paths.
 
 ## Findings
 
@@ -32,7 +32,7 @@ Preliminary review on 2026-10-27, not a full audit. The full audit is Phase 0 of
 | LC-001 | Medium   | CWE-409  | Fixed  | `crates/livecraft-core/src/als.rs` `decompress_to_xml` | 512 MiB cap in AlsParser::decompress_reader, test test_als_decompression_rejects_oversized_output (Task P0-14) |
 | LC-002 | Low      | CWE-400  | Fixed  | `AudioSampleCache::load_file_with_limit` in `crates/livecraft-dsp/src/audio_clip.rs` | 2^28-sample cap before decoding; tests in crates/livecraft-dsp/tests/wav_limits.rs (Task P0-15) |
 | LC-003 | Low      | CWE-1104 | Fixed  | Workspace dependencies                                 | cargo-deny in cargo xtask ci (Task P0-12)                        |
-| LC-004 | Low      | CWE-20   | Open   | DSP output path                                        | Replace NaN and infinity with silence and clamp the final output |
+| LC-004 | Low      | CWE-20   | Fixed  | `sanitize_output_sample` in `crates/livecraft-dsp/src/graph.rs` | Non-finite samples become 0.0 in the f32 driver path and in renders; test test_sanitize_output_sample (Task P0-16) |
 | LC-005 | Medium   | CWE-407  | Fixed  | `quick-xml` 0.36.2 (RUSTSEC-2026-0194, RUSTSEC-2026-0195) | Upgraded to 0.42.0 (Task P0-11) |
 
 ## Residual Risks And Required Actions
