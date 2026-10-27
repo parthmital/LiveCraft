@@ -127,7 +127,7 @@ No secrets, accounts, or network services are used.
 
 ## Testing and Code Quality
 
-The CI workflow ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs these on Windows and Ubuntu. Run them locally before every commit:
+`cargo xtask ci` runs all of these plus a crate layering check and a Markdown link check; run it before every commit. `cargo dev` launches the GUI. The CI workflow ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs the same checks. The individual commands are:
 
 ```bash
 cargo fmt --all -- --check

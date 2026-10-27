@@ -37,13 +37,14 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-gui/src/{view}.rs`              | One view or panel per file (transport, session, arrange, mixer, devices, pianoroll, browser) | `render_*` functions                                                       | widgets, style         |
 | `crates/livecraft-gui/src/widgets.rs`, `style.rs` | Knobs, faders, meters, LCD fields; palettes                                                  | `live_knob`, `live_fader`, `LivePalette`                                   | egui                   |
 | `crates/livecraft-cli/src/main.rs`                | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | every crate            |
+| `xtask/src/main.rs`                             | `cargo xtask ci`, layering check, docs link check                           | `cargo xtask <ci,layering,docs>`                             | none                         |
 
 ## Dependency Rules
 
 - `livecraft-core` has no audio, UI, or OS dependencies.
 - `livecraft-dsp` never depends on `livecraft-gui`.
 - Only `livecraft-cli` produces a binary.
-- Not enforced by tooling yet. The plan adds a layering check to `cargo xtask ci`.
+- Enforced by `cargo xtask layering` (part of `cargo xtask ci`): the `LAYERS` table in `xtask/src/main.rs` lists each package's allowed workspace dependencies.
 
 ## Where New Code Goes
 

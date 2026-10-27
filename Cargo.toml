@@ -5,6 +5,7 @@ members = [
     "crates/livecraft-dsp",
     "crates/livecraft-gui",
     "crates/livecraft-cli",
+    "xtask",
 ]
 
 [workspace.package]

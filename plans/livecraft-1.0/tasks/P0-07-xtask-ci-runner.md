@@ -55,7 +55,7 @@ One command, `cargo xtask ci`, runs format check, clippy, tests, release build, 
    ```toml
    [alias]
    xtask = "run --quiet --package xtask --"
-   dev = "run --bin livecraft --"
+   dev = "run --bin livecraft"
    ```
 
 4. In the root `Cargo.toml`, find:
@@ -163,3 +163,5 @@ One command, `cargo xtask ci`, runs format check, clippy, tests, release build, 
 - `cargo xtask ci` fails in a step that passed before this task: read the whole error; fix only within the listed files; at most 3 attempts.
 - Still failing after the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`: do not commit code. Append under Blockers in `CHECKLIST.md`: `P0-07, <date>: <what failed>`, the command, and the last 20 lines of output. Commit only `CHECKLIST.md`, push, end the run.
 - `git push` rejected: `git pull --rebase`, rerun Verify, push. If the rebase conflicts: `git rebase --abort`, then the Unblock Procedure in `plans/livecraft-1.0/START-HERE.md`.
+
+## Revision 2026-10-27: Corrected dev alias in step 3 to run without trailing -- so cargo dev -- <subcommand> and cargo dev -- --version do not duplicate --.
