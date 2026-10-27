@@ -4,6 +4,7 @@ members = [
     "crates/livecraft-model",
     "crates/livecraft-formats",
     "crates/livecraft-dsp",
+    "crates/livecraft-devices",
     "crates/livecraft-gui",
     "crates/livecraft-cli",
     "crates/livecraft-testkit",
@@ -45,3 +46,5 @@ insta = { version = "1.49.0", features = ["json"] }
 livecraft-testkit = { path = "crates/livecraft-testkit" }
 livecraft-model = { path = "crates/livecraft-model" }
 livecraft-formats = { path = "crates/livecraft-formats" }
+livecraft-devices = { path = "crates/livecraft-devices" }
+livecraft-dsp = { path = "crates/livecraft-dsp" }

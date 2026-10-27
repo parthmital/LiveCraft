@@ -15,7 +15,8 @@ use std::process::{Command, ExitCode};
 const LAYERS: &[(&str, &[&str])] = &[
     ("livecraft-model", &[]),
     ("livecraft-formats", &["livecraft-model"]),
-    ("livecraft-dsp", &["livecraft-model"]),
+    ("livecraft-devices", &["livecraft-model"]),
+    ("livecraft-dsp", &["livecraft-model", "livecraft-devices"]),
     (
         "livecraft-gui",
         &["livecraft-model", "livecraft-formats", "livecraft-dsp"],

@@ -1524,6 +1524,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "livecraft-devices"
+version = "0.1.0"
+dependencies = [
+ "livecraft-model",
+ "log",
+]
+
+[[package]]
 name = "livecraft-dsp"
 version = "0.1.0"
 dependencies = [
@@ -1531,6 +1539,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "hound",
+ "livecraft-devices",
  "livecraft-model",
  "log",
 ]

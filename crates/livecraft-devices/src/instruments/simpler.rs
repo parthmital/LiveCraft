@@ -1,7 +1,6 @@
 use crate::biquad::{BiquadFilter, FilterType};
 use crate::operator::AdsrEnvelope;
 use livecraft_model::model::Device;
-use std::path::Path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimplerPlaybackMode {
@@ -19,8 +18,14 @@ pub enum EnvStage {
     Release,
 }
 
-/// Decoded sample data played by Simpler; the same type the audio clip cache uses.
-pub type SimplerSample = crate::audio_clip::DecodedAudio;
+/// Decoded sample data played by Simpler.
+#[derive(Debug, Clone, Default)]
+pub struct SimplerSample {
+    pub channels: u16,
+    pub sample_rate: u32,
+    pub samples_l: Vec<f32>,
+    pub samples_r: Vec<f32>,
+}
 
 #[derive(Debug, Clone)]
 pub struct SimplerVoice {
@@ -186,13 +191,6 @@ impl SimplerInstrument {
         self.envelope.decay_sec = (dev.get_param("decay_ms") * 0.001).clamp(0.001, 10.0);
         self.envelope.sustain_level = dev.get_param("sustain").clamp(0.0, 1.0);
         self.envelope.release_sec = (dev.get_param("release_ms") * 0.001).clamp(0.001, 10.0);
-    }
-
-    pub fn load_wav<P: AsRef<Path>>(&mut self, path: P) -> anyhow::Result<()> {
-        self.sample = Some(crate::audio_clip::AudioSampleCache::load_file(
-            path.as_ref(),
-        )?);
-        Ok(())
     }
 
     pub fn note_on(&mut self, note: u8, velocity: u8) {
