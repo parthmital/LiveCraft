@@ -29,7 +29,7 @@ Preliminary review on 2026-10-27, not a full audit. The full audit is Phase 0 of
 
 | ID     | Severity | CWE      | Status | Location                                               | Fix                                                              |
 | ------ | -------- | -------- | ------ | ------------------------------------------------------ | ---------------------------------------------------------------- |
-| LC-001 | Medium   | CWE-409  | Open   | `crates/livecraft-core/src/als.rs` `decompress_to_xml` | Cap decompressed size and reject larger files                    |
+| LC-001 | Medium   | CWE-409  | Fixed  | `crates/livecraft-core/src/als.rs` `decompress_to_xml` | 512 MiB cap in AlsParser::decompress_reader, test test_als_decompression_rejects_oversized_output (Task P0-14) |
 | LC-002 | Low      | CWE-400  | Open   | WAV and sample loading in `livecraft-dsp`              | Cap file size and sample count before allocating                 |
 | LC-003 | Low      | CWE-1104 | Fixed  | Workspace dependencies                                 | cargo-deny in cargo xtask ci (Task P0-12)                        |
 | LC-004 | Low      | CWE-20   | Open   | DSP output path                                        | Replace NaN and infinity with silence and clamp the final output |

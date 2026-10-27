@@ -19,6 +19,8 @@ pub enum AlsError {
     Decompress(String),
     #[error("Invalid Ableton file format: {0}")]
     InvalidFormat(String),
+    #[error("Decompressed Live Set is larger than the {limit}-byte limit")]
+    TooLarge { limit: u64 },
 }
 
 pub fn map_ableton_tag_to_device_type(tag: &str) -> Option<DeviceType> {
@@ -136,15 +138,27 @@ fn handle_value_element(
 pub struct AlsParser;
 
 impl AlsParser {
-    /// Decompress a .als file into a UTF-8 XML string
+    /// Largest decompressed `.als` XML accepted, in bytes (512 MiB).
+    pub const MAX_XML_BYTES: u64 = 512 * 1024 * 1024;
+
+    /// Decompress a .als file into a UTF-8 XML string, rejecting oversized content.
     pub fn decompress_to_xml<P: AsRef<Path>>(path: P) -> Result<String, AlsError> {
         let file = File::open(path)?;
-        let mut decoder = GzDecoder::new(file);
-        let mut xml = String::new();
-        decoder.read_to_string(&mut xml).map_err(|e| {
-            AlsError::Decompress(format!("Failed to decompress gzip stream: {}", e))
-        })?;
-        Ok(xml)
+        Self::decompress_reader(file, Self::MAX_XML_BYTES)
+    }
+
+    /// Decompress gzip data from `reader` into UTF-8 text of at most `limit` bytes.
+    pub fn decompress_reader<R: Read>(reader: R, limit: u64) -> Result<String, AlsError> {
+        let mut bytes = Vec::new();
+        GzDecoder::new(reader)
+            .take(limit.saturating_add(1))
+            .read_to_end(&mut bytes)
+            .map_err(|e| AlsError::Decompress(format!("Failed to decompress gzip stream: {e}")))?;
+        if bytes.len() as u64 > limit {
+            return Err(AlsError::TooLarge { limit });
+        }
+        String::from_utf8(bytes)
+            .map_err(|e| AlsError::Decompress(format!("Live Set XML is not UTF-8: {e}")))
     }
 
     /// Parse a .als file directly into a LiveCraft `Project`

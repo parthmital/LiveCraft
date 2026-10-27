@@ -512,3 +512,17 @@ fn test_note_name_follows_live_convention() {
     assert_eq!(note_name(127), "G8");
     assert_eq!(note_name(61), "C#3");
 }
+
+#[test]
+fn test_als_decompression_rejects_oversized_output() {
+    use std::io::Write;
+    let mut encoder = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+    encoder.write_all(&[b'a'; 4096]).unwrap();
+    let gz = encoder.finish().unwrap();
+
+    let err = AlsParser::decompress_reader(gz.as_slice(), 1024).unwrap_err();
+    assert!(matches!(err, AlsError::TooLarge { limit: 1024 }));
+
+    let xml = AlsParser::decompress_reader(gz.as_slice(), 4096).unwrap();
+    assert_eq!(xml.len(), 4096);
+}

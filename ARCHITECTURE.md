@@ -74,7 +74,6 @@ Each is scheduled in `plans/livecraft-1.0/`.
 | GUI mutates `Project` directly; most edits bypass `CommandHistory`, so undo covers few actions                                     | `crates/livecraft-gui/src/*.rs`                         | 1            |
 | Entity identity is `usize` indexes in commands and messages, which break on insert or delete                                       | `command.rs`, `engine.rs`                               | 1            |
 | `.als` writer regenerates XML from the model; every unknown element is lost                                                        | `als.rs`                                                | 2            |
-| `.als` decompression has no size limit                                                                                             | `als.rs` `decompress_to_xml`                            | 0            |
 | Session clip slots without an active clip are played back as a sequential timeline                                                 | `graph.rs` `dispatch_clip_events`                       | 1            |
 | Large files mixing concerns: `model.rs` (1208 lines), `graph.rs` (1072), `devices.rs` (990)                                        | as listed                                               | 1            |
 | GUI layout uses estimated sizes and colours, not measurements of Live                                                              | `crates/livecraft-gui/src/*.rs`                         | 3            |
