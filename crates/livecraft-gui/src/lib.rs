@@ -30,7 +30,8 @@ pub fn run_gui(project_path: Option<&Path>) -> anyhow::Result<()> {
 
 pub fn run_gui_with_options(options: GuiOptions) -> anyhow::Result<()> {
     let native_options = eframe::NativeOptions {
-        renderer: eframe::Renderer::Glow,
+        renderer: eframe::Renderer::Wgpu,
+        wgpu_options: wgpu_options(),
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1280.0_f32, 800.0_f32])
             .with_min_inner_size([900.0_f32, 600.0_f32])
@@ -44,4 +45,18 @@ pub fn run_gui_with_options(options: GuiOptions) -> anyhow::Result<()> {
         Box::new(move |_cc| Ok(Box::new(LiveCraftApp::new_with_options(options)))),
     )
     .map_err(|e| anyhow::anyhow!("GUI error: {}", e))
+}
+
+/// wgpu setup: DX12 on Windows unless `WGPU_BACKEND` is set, because the Vulkan
+/// backend crashed on the reference Windows machine (2026-10-27).
+fn wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
+    use eframe::egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupCreateNew};
+    let mut setup = WgpuSetupCreateNew::without_display_handle();
+    if cfg!(windows) && std::env::var_os("WGPU_BACKEND").is_none() {
+        setup.instance_descriptor.backends = eframe::wgpu::Backends::DX12;
+    }
+    WgpuConfiguration {
+        wgpu_setup: WgpuSetup::CreateNew(setup),
+        ..Default::default()
+    }
 }

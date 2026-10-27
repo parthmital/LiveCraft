@@ -44,7 +44,7 @@ cargo run --bin livecraft -- gui
 | `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                         | Permission denied: use a writable folder                                                      |
 | `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal      | `Decompression failed`: the file is not a gzip `.als`                                         |
 | `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                             | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
-| `livecraft gui`          | Opens the desktop window                | A Live-style window with Session View         | Window fails to open: update GPU drivers (the current renderer needs OpenGL 3.3)              |
+| `livecraft gui`          | Opens the desktop window                | A Live-style window with Session View         | Window fails to open: update GPU drivers; on Windows set WGPU_BACKEND=gl to try OpenGL       |
 
 `cargo run --bin livecraft -- <args>` and `target/debug/livecraft <args>` are equivalent. The first build takes several minutes.
 
@@ -72,7 +72,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 | Rust                  | 2024 edition            | Whole workspace                                                   |
 | `cpal`                | 0.18                    | Audio output stream in `crates/livecraft-dsp/src/engine.rs`       |
 | `hound`               | 3.5                     | WAV read and write for render, stems, and samples                 |
-| `egui`, `eframe`      | 0.29 (glow renderer)    | Immediate-mode desktop GUI in `crates/livecraft-gui`              |
+| `egui`, `eframe`      | 0.37 (wgpu renderer)    | Immediate-mode desktop GUI in `crates/livecraft-gui`              |
 | `image`               | 0.25 (PNG only)         | Saves `--screenshot` captures                                     |
 | `quick-xml`, `flate2` | 0.36, 1.0               | `.als` XML parsing and gzip in `crates/livecraft-core/src/als.rs` |
 | `crossbeam-channel`   | 0.5                     | Bounded parameter queue from GUI or CLI to the audio callback     |
@@ -146,6 +146,7 @@ Baseline on 2026-10-27: formatting clean, clippy clean, 44 tests pass. One test 
 | `play` or GUI has no sound            | No default output device, or engine failed | `RUST_LOG=debug livecraft play`  | Select a default output device in the OS                |
 | Audio crackles while using the GUI    | GUI and audio thread share a mutex         | Reproduce while dragging a fader | Known issue, fixed in the plan's Phase 1                |
 | `.als` loses data after `convert`     | Writer only emits elements the model knows | Compare XML of input and output  | Known issue, fixed in the plan's Phase 2                |
+| GUI crashes at start on Windows       | GPU driver problem in the selected wgpu backend | WGPU_BACKEND=gl cargo dev   | Default is DX12; try gl, or update drivers              |
 
 ## Known Limitations
 

@@ -1,6 +1,6 @@
 use crate::style::LivePalette;
 use crate::widgets::{live_divider, live_lcd_box, live_toggle_button};
-use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use livecraft_core::model::{NOTE_NAMES, Project, ScaleType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -47,7 +47,7 @@ pub fn render_transport_bar(
             } else {
                 palette.button_idle
             };
-            painter.rect_filled(b_rect, Rounding::same(2.0), bg);
+            painter.rect_filled(b_rect, CornerRadius::same(2), bg);
             let border_color = if browser_visible {
                 palette.amber
             } else {
@@ -55,8 +55,9 @@ pub fn render_transport_bar(
             };
             painter.rect_stroke(
                 b_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(1.0_f32, border_color),
+                eframe::egui::StrokeKind::Middle,
             );
 
             // Sidebar icon: vertical line + left arrow / amber indicator
@@ -167,10 +168,10 @@ pub fn render_transport_bar(
             } else {
                 palette.button_idle
             };
-            painter.rect_filled(metro_rect, Rounding::same(2.0), bg);
+            painter.rect_filled(metro_rect, CornerRadius::same(2), bg);
             painter.rect_stroke(
                 metro_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(
                     1.0_f32,
                     if metro_active {
@@ -179,6 +180,7 @@ pub fn render_transport_bar(
                         Color32::from_rgb(0x3a, 0x3a, 0x3a)
                     },
                 ),
+                eframe::egui::StrokeKind::Middle,
             );
 
             let icon_color = if metro_active {
@@ -215,10 +217,10 @@ pub fn render_transport_bar(
             } else {
                 palette.button_idle
             };
-            painter.rect_filled(badge_rect, Rounding::same(2.0), bg);
+            painter.rect_filled(badge_rect, CornerRadius::same(2), bg);
             painter.rect_stroke(
                 badge_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(
                     1.0_f32,
                     if scale_active {
@@ -227,6 +229,7 @@ pub fn render_transport_bar(
                         Color32::from_rgb(0x38, 0x38, 0x38)
                     },
                 ),
+                eframe::egui::StrokeKind::Middle,
             );
             painter.text(
                 badge_rect.center(),
@@ -300,10 +303,10 @@ pub fn render_transport_bar(
             } else {
                 palette.button_idle
             };
-            painter.rect_filled(play_rect, Rounding::same(2.0), bg);
+            painter.rect_filled(play_rect, CornerRadius::same(2), bg);
             painter.rect_stroke(
                 play_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(
                     1.0_f32,
                     if is_playing {
@@ -312,6 +315,7 @@ pub fn render_transport_bar(
                         Color32::from_rgb(0x3a, 0x3a, 0x3a)
                     },
                 ),
+                eframe::egui::StrokeKind::Middle,
             );
 
             let c = play_rect.center();
@@ -343,15 +347,16 @@ pub fn render_transport_bar(
             } else {
                 palette.button_idle
             };
-            painter.rect_filled(stop_rect, Rounding::same(2.0), bg);
+            painter.rect_filled(stop_rect, CornerRadius::same(2), bg);
             painter.rect_stroke(
                 stop_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(1.0_f32, Color32::from_rgb(0x3a, 0x3a, 0x3a)),
+                eframe::egui::StrokeKind::Middle,
             );
             let c = stop_rect.center();
             let sq = Rect::from_center_size(c, Vec2::new(8.0, 8.0));
-            painter.rect_filled(sq, Rounding::ZERO, Color32::from_rgb(0xbb, 0xbb, 0xbb));
+            painter.rect_filled(sq, CornerRadius::ZERO, Color32::from_rgb(0xbb, 0xbb, 0xbb));
         }
         if stop_resp.clicked() {
             project.transport.is_playing = false;
@@ -371,10 +376,10 @@ pub fn render_transport_bar(
             } else {
                 palette.button_idle
             };
-            painter.rect_filled(rec_rect, Rounding::same(2.0), bg);
+            painter.rect_filled(rec_rect, CornerRadius::same(2), bg);
             painter.rect_stroke(
                 rec_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(
                     1.0_f32,
                     if is_recording {
@@ -383,6 +388,7 @@ pub fn render_transport_bar(
                         Color32::from_rgb(0x3a, 0x3a, 0x3a)
                     },
                 ),
+                eframe::egui::StrokeKind::Middle,
             );
             let c = rec_rect.center();
             let dot_color = if is_recording {
@@ -409,10 +415,10 @@ pub fn render_transport_bar(
             } else {
                 palette.button_idle
             };
-            painter.rect_filled(arm_rect, Rounding::same(2.0), bg);
+            painter.rect_filled(arm_rect, CornerRadius::same(2), bg);
             painter.rect_stroke(
                 arm_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(
                     1.0_f32,
                     if is_dark {
@@ -421,6 +427,7 @@ pub fn render_transport_bar(
                         Color32::from_rgb(0x9c, 0x9c, 0x9a)
                     },
                 ),
+                eframe::egui::StrokeKind::Middle,
             );
             let c = arm_rect.center();
             painter.circle_stroke(
@@ -464,10 +471,10 @@ pub fn render_transport_bar(
             } else {
                 palette.button_idle
             };
-            painter.rect_filled(loop_rect, Rounding::same(2.0), bg);
+            painter.rect_filled(loop_rect, CornerRadius::same(2), bg);
             painter.rect_stroke(
                 loop_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(
                     1.0_f32,
                     if loop_active {
@@ -478,6 +485,7 @@ pub fn render_transport_bar(
                         Color32::from_rgb(0x9c, 0x9c, 0x9a)
                     },
                 ),
+                eframe::egui::StrokeKind::Middle,
             );
             let icon_col = if loop_active {
                 Color32::BLACK
@@ -562,11 +570,12 @@ pub fn render_transport_bar(
         let (cpu_rect, _) = ui.allocate_exact_size(Vec2::new(46.0, 24.0), Sense::hover());
         if ui.is_rect_visible(cpu_rect) {
             let painter = ui.painter();
-            painter.rect_filled(cpu_rect, Rounding::same(2.0), palette.lcd_bg);
+            painter.rect_filled(cpu_rect, CornerRadius::same(2), palette.lcd_bg);
             painter.rect_stroke(
                 cpu_rect,
-                Rounding::same(2.0),
+                CornerRadius::same(2),
                 Stroke::new(1.0_f32, Color32::from_rgb(0x35, 0x35, 0x35)),
+                eframe::egui::StrokeKind::Middle,
             );
 
             let load_norm = (cpu_percent / 100.0).clamp(0.0, 1.0);
@@ -577,7 +586,7 @@ pub fn render_transport_bar(
             );
             painter.rect_filled(
                 bar_rect,
-                Rounding::same(1.0),
+                CornerRadius::same(1),
                 Color32::from_rgb(0x28, 0x88, 0x44),
             );
 

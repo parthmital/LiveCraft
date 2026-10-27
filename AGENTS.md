@@ -46,7 +46,7 @@ Last verified: 2026-10-27.
 - **`docs/ableton-live-12-reference-manual.pdf` missing**: it is Git-ignored (108 MB). Ask the owner for it; do not download from unofficial sources.
 - **Manual screenshots are tiled into many small images**: render whole pages to PNG instead of extracting images (`plans/livecraft-1.0/tools/render_manual_pages.py`).
 - **`test_parse_real_ableton_template` passes without asserting anything**: it only asserts when Live 12 Suite is installed at `C:\ProgramData\Ableton\Live 12 Suite`.
-- **GUI screenshot needs a display and OpenGL 3.3**: `--screenshot` opens a real window for one frame.
+- **GUI screenshot needs a display and a GPU**: `--screenshot` opens a real window and saves frame 5. wgpu uses DX12 on Windows by default (Vulkan crashed on the reference machine); override with `WGPU_BACKEND=gl` or `vulkan`.
 - **Line-ending-only diffs**: `.gitattributes` sets `text=auto`; use `git diff --ignore-cr-at-eol --stat`.
 - **Bash tool on Windows**: write scripts, JSON, and regexes to files instead of passing backslashes through the shell.
 

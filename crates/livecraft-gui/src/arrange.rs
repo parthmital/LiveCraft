@@ -1,5 +1,5 @@
 use crate::style::LivePalette;
-use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use livecraft_core::model::{ClipPayload, Project};
 use livecraft_core::theme::parse_hex_color;
 
@@ -47,11 +47,12 @@ pub fn render_arrangement_view(
                     );
                     let painter = ui.painter();
 
-                    painter.rect_filled(ruler_rect, Rounding::ZERO, palette.ruler_bg);
+                    painter.rect_filled(ruler_rect, CornerRadius::ZERO, palette.ruler_bg);
                     painter.rect_stroke(
                         ruler_rect,
-                        Rounding::ZERO,
+                        CornerRadius::ZERO,
                         Stroke::new(1.0_f32, palette.panel_border),
+                        eframe::egui::StrokeKind::Middle,
                     );
 
                     // Loop Brace
@@ -64,7 +65,7 @@ pub fn render_arrangement_view(
                             Pos2::new(loop_x_start, ruler_rect.min.y + 1.0),
                             Vec2::new(loop_w, 4.0),
                         );
-                        painter.rect_filled(brace_rect, Rounding::same(1.0), palette.amber);
+                        painter.rect_filled(brace_rect, CornerRadius::same(1), palette.amber);
 
                         // Loop start & end flags
                         painter.rect_filled(
@@ -72,7 +73,7 @@ pub fn render_arrangement_view(
                                 Pos2::new(loop_x_start, ruler_rect.min.y + 1.0),
                                 Vec2::new(2.0, 8.0),
                             ),
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             palette.amber,
                         );
                         painter.rect_filled(
@@ -80,7 +81,7 @@ pub fn render_arrangement_view(
                                 Pos2::new(loop_x_start + loop_w - 2.0, ruler_rect.min.y + 1.0),
                                 Vec2::new(2.0, 8.0),
                             ),
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             palette.amber,
                         );
                     }
@@ -160,11 +161,12 @@ pub fn render_arrangement_view(
                         ui.allocate_exact_size(Vec2::new(track_header_width, 28.0), Sense::hover());
                     if ui.is_rect_visible(spacer_rect) {
                         let painter = ui.painter();
-                        painter.rect_filled(spacer_rect, Rounding::ZERO, palette.button_idle);
+                        painter.rect_filled(spacer_rect, CornerRadius::ZERO, palette.button_idle);
                         painter.rect_stroke(
                             spacer_rect,
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             Stroke::new(1.0_f32, palette.panel_border),
+                            eframe::egui::StrokeKind::Middle,
                         );
 
                         // "Set" button
@@ -172,11 +174,12 @@ pub fn render_arrangement_view(
                             Pos2::new(spacer_rect.min.x + 8.0, spacer_rect.min.y + 4.0),
                             Vec2::new(32.0, 20.0),
                         );
-                        painter.rect_filled(set_box, Rounding::same(2.0), palette.surface_area);
+                        painter.rect_filled(set_box, CornerRadius::same(2), palette.surface_area);
                         painter.rect_stroke(
                             set_box,
-                            Rounding::same(2.0),
+                            CornerRadius::same(2),
                             Stroke::new(1.0_f32, palette.panel_border),
+                            eframe::egui::StrokeKind::Middle,
                         );
                         painter.text(
                             set_box.center(),
@@ -226,18 +229,19 @@ pub fn render_arrangement_view(
                         } else {
                             Color32::from_rgb(0xbb, 0xbb, 0xb9)
                         };
-                        lane_painter.rect_filled(lane_rect, Rounding::ZERO, lane_bg);
+                        lane_painter.rect_filled(lane_rect, CornerRadius::ZERO, lane_bg);
                         lane_painter.rect_stroke(
                             lane_rect,
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             Stroke::new(1.0_f32, palette.panel_border),
+                            eframe::egui::StrokeKind::Middle,
                         );
 
                         // Left track color stripe
                         let [r, g, b, _] = parse_hex_color(&trk.color);
                         lane_painter.rect_filled(
                             Rect::from_min_size(lane_rect.min, Vec2::new(3.0, lane_rect.height())),
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             Color32::from_rgb(r, g, b),
                         );
 
@@ -310,11 +314,16 @@ pub fn render_arrangement_view(
                             } else {
                                 Color32::from_rgba_unmultiplied(cr, cg, cb, 140)
                             };
-                            lane_painter.rect_filled(clip_rect, Rounding::same(2.0), clip_body_bg);
+                            lane_painter.rect_filled(
+                                clip_rect,
+                                CornerRadius::same(2),
+                                clip_body_bg,
+                            );
                             lane_painter.rect_stroke(
                                 clip_rect,
-                                Rounding::same(2.0),
+                                CornerRadius::same(2),
                                 Stroke::new(1.0_f32, clip_color),
+                                eframe::egui::StrokeKind::Middle,
                             );
 
                             // Clip Title Header Bar
@@ -322,7 +331,7 @@ pub fn render_arrangement_view(
                                 clip_rect.min,
                                 Vec2::new(clip_rect.width(), 14.0),
                             );
-                            lane_painter.rect_filled(hdr_bar, Rounding::same(2.0), clip_color);
+                            lane_painter.rect_filled(hdr_bar, CornerRadius::same(2), clip_color);
                             lane_painter.text(
                                 Pos2::new(hdr_bar.min.x + 4.0, hdr_bar.center().y),
                                 egui::Align2::LEFT_CENTER,
@@ -349,7 +358,7 @@ pub fn render_arrangement_view(
                                     );
                                     lane_painter.rect_filled(
                                         n_rect,
-                                        Rounding::same(0.5),
+                                        CornerRadius::same(0),
                                         if is_dark {
                                             Color32::WHITE
                                         } else {
@@ -395,13 +404,18 @@ pub fn render_arrangement_view(
                                 palette.button_idle
                             };
 
-                            painter.rect_filled(hdr_rect, Rounding::same(1.0), bg_color);
+                            painter.rect_filled(hdr_rect, CornerRadius::same(1), bg_color);
                             let border_stroke = if is_selected {
                                 Stroke::new(1.5_f32, palette.amber)
                             } else {
                                 Stroke::new(1.0_f32, palette.panel_border)
                             };
-                            painter.rect_stroke(hdr_rect, Rounding::same(1.0), border_stroke);
+                            painter.rect_stroke(
+                                hdr_rect,
+                                CornerRadius::same(1),
+                                border_stroke,
+                                eframe::egui::StrokeKind::Middle,
+                            );
 
                             // Left color accent bar
                             let [r, g, b, _] = parse_hex_color(&trk.color);
@@ -410,7 +424,7 @@ pub fn render_arrangement_view(
                                     hdr_rect.min,
                                     Vec2::new(4.0, hdr_rect.height()),
                                 ),
-                                Rounding::same(1.0),
+                                CornerRadius::same(1),
                                 Color32::from_rgb(r, g, b),
                             );
 
@@ -467,11 +481,12 @@ pub fn render_arrangement_view(
                                 Pos2::new(hdr_rect.max.x - 52.0, btn_y),
                                 Vec2::new(18.0, 18.0),
                             );
-                            painter.rect_filled(act_rect, Rounding::same(2.0), act_color);
+                            painter.rect_filled(act_rect, CornerRadius::same(2), act_color);
                             painter.rect_stroke(
                                 act_rect,
-                                Rounding::same(2.0),
+                                CornerRadius::same(2),
                                 Stroke::new(1.0_f32, palette.panel_border),
+                                eframe::egui::StrokeKind::Middle,
                             );
                             painter.text(
                                 act_rect.center(),
@@ -494,11 +509,12 @@ pub fn render_arrangement_view(
                                 Pos2::new(hdr_rect.max.x - 30.0, btn_y),
                                 Vec2::new(18.0, 18.0),
                             );
-                            painter.rect_filled(solo_rect, Rounding::same(2.0), solo_color);
+                            painter.rect_filled(solo_rect, CornerRadius::same(2), solo_color);
                             painter.rect_stroke(
                                 solo_rect,
-                                Rounding::same(2.0),
+                                CornerRadius::same(2),
                                 Stroke::new(1.0_f32, palette.panel_border),
+                                eframe::egui::StrokeKind::Middle,
                             );
                             painter.text(
                                 solo_rect.center(),
@@ -521,11 +537,12 @@ pub fn render_arrangement_view(
                                 Pos2::new(hdr_rect.max.x - 10.0, btn_y),
                                 Vec2::new(16.0, 16.0),
                             );
-                            painter.rect_filled(arm_rect, Rounding::same(2.0), arm_color);
+                            painter.rect_filled(arm_rect, CornerRadius::same(2), arm_color);
                             painter.rect_stroke(
                                 arm_rect,
-                                Rounding::same(2.0),
+                                CornerRadius::same(2),
                                 Stroke::new(1.0_f32, palette.panel_border),
+                                eframe::egui::StrokeKind::Middle,
                             );
                             painter.circle_filled(
                                 arm_rect.center(),

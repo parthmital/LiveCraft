@@ -1,5 +1,5 @@
 use crate::style::LivePalette;
-use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use livecraft_core::model::{Clip, ClipPayload, MidiNote, NOTE_NAMES, ScaleConfig, ScaleType};
 use livecraft_core::theme::parse_hex_color;
 
@@ -32,7 +32,7 @@ pub fn render_piano_roll(
     let grid_width = total_beats * pixels_per_beat;
 
     // Retrieve or initialize Fold state in egui memory
-    let fold_id = ui.id().with("pianoroll_fold_scale");
+    let fold_id = ui.scope_id().with("pianoroll_fold_scale");
     let mut fold_scale: bool = ui.data_mut(|d| *d.get_temp_mut_or(fold_id, false));
 
     // Determine list of visible pitches (folded or unfolded)
@@ -250,11 +250,12 @@ pub fn render_piano_roll(
                             Color32::from_rgb(0xc8, 0xc8, 0xc8)
                         };
 
-                        painter.rect_filled(k_rect, Rounding::ZERO, fill);
+                        painter.rect_filled(k_rect, CornerRadius::ZERO, fill);
                         painter.rect_stroke(
                             k_rect,
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             Stroke::new(0.5_f32, Color32::from_rgb(0x40, 0x40, 0x40)),
+                            eframe::egui::StrokeKind::Middle,
                         );
 
                         // Draw key note label
@@ -292,7 +293,7 @@ pub fn render_piano_roll(
                     } else {
                         Color32::from_rgb(0xd4, 0xd4, 0xd2)
                     };
-                    grid_painter.rect_filled(grid_rect, Rounding::ZERO, grid_base_bg);
+                    grid_painter.rect_filled(grid_rect, CornerRadius::ZERO, grid_base_bg);
 
                     // Horizontal pitch lines
                     for (row_idx, &pitch) in visible_pitches.iter().enumerate() {
@@ -332,7 +333,7 @@ pub fn render_piano_roll(
                                 Pos2::new(grid_rect.min.x, row_y),
                                 Vec2::new(grid_width, row_height),
                             ),
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             bg,
                         );
 
@@ -400,11 +401,12 @@ pub fn render_piano_roll(
                                 Vec2::new(n_w, row_height - 2.0),
                             );
 
-                            grid_painter.rect_filled(n_rect, Rounding::same(2.0), note_color);
+                            grid_painter.rect_filled(n_rect, CornerRadius::same(2), note_color);
                             grid_painter.rect_stroke(
                                 n_rect,
-                                Rounding::same(2.0),
+                                CornerRadius::same(2),
                                 Stroke::new(1.0_f32, Color32::WHITE),
+                                eframe::egui::StrokeKind::Middle,
                             );
 
                             // Note label

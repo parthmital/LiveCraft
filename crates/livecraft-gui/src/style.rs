@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, Margin, Rounding, Stroke, Vec2, Visuals};
+use eframe::egui::{self, Color32, CornerRadius, Margin, Stroke, Vec2, Visuals};
 
 #[derive(Debug, Clone)]
 pub struct LivePalette {
@@ -132,31 +132,31 @@ pub fn apply_live_style(ctx: &egui::Context, palette: &LivePalette) {
     // Ableton Live 12's signature crisp flat widgets
     visuals.widgets.noninteractive.bg_fill = palette.surface_area;
     visuals.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, palette.panel_border);
-    visuals.widgets.noninteractive.rounding = Rounding::same(2.0);
+    visuals.widgets.noninteractive.corner_radius = CornerRadius::same(2);
 
     visuals.widgets.inactive.bg_fill = palette.button_idle;
     visuals.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, palette.panel_border);
-    visuals.widgets.inactive.rounding = Rounding::same(2.0);
+    visuals.widgets.inactive.corner_radius = CornerRadius::same(2);
 
     visuals.widgets.hovered.bg_fill = palette.button_hover;
     visuals.widgets.hovered.bg_stroke = Stroke::new(1.0_f32, palette.amber);
-    visuals.widgets.hovered.rounding = Rounding::same(2.0);
+    visuals.widgets.hovered.corner_radius = CornerRadius::same(2);
 
     visuals.widgets.active.bg_fill = palette.amber;
     visuals.widgets.active.fg_stroke = Stroke::new(1.0_f32, Color32::BLACK);
-    visuals.widgets.active.rounding = Rounding::same(2.0);
+    visuals.widgets.active.corner_radius = CornerRadius::same(2);
 
     visuals.widgets.open.bg_fill = palette.surface_highlight;
     visuals.widgets.open.bg_stroke = Stroke::new(1.0_f32, palette.amber);
-    visuals.widgets.open.rounding = Rounding::same(2.0);
+    visuals.widgets.open.corner_radius = CornerRadius::same(2);
 
     visuals.selection.bg_fill = palette.amber;
     visuals.selection.stroke = Stroke::new(1.0_f32, palette.amber);
 
-    let mut style = (*ctx.style()).clone();
+    let mut style = (*ctx.global_style()).clone();
     style.visuals = visuals;
     style.spacing.item_spacing = Vec2::new(3.0, 3.0);
     style.spacing.button_padding = Vec2::new(5.0, 2.0);
-    style.spacing.window_margin = Margin::same(2.0);
-    ctx.set_style(style);
+    style.spacing.window_margin = Margin::same(2);
+    ctx.set_global_style(style);
 }

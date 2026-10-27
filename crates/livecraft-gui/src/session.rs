@@ -2,7 +2,7 @@ use crate::mixer::{
     render_master_mixer_strip, render_return_mixer_strip, render_track_mixer_strip,
 };
 use crate::style::LivePalette;
-use eframe::egui::{self, Color32, Pos2, Rect, Rounding, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use livecraft_core::model::{Clip, Project, TrackType};
 use livecraft_core::theme::parse_hex_color;
 use livecraft_dsp::graph::TrackMeter;
@@ -66,13 +66,18 @@ pub fn render_session_view(
                                 palette.button_idle
                             };
 
-                            painter.rect_filled(hdr_rect, Rounding::same(2.0), bg_color);
+                            painter.rect_filled(hdr_rect, CornerRadius::same(2), bg_color);
                             let border_stroke = if is_selected {
                                 Stroke::new(1.5_f32, palette.amber)
                             } else {
                                 Stroke::new(1.0_f32, palette.panel_border)
                             };
-                            painter.rect_stroke(hdr_rect, Rounding::same(2.0), border_stroke);
+                            painter.rect_stroke(
+                                hdr_rect,
+                                CornerRadius::same(2),
+                                border_stroke,
+                                eframe::egui::StrokeKind::Middle,
+                            );
 
                             // Track color accent bar on top edge of header
                             let [r, g, b, _] = parse_hex_color(&trk.color);
@@ -81,7 +86,7 @@ pub fn render_session_view(
                                 Pos2::new(hdr_rect.min.x + 1.0, hdr_rect.min.y + 1.0),
                                 Vec2::new(hdr_rect.width() - 2.0, 3.0),
                             );
-                            painter.rect_filled(color_bar, Rounding::ZERO, trk_color);
+                            painter.rect_filled(color_bar, CornerRadius::ZERO, trk_color);
 
                             // Track Number and Name
                             let text_color = if is_selected {
@@ -158,10 +163,10 @@ pub fn render_session_view(
                                     }
                                 };
 
-                                painter.rect_filled(slot_rect, Rounding::same(2.0), slot_bg);
+                                painter.rect_filled(slot_rect, CornerRadius::same(2), slot_bg);
                                 painter.rect_stroke(
                                     slot_rect,
-                                    Rounding::same(2.0),
+                                    CornerRadius::same(2),
                                     Stroke::new(
                                         1.0_f32,
                                         if is_slot_playing {
@@ -170,6 +175,7 @@ pub fn render_session_view(
                                             palette.clip_slot_border
                                         },
                                     ),
+                                    eframe::egui::StrokeKind::Middle,
                                 );
 
                                 // Left solid clip color indicator bar
@@ -177,7 +183,7 @@ pub fn render_session_view(
                                     Pos2::new(slot_rect.min.x + 1.0, slot_rect.min.y + 1.0),
                                     Vec2::new(4.0, slot_rect.height() - 2.0),
                                 );
-                                painter.rect_filled(pill_rect, Rounding::same(1.0), clip_color);
+                                painter.rect_filled(pill_rect, CornerRadius::same(1), clip_color);
 
                                 // Playhead progress highlight during playback
                                 if is_slot_playing {
@@ -191,7 +197,7 @@ pub fn render_session_view(
                                     );
                                     painter.rect_filled(
                                         prog_rect,
-                                        Rounding::ZERO,
+                                        CornerRadius::ZERO,
                                         Color32::from_rgba_unmultiplied(r, g, b, 70),
                                     );
                                 }
@@ -245,11 +251,12 @@ pub fn render_session_view(
                                 } else {
                                     palette.clip_slot_bg
                                 };
-                                painter.rect_filled(slot_rect, Rounding::same(2.0), bg_color);
+                                painter.rect_filled(slot_rect, CornerRadius::same(2), bg_color);
                                 painter.rect_stroke(
                                     slot_rect,
-                                    Rounding::same(2.0),
+                                    CornerRadius::same(2),
                                     Stroke::new(1.0_f32, palette.clip_slot_border),
+                                    eframe::egui::StrokeKind::Middle,
                                 );
 
                                 // Ableton stop/placeholder square in center-left
@@ -262,7 +269,7 @@ pub fn render_session_view(
                                 } else {
                                     Color32::from_rgb(0x9a, 0x9a, 0x98)
                                 };
-                                painter.rect_filled(sq_rect, Rounding::same(1.0), sq_color);
+                                painter.rect_filled(sq_rect, CornerRadius::same(1), sq_color);
 
                                 if slot_resp.double_clicked() {
                                     let new_clip = if trk.track_type == TrackType::Midi {
@@ -296,11 +303,12 @@ pub fn render_session_view(
                             } else {
                                 palette.button_idle
                             };
-                            painter.rect_filled(stop_rect, Rounding::same(2.0), bg);
+                            painter.rect_filled(stop_rect, CornerRadius::same(2), bg);
                             painter.rect_stroke(
                                 stop_rect,
-                                Rounding::same(2.0),
+                                CornerRadius::same(2),
                                 Stroke::new(1.0_f32, palette.panel_border),
+                                eframe::egui::StrokeKind::Middle,
                             );
 
                             let c = stop_rect.center();
@@ -310,7 +318,7 @@ pub fn render_session_view(
                             } else {
                                 Color32::from_rgb(0x40, 0x40, 0x40)
                             };
-                            painter.rect_filled(sq, Rounding::ZERO, stop_sq_col);
+                            painter.rect_filled(sq, CornerRadius::ZERO, stop_sq_col);
                         }
                         if stop_resp.clicked() {
                             action.stop_clip = Some(trk_idx);
@@ -336,11 +344,16 @@ pub fn render_session_view(
                             ui.allocate_exact_size(Vec2::new(return_width, 24.0), Sense::hover());
                         if ui.is_rect_visible(hdr_rect) {
                             let painter = ui.painter();
-                            painter.rect_filled(hdr_rect, Rounding::same(2.0), palette.button_idle);
+                            painter.rect_filled(
+                                hdr_rect,
+                                CornerRadius::same(2),
+                                palette.button_idle,
+                            );
                             painter.rect_stroke(
                                 hdr_rect,
-                                Rounding::same(2.0),
+                                CornerRadius::same(2),
                                 Stroke::new(1.0_f32, palette.panel_border),
+                                eframe::egui::StrokeKind::Middle,
                             );
 
                             let [r, g, b, _] = parse_hex_color(&ret.color);
@@ -350,7 +363,7 @@ pub fn render_session_view(
                             );
                             painter.rect_filled(
                                 color_bar,
-                                Rounding::ZERO,
+                                CornerRadius::ZERO,
                                 Color32::from_rgb(r, g, b),
                             );
 
@@ -371,13 +384,14 @@ pub fn render_session_view(
                                 let painter = ui.painter();
                                 painter.rect_filled(
                                     slot_rect,
-                                    Rounding::same(2.0),
+                                    CornerRadius::same(2),
                                     palette.clip_slot_bg,
                                 );
                                 painter.rect_stroke(
                                     slot_rect,
-                                    Rounding::same(2.0),
+                                    CornerRadius::same(2),
                                     Stroke::new(1.0_f32, palette.clip_slot_border),
+                                    eframe::egui::StrokeKind::Middle,
                                 );
                             }
                         }
@@ -404,11 +418,12 @@ pub fn render_session_view(
                         ui.allocate_exact_size(Vec2::new(master_width, 24.0), Sense::hover());
                     if ui.is_rect_visible(m_rect) {
                         let painter = ui.painter();
-                        painter.rect_filled(m_rect, Rounding::same(2.0), palette.button_idle);
+                        painter.rect_filled(m_rect, CornerRadius::same(2), palette.button_idle);
                         painter.rect_stroke(
                             m_rect,
-                            Rounding::same(2.0),
+                            CornerRadius::same(2),
                             Stroke::new(1.0_f32, palette.panel_border),
+                            eframe::egui::StrokeKind::Middle,
                         );
 
                         // Master color bar
@@ -418,7 +433,7 @@ pub fn render_session_view(
                         );
                         painter.rect_filled(
                             m_bar,
-                            Rounding::ZERO,
+                            CornerRadius::ZERO,
                             Color32::from_rgb(0x80, 0xe0, 0x90),
                         );
 
@@ -441,11 +456,12 @@ pub fn render_session_view(
                         } else {
                             palette.button_idle
                         };
-                        painter.rect_filled(sc_rect, Rounding::same(2.0), bg);
+                        painter.rect_filled(sc_rect, CornerRadius::same(2), bg);
                         painter.rect_stroke(
                             sc_rect,
-                            Rounding::same(2.0),
+                            CornerRadius::same(2),
                             Stroke::new(1.0_f32, palette.panel_border),
+                            eframe::egui::StrokeKind::Middle,
                         );
 
                         // Scene number and launch arrow
@@ -483,11 +499,12 @@ pub fn render_session_view(
                         } else {
                             palette.button_idle
                         };
-                        painter.rect_filled(sa_rect, Rounding::same(2.0), bg);
+                        painter.rect_filled(sa_rect, CornerRadius::same(2), bg);
                         painter.rect_stroke(
                             sa_rect,
-                            Rounding::same(2.0),
+                            CornerRadius::same(2),
                             Stroke::new(1.0_f32, palette.panel_border),
+                            eframe::egui::StrokeKind::Middle,
                         );
                         painter.text(
                             sa_rect.center(),

@@ -1,4 +1,4 @@
-use eframe::egui::{self, Color32, Pos2, Rect, Response, Rounding, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Response, Sense, Stroke, Ui, Vec2};
 use std::f32::consts::PI;
 
 /// Converts a dB value (-60.0..=+6.0) to normalized fader travel (0.0..=1.0).
@@ -275,11 +275,12 @@ pub fn live_fader(
         } else {
             Color32::from_rgb(0x82, 0x82, 0x80)
         };
-        painter.rect_filled(trough_rect, Rounding::same(1.0), trough_color);
+        painter.rect_filled(trough_rect, CornerRadius::same(1), trough_color);
         painter.rect_stroke(
             trough_rect,
-            Rounding::same(1.0),
+            CornerRadius::same(1),
             Stroke::new(1.0_f32, trough_border),
+            eframe::egui::StrokeKind::Middle,
         );
 
         // 0 dB reference line tick across the trough
@@ -333,11 +334,12 @@ pub fn live_fader(
         } else {
             Color32::from_rgb(0x60, 0x60, 0x60)
         };
-        painter.rect_filled(handle_rect, Rounding::same(2.0), cap_base);
+        painter.rect_filled(handle_rect, CornerRadius::same(2), cap_base);
         painter.rect_stroke(
             handle_rect,
-            Rounding::same(2.0),
+            CornerRadius::same(2),
             Stroke::new(1.0_f32, cap_border),
+            eframe::egui::StrokeKind::Middle,
         );
 
         // Horizontal center groove line
@@ -378,8 +380,13 @@ pub fn live_stereo_meter(ui: &mut Ui, peak_l_db: f32, peak_r_db: f32, size: Vec2
         } else {
             Color32::from_rgb(0x55, 0x55, 0x55)
         };
-        painter.rect_filled(rect, Rounding::same(1.0), well_bg);
-        painter.rect_stroke(rect, Rounding::same(1.0), Stroke::new(1.0_f32, well_border));
+        painter.rect_filled(rect, CornerRadius::same(1), well_bg);
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(1),
+            Stroke::new(1.0_f32, well_border),
+            eframe::egui::StrokeKind::Middle,
+        );
 
         let clip_box_h = 4.0;
         let active_meter_h = rect.height() - clip_box_h - 3.0;
@@ -411,7 +418,7 @@ pub fn live_stereo_meter(ui: &mut Ui, peak_l_db: f32, peak_r_db: f32, size: Vec2
                     Pos2::new(channel_x, y_top + 0.5),
                     Vec2::new(half_w, seg_h - 1.0),
                 );
-                painter.rect_filled(seg_rect, Rounding::ZERO, seg_color);
+                painter.rect_filled(seg_rect, CornerRadius::ZERO, seg_color);
             }
 
             // Clip indicator box at top of meter
@@ -424,7 +431,7 @@ pub fn live_stereo_meter(ui: &mut Ui, peak_l_db: f32, peak_r_db: f32, size: Vec2
             } else {
                 Color32::from_rgb(0x25, 0x25, 0x25)
             };
-            painter.rect_filled(clip_rect, Rounding::same(1.0), clip_color);
+            painter.rect_filled(clip_rect, CornerRadius::same(1), clip_color);
         };
 
         draw_channel(peak_l_db, 1.0);
@@ -458,8 +465,13 @@ pub fn live_lcd_box(
             Color32::from_rgb(0x55, 0x55, 0x55)
         };
 
-        painter.rect_filled(rect, Rounding::same(2.0), bg);
-        painter.rect_stroke(rect, Rounding::same(2.0), Stroke::new(1.0_f32, border));
+        painter.rect_filled(rect, CornerRadius::same(2), bg);
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(2),
+            Stroke::new(1.0_f32, border),
+            eframe::egui::StrokeKind::Middle,
+        );
 
         let text_color = if highlight {
             accent
@@ -534,8 +546,13 @@ pub fn live_toggle_button(
             }
         };
 
-        painter.rect_filled(rect, Rounding::same(2.0), bg);
-        painter.rect_stroke(rect, Rounding::same(2.0), Stroke::new(1.0_f32, border));
+        painter.rect_filled(rect, CornerRadius::same(2), bg);
+        painter.rect_stroke(
+            rect,
+            CornerRadius::same(2),
+            Stroke::new(1.0_f32, border),
+            eframe::egui::StrokeKind::Middle,
+        );
         painter.text(
             rect.center(),
             egui::Align2::CENTER_CENTER,
@@ -592,11 +609,12 @@ pub fn live_view_mode_toggle(ui: &mut Ui, is_session: bool, accent: Color32) -> 
         } else {
             Color32::from_rgb(0x80, 0x80, 0x7e)
         };
-        painter.rect_filled(rect, Rounding::same(2.0), frame_bg);
+        painter.rect_filled(rect, CornerRadius::same(2), frame_bg);
         painter.rect_stroke(
             rect,
-            Rounding::same(2.0),
+            CornerRadius::same(2),
             Stroke::new(1.0_f32, frame_stroke),
+            eframe::egui::StrokeKind::Middle,
         );
 
         let half_w = rect.width() * 0.5;
@@ -606,8 +624,8 @@ pub fn live_view_mode_toggle(ui: &mut Ui, is_session: bool, accent: Color32) -> 
             Vec2::new(half_w, rect.height()),
         );
 
-        let sess_resp = ui.interact(sess_rect, ui.id().with("sess_toggle"), Sense::click());
-        let arr_resp = ui.interact(arr_rect, ui.id().with("arr_toggle"), Sense::click());
+        let sess_resp = ui.interact(sess_rect, ui.scope_id().with("sess_toggle"), Sense::click());
+        let arr_resp = ui.interact(arr_rect, ui.scope_id().with("arr_toggle"), Sense::click());
 
         if sess_resp.clicked() {
             session_clicked = true;
@@ -632,7 +650,7 @@ pub fn live_view_mode_toggle(ui: &mut Ui, is_session: bool, accent: Color32) -> 
         } else {
             frame_bg
         };
-        painter.rect_filled(sess_rect.shrink(1.0), Rounding::same(1.0), sess_active_bg);
+        painter.rect_filled(sess_rect.shrink(1.0), CornerRadius::same(1), sess_active_bg);
 
         let sess_icon_col = if is_session {
             accent
@@ -681,7 +699,7 @@ pub fn live_view_mode_toggle(ui: &mut Ui, is_session: bool, accent: Color32) -> 
         } else {
             frame_bg
         };
-        painter.rect_filled(arr_rect.shrink(1.0), Rounding::same(1.0), arr_active_bg);
+        painter.rect_filled(arr_rect.shrink(1.0), CornerRadius::same(1), arr_active_bg);
 
         let arr_icon_col = if !is_session {
             accent

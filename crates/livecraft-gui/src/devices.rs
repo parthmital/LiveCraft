@@ -1,6 +1,6 @@
 use crate::style::LivePalette;
 use crate::widgets::live_knob;
-use eframe::egui::{self, Color32, Pos2, Rounding, Stroke, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Stroke, Ui, Vec2};
 use livecraft_core::model::{Device, DeviceType, Track};
 
 pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &LivePalette) {
@@ -51,7 +51,7 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                                 egui::RichText::new("●").size(10.0).color(power_color),
                             )
                             .fill(palette.control_background)
-                            .rounding(Rounding::same(2.0)),
+                            .corner_radius(CornerRadius::same(2)),
                         )
                         .clicked()
                     {
@@ -76,7 +76,7 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                                         .color(Color32::from_rgb(0x88, 0x88, 0x88)),
                                 )
                                 .fill(palette.control_background)
-                                .rounding(Rounding::same(2.0)),
+                                .corner_radius(CornerRadius::same(2)),
                             )
                             .clicked()
                         {
@@ -89,14 +89,15 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
                 let (body_rect, _) =
                     ui.allocate_exact_size(Vec2::new(box_width, 120.0), egui::Sense::hover());
                 let painter = ui.painter();
-                painter.rect_filled(body_rect, Rounding::same(3.0), palette.control_background);
+                painter.rect_filled(body_rect, CornerRadius::same(3), palette.control_background);
                 painter.rect_stroke(
                     body_rect,
-                    Rounding::same(3.0),
+                    CornerRadius::same(3),
                     Stroke::new(1.0_f32, palette.panel_border),
+                    eframe::egui::StrokeKind::Middle,
                 );
 
-                ui.allocate_new_ui(
+                ui.scope_builder(
                     egui::UiBuilder::new().max_rect(body_rect.shrink(4.0)),
                     |child_ui| match dev.device_type {
                         DeviceType::EqEight => {
@@ -155,13 +156,14 @@ pub fn render_device_chain(ui: &mut Ui, selected_track: &mut Track, palette: &Li
             let painter = ui.painter();
             painter.rect_filled(
                 drop_rect,
-                Rounding::same(3.0),
+                CornerRadius::same(3),
                 Color32::from_rgb(0x1e, 0x1e, 0x1e),
             );
             painter.rect_stroke(
                 drop_rect,
-                Rounding::same(3.0),
+                CornerRadius::same(3),
                 Stroke::new(1.0_f32, Color32::from_rgb(0x35, 0x35, 0x35)),
+                eframe::egui::StrokeKind::Middle,
             );
             painter.text(
                 drop_rect.center(),
@@ -186,13 +188,14 @@ fn render_eq_eight_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette
         let painter = ui.painter();
         painter.rect_filled(
             curve_rect,
-            Rounding::same(2.0),
+            CornerRadius::same(2),
             Color32::from_rgb(0x10, 0x10, 0x10),
         );
         painter.rect_stroke(
             curve_rect,
-            Rounding::same(2.0),
+            CornerRadius::same(2),
             Stroke::new(0.5_f32, Color32::from_rgb(0x30, 0x30, 0x30)),
+            eframe::egui::StrokeKind::Middle,
         );
 
         // Center 0 dB line
@@ -336,7 +339,7 @@ fn render_operator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette
                 if ui
                     .add_sized(
                         Vec2::new(btn_w, 16.0),
-                        egui::SelectableLabel::new(osc1_wave == 0.0, "Sin"),
+                        egui::Button::selectable(osc1_wave == 0.0, "Sin"),
                     )
                     .clicked()
                 {
@@ -345,7 +348,7 @@ fn render_operator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette
                 if ui
                     .add_sized(
                         Vec2::new(btn_w, 16.0),
-                        egui::SelectableLabel::new(osc1_wave == 1.0, "Saw"),
+                        egui::Button::selectable(osc1_wave == 1.0, "Saw"),
                     )
                     .clicked()
                 {
@@ -354,7 +357,7 @@ fn render_operator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette
                 if ui
                     .add_sized(
                         Vec2::new(btn_w, 16.0),
-                        egui::SelectableLabel::new(osc1_wave == 2.0, "Sqr"),
+                        egui::Button::selectable(osc1_wave == 2.0, "Sqr"),
                     )
                     .clicked()
                 {
@@ -363,7 +366,7 @@ fn render_operator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette
                 if ui
                     .add_sized(
                         Vec2::new(btn_w, 16.0),
-                        egui::SelectableLabel::new(osc1_wave == 3.0, "Noi"),
+                        egui::Button::selectable(osc1_wave == 3.0, "Noi"),
                     )
                     .clicked()
                 {
@@ -472,13 +475,14 @@ fn render_operator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalette
                 let painter = ui.painter();
                 painter.rect_filled(
                     env_rect,
-                    Rounding::same(1.0),
+                    CornerRadius::same(1),
                     Color32::from_rgb(0x12, 0x12, 0x12),
                 );
                 painter.rect_stroke(
                     env_rect,
-                    Rounding::same(1.0),
+                    CornerRadius::same(1),
                     Stroke::new(0.5_f32, Color32::from_rgb(0x30, 0x30, 0x30)),
+                    eframe::egui::StrokeKind::Middle,
                 );
 
                 let p0 = Pos2::new(env_rect.min.x + 2.0, env_rect.max.y - 2.0);
@@ -522,13 +526,14 @@ fn render_saturator_controls(ui: &mut Ui, dev: &mut Device, palette: &LivePalett
         let painter = ui.painter();
         painter.rect_filled(
             curve_rect,
-            Rounding::same(2.0),
+            CornerRadius::same(2),
             Color32::from_rgb(0x10, 0x10, 0x10),
         );
         painter.rect_stroke(
             curve_rect,
-            Rounding::same(2.0),
+            CornerRadius::same(2),
             Stroke::new(1.0_f32, Color32::from_rgb(0x28, 0x28, 0x28)),
+            eframe::egui::StrokeKind::Middle,
         );
 
         let c_y = curve_rect.center().y;

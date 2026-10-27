@@ -1,5 +1,5 @@
 use crate::style::LivePalette;
-use eframe::egui::{self, Color32, Pos2, Rounding, Sense, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Ui, Vec2};
 use livecraft_core::model::{Device, DeviceType, Track, TrackType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -99,9 +99,9 @@ impl LiveBrowser {
                 if ui.is_rect_visible(rect) {
                     let painter = ui.painter();
                     if is_sel {
-                        painter.rect_filled(rect, Rounding::same(2.0), palette.surface_highlight);
+                        painter.rect_filled(rect, CornerRadius::same(2), palette.surface_highlight);
                     } else if resp.hovered() {
-                        painter.rect_filled(rect, Rounding::same(2.0), palette.button_hover);
+                        painter.rect_filled(rect, CornerRadius::same(2), palette.button_hover);
                     }
                     // Color dot
                     painter.circle_filled(
@@ -158,9 +158,9 @@ impl LiveBrowser {
                 if ui.is_rect_visible(rect) {
                     let painter = ui.painter();
                     if is_sel {
-                        painter.rect_filled(rect, Rounding::same(2.0), palette.surface_highlight);
+                        painter.rect_filled(rect, CornerRadius::same(2), palette.surface_highlight);
                     } else if resp.hovered() {
-                        painter.rect_filled(rect, Rounding::same(2.0), palette.button_hover);
+                        painter.rect_filled(rect, CornerRadius::same(2), palette.button_hover);
                     }
                     painter.text(
                         Pos2::new(rect.min.x + 8.0, rect.center().y),
@@ -206,9 +206,9 @@ impl LiveBrowser {
                 if ui.is_rect_visible(rect) {
                     let painter = ui.painter();
                     if is_sel {
-                        painter.rect_filled(rect, Rounding::same(2.0), palette.surface_highlight);
+                        painter.rect_filled(rect, CornerRadius::same(2), palette.surface_highlight);
                     } else if resp.hovered() {
-                        painter.rect_filled(rect, Rounding::same(2.0), palette.button_hover);
+                        painter.rect_filled(rect, CornerRadius::same(2), palette.button_hover);
                     }
                     painter.text(
                         Pos2::new(rect.min.x + 8.0, rect.center().y),

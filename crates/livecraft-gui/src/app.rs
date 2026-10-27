@@ -328,49 +328,19 @@ impl LiveCraftApp {
 }
 
 impl eframe::App for LiveCraftApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let ctx = &ui.ctx().clone();
         self.frame_counter += 1;
-        if self.screenshot_path.is_some() {
+        if let Some(path) = self.screenshot_path.clone() {
             ctx.request_repaint();
             if self.frame_counter == 5 {
-                ctx.send_viewport_cmd(egui::ViewportCommand::Screenshot);
+                ctx.request_screenshot(move |image| save_screenshot_and_exit(&path, &image));
             }
             if self.frame_counter > 50 {
                 log::error!("Screenshot timeout");
                 std::process::exit(1);
             }
         }
-
-        ctx.input(|i| {
-            for event in &i.raw.events {
-                if let egui::Event::Screenshot { image, .. } = event
-                    && let Some(ref path) = self.screenshot_path
-                {
-                    let width = image.width() as u32;
-                    let height = image.height() as u32;
-                    let mut rgba = Vec::with_capacity((width * height * 4) as usize);
-                    for p in &image.pixels {
-                        rgba.push(p.r());
-                        rgba.push(p.g());
-                        rgba.push(p.b());
-                        rgba.push(p.a());
-                    }
-                    if let Some(parent) = path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    match image::save_buffer(path, &rgba, width, height, image::ColorType::Rgba8) {
-                        Err(e) => {
-                            log::error!("Failed to save screenshot: {e}");
-                            std::process::exit(1);
-                        }
-                        _ => {
-                            println!("Screenshot successfully saved to: {}", path.display());
-                            std::process::exit(0);
-                        }
-                    }
-                }
-            }
-        });
 
         apply_live_style(ctx, &self.palette);
         self.handle_keyboard_shortcuts(ctx);
@@ -413,9 +383,9 @@ impl eframe::App for LiveCraftApp {
         self.project.transport.playhead_beats = playhead_beats;
 
         // Top Transport Panel
-        egui::TopBottomPanel::top("transport_bar")
-            .exact_height(34.0)
-            .show(ctx, |ui| {
+        egui::Panel::top("transport_bar")
+            .exact_size(34.0)
+            .show(ui, |ui| {
                 let t_resp = render_transport_bar(
                     ui,
                     &mut self.project,
@@ -449,9 +419,9 @@ impl eframe::App for LiveCraftApp {
             });
 
         // Bottom Status Bar (Info View & Status, Manual p. 36)
-        egui::TopBottomPanel::bottom("status_bar")
-            .exact_height(22.0)
-            .show(ctx, |ui| {
+        egui::Panel::bottom("status_bar")
+            .exact_size(22.0)
+            .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
                     // Ableton Info View toggle button '?'
@@ -484,10 +454,10 @@ impl eframe::App for LiveCraftApp {
             });
 
         // Bottom Detail Panel: Device Chain or Piano Roll (Manual p. 50, 445)
-        egui::TopBottomPanel::bottom("detail_panel")
-            .exact_height(185.0)
+        egui::Panel::bottom("detail_panel")
+            .exact_size(185.0)
             .resizable(true)
-            .show(ctx, |ui| {
+            .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
 
@@ -556,10 +526,10 @@ impl eframe::App for LiveCraftApp {
 
         // Left Browser Sidebar (toggleable)
         if self.browser_visible {
-            egui::SidePanel::left("browser_panel")
-                .exact_width(180.0)
+            egui::Panel::left("browser_panel")
+                .exact_size(180.0)
                 .resizable(true)
-                .show(ctx, |ui| {
+                .show(ui, |ui| {
                     let action = self.browser.render(
                         ui,
                         self.project.tracks.get_mut(self.selected_track_idx),
@@ -587,7 +557,7 @@ impl eframe::App for LiveCraftApp {
         }
 
         // Center Work Area: Session View or Arrangement View
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default().show(ui, |ui| {
             match self.view_mode {
                 ViewMode::Session => {
                     let sess_action = render_session_view(
@@ -667,5 +637,30 @@ impl eframe::App for LiveCraftApp {
 
         // Dispatch any updates from CentralPanel / Mixer interaction
         self.sync_audio_parameters();
+    }
+}
+
+/// Writes an egui screenshot to `path` as PNG and exits the process (0 on success, 1 on failure).
+fn save_screenshot_and_exit(path: &std::path::Path, image: &egui::ColorImage) -> ! {
+    let [width, height] = image.size;
+    let rgba: Vec<u8> = image.pixels.iter().flat_map(|p| p.to_array()).collect();
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match image::save_buffer(
+        path,
+        &rgba,
+        width as u32,
+        height as u32,
+        image::ColorType::Rgba8,
+    ) {
+        Ok(()) => {
+            println!("Screenshot successfully saved to: {}", path.display());
+            std::process::exit(0);
+        }
+        Err(e) => {
+            log::error!("Failed to save screenshot: {e}");
+            std::process::exit(1);
+        }
     }
 }

@@ -2,7 +2,7 @@ use crate::style::LivePalette;
 use crate::widgets::{
     db_to_norm, live_fader, live_knob, live_stereo_meter, live_toggle_button, norm_to_db,
 };
-use eframe::egui::{self, Color32, Pos2, Rounding, Sense, Stroke, Ui, Vec2};
+use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Stroke, Ui, Vec2};
 use livecraft_core::model::{MonitoringMode, Track};
 use livecraft_core::theme::parse_hex_color;
 use livecraft_dsp::graph::TrackMeter;
@@ -143,7 +143,7 @@ pub fn render_track_mixer_strip(
 
         if ui.is_rect_visible(val_rect) {
             let painter = ui.painter();
-            painter.rect_filled(val_rect, Rounding::same(1.0), palette.lcd_bg);
+            painter.rect_filled(val_rect, CornerRadius::same(1), palette.lcd_bg);
             let border_color = if val_resp.hovered() {
                 palette.amber
             } else {
@@ -151,8 +151,9 @@ pub fn render_track_mixer_strip(
             };
             painter.rect_stroke(
                 val_rect,
-                Rounding::same(1.0),
+                CornerRadius::same(1),
                 Stroke::new(1.0_f32, border_color),
+                eframe::egui::StrokeKind::Middle,
             );
 
             let vol_txt = if trk.volume_db <= -59.5 {
@@ -187,10 +188,10 @@ pub fn render_track_mixer_strip(
                 } else {
                     palette.button_idle
                 };
-                painter.rect_filled(act_rect, Rounding::same(2.0), bg);
+                painter.rect_filled(act_rect, CornerRadius::same(2), bg);
                 painter.rect_stroke(
                     act_rect,
-                    Rounding::same(2.0),
+                    CornerRadius::same(2),
                     Stroke::new(
                         1.0_f32,
                         if active {
@@ -199,6 +200,7 @@ pub fn render_track_mixer_strip(
                             palette.panel_border
                         },
                     ),
+                    eframe::egui::StrokeKind::Middle,
                 );
                 let num_color = if active {
                     Color32::BLACK
@@ -230,10 +232,10 @@ pub fn render_track_mixer_strip(
                 } else {
                     palette.button_idle
                 };
-                painter.rect_filled(solo_rect, Rounding::same(2.0), bg);
+                painter.rect_filled(solo_rect, CornerRadius::same(2), bg);
                 painter.rect_stroke(
                     solo_rect,
-                    Rounding::same(2.0),
+                    CornerRadius::same(2),
                     Stroke::new(
                         1.0_f32,
                         if solo {
@@ -242,6 +244,7 @@ pub fn render_track_mixer_strip(
                             palette.panel_border
                         },
                     ),
+                    eframe::egui::StrokeKind::Middle,
                 );
                 let s_color = if solo {
                     Color32::WHITE
@@ -273,10 +276,10 @@ pub fn render_track_mixer_strip(
                 } else {
                     palette.button_idle
                 };
-                painter.rect_filled(arm_rect, Rounding::same(2.0), bg);
+                painter.rect_filled(arm_rect, CornerRadius::same(2), bg);
                 painter.rect_stroke(
                     arm_rect,
-                    Rounding::same(2.0),
+                    CornerRadius::same(2),
                     Stroke::new(
                         1.0_f32,
                         if armed {
@@ -285,6 +288,7 @@ pub fn render_track_mixer_strip(
                             palette.panel_border
                         },
                     ),
+                    eframe::egui::StrokeKind::Middle,
                 );
                 let arm_color = if armed {
                     Color32::WHITE
@@ -303,8 +307,11 @@ pub fn render_track_mixer_strip(
             ui.allocate_exact_size(Vec2::new(track_width - 4.0, 4.0), Sense::hover());
         if ui.is_rect_visible(stripe_rect) {
             let [r, g, b, _] = parse_hex_color(&trk.color);
-            ui.painter()
-                .rect_filled(stripe_rect, Rounding::same(1.0), Color32::from_rgb(r, g, b));
+            ui.painter().rect_filled(
+                stripe_rect,
+                CornerRadius::same(1),
+                Color32::from_rgb(r, g, b),
+            );
         }
     });
 }
@@ -393,7 +400,7 @@ pub fn render_return_mixer_strip(
 
         if ui.is_rect_visible(val_rect) {
             let painter = ui.painter();
-            painter.rect_filled(val_rect, Rounding::same(1.0), palette.lcd_bg);
+            painter.rect_filled(val_rect, CornerRadius::same(1), palette.lcd_bg);
             let border_color = if val_resp.hovered() {
                 palette.amber
             } else {
@@ -401,8 +408,9 @@ pub fn render_return_mixer_strip(
             };
             painter.rect_stroke(
                 val_rect,
-                Rounding::same(1.0),
+                CornerRadius::same(1),
                 Stroke::new(1.0_f32, border_color),
+                eframe::egui::StrokeKind::Middle,
             );
 
             let vol_txt = if ret.volume_db <= -59.5 {
@@ -449,8 +457,11 @@ pub fn render_return_mixer_strip(
             ui.allocate_exact_size(Vec2::new(track_width - 4.0, 4.0), Sense::hover());
         if ui.is_rect_visible(stripe_rect) {
             let [r, g, b, _] = parse_hex_color(&ret.color);
-            ui.painter()
-                .rect_filled(stripe_rect, Rounding::same(1.0), Color32::from_rgb(r, g, b));
+            ui.painter().rect_filled(
+                stripe_rect,
+                CornerRadius::same(1),
+                Color32::from_rgb(r, g, b),
+            );
         }
     });
 }
@@ -557,7 +568,7 @@ pub fn render_master_mixer_strip(
 
         if ui.is_rect_visible(val_rect) {
             let painter = ui.painter();
-            painter.rect_filled(val_rect, Rounding::same(1.0), palette.lcd_bg);
+            painter.rect_filled(val_rect, CornerRadius::same(1), palette.lcd_bg);
             let border_color = if val_resp.hovered() {
                 palette.amber
             } else {
@@ -565,8 +576,9 @@ pub fn render_master_mixer_strip(
             };
             painter.rect_stroke(
                 val_rect,
-                Rounding::same(1.0),
+                CornerRadius::same(1),
                 Stroke::new(1.0_f32, border_color),
+                eframe::egui::StrokeKind::Middle,
             );
 
             let vol_txt = if master.volume_db <= -59.5 {
@@ -604,7 +616,7 @@ pub fn render_master_mixer_strip(
         if ui.is_rect_visible(stripe_rect) {
             ui.painter().rect_filled(
                 stripe_rect,
-                Rounding::same(1.0),
+                CornerRadius::same(1),
                 Color32::from_rgb(0x80, 0xe0, 0x90),
             );
         }
