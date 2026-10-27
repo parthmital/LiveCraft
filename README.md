@@ -38,13 +38,13 @@ cargo run --bin livecraft -- render demo.als -o demo.wav --duration-bars 4
 cargo run --bin livecraft -- gui
 ```
 
-| Command                  | What it does                            | Expected result                               | Common error and fix                                                                          |
-| ------------------------ | --------------------------------------- | --------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 53 tests pass                                 | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
-| `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                         | Permission denied: use a writable folder                                                      |
-| `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal      | `Decompression failed`: the file is not a gzip `.als`                                         |
-| `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                             | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
-| `livecraft gui`          | Opens the desktop window                | A Live-style window with Session View         | Window fails to open: update GPU drivers; on Windows set WGPU_BACKEND=gl to try OpenGL       |
+| Command                  | What it does                            | Expected result                          | Common error and fix                                                                          |
+| ------------------------ | --------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 53 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
+| `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                      |
+| `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                         |
+| `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
+| `livecraft gui`          | Opens the desktop window                | A Live-style window with Session View    | Window fails to open: update GPU drivers; on Windows set WGPU_BACKEND=gl to try OpenGL        |
 
 `cargo run --bin livecraft -- <args>` and `target/debug/livecraft <args>` are equivalent. The first build takes several minutes.
 
@@ -144,13 +144,13 @@ Baseline after Phase 0 (2026-10-27): cargo xtask ci passes; 53 tests (cli 4, cor
 
 ## Troubleshooting
 
-| Problem                               | Likely cause                               | Diagnostic                       | Resolution                                              |
-| ------------------------------------- | ------------------------------------------ | -------------------------------- | ------------------------------------------------------- |
-| Build fails on Linux with ALSA errors | Missing system headers                     | `pkg-config --libs alsa`         | Install the packages in [Prerequisites](#prerequisites) |
-| `play` or GUI has no sound            | No default output device, or engine failed | `RUST_LOG=debug livecraft play`  | Select a default output device in the OS                |
-| Audio crackles while using the GUI    | GUI and audio thread share a mutex         | Reproduce while dragging a fader | Known issue, fixed in the plan's Phase 1                |
-| `.als` loses data after `convert`     | Writer only emits elements the model knows | Compare XML of input and output  | Known issue, fixed in the plan's Phase 2                |
-| GUI crashes at start on Windows       | GPU driver problem in the selected wgpu backend | WGPU_BACKEND=gl cargo dev   | Default is DX12; try gl, or update drivers              |
+| Problem                               | Likely cause                                    | Diagnostic                       | Resolution                                              |
+| ------------------------------------- | ----------------------------------------------- | -------------------------------- | ------------------------------------------------------- |
+| Build fails on Linux with ALSA errors | Missing system headers                          | `pkg-config --libs alsa`         | Install the packages in [Prerequisites](#prerequisites) |
+| `play` or GUI has no sound            | No default output device, or engine failed      | `RUST_LOG=debug livecraft play`  | Select a default output device in the OS                |
+| Audio crackles while using the GUI    | GUI and audio thread share a mutex              | Reproduce while dragging a fader | Known issue, fixed in the plan's Phase 1                |
+| `.als` loses data after `convert`     | Writer only emits elements the model knows      | Compare XML of input and output  | Known issue, fixed in the plan's Phase 2                |
+| GUI crashes at start on Windows       | GPU driver problem in the selected wgpu backend | WGPU_BACKEND=gl cargo dev        | Default is DX12; try gl, or update drivers              |
 
 ## Known Limitations
 

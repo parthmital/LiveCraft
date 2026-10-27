@@ -141,10 +141,10 @@ Pin existing offline render metrics (frames, peaks, RMS) and JSON project inspec
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `cargo test -p livecraft-cli --test characterisation` | 2 passed |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                                               | Expected result                      |
+| ----------------------------------------------------- | ------------------------------------ |
+| `cargo test -p livecraft-cli --test characterisation` | 2 passed                             |
+| `cargo xtask ci`                                      | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

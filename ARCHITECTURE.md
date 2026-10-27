@@ -37,7 +37,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-gui/src/{view}.rs`              | One view or panel per file (transport, session, arrange, mixer, devices, pianoroll, browser) | `render_*` functions                                                       | widgets, style         |
 | `crates/livecraft-gui/src/widgets.rs`, `style.rs` | Knobs, faders, meters, LCD fields; palettes                                                  | `live_knob`, `live_fader`, `LivePalette`                                   | egui                   |
 | `crates/livecraft-cli/src/main.rs`                | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | every crate            |
-| `xtask/src/main.rs`                             | `cargo xtask ci`, layering check, docs link check                           | `cargo xtask <ci,layering,docs>`                             | none                         |
+| `xtask/src/main.rs`                               | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                   |
 
 ## Dependency Rules
 
@@ -64,20 +64,20 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 
 Each is scheduled in `plans/livecraft-1.0/`.
 
-| Problem                                                                                                                            | Where                                                   | Plan phase   |
-| ---------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------ |
-| Audio callback takes `Arc<Mutex<AudioGraph>>::try_lock`; contention outputs silence                                                | `engine.rs` `write_audio*`                              | 1            |
-| Audio callback clones a whole `Clip` (with its note `Vec`) for every track every block                                             | `graph.rs` `dispatch_clip_events`                       | 1            |
-| `AudioParamMsg::SetDeviceParam` carries a `String` key, freed on the audio thread                                                  | `engine.rs`                                             | 1            |
-| Audio clips decode their WAV file from disk on the audio thread the first time they play                                           | `audio_clip.rs` `render_clip_samples` via `get_or_load` | 1 (M05, M11) |
-| `process_buffer_interleaved` grows its scratch buffers on the audio thread when the driver block exceeds 8192 frames               | `graph.rs`                                              | 1            |
-| `DspProcessor` processes one sample per virtual call and looks parameters up by string                                             | `processor.rs`                                          | 1            |
-| GUI mutates `Project` directly; most edits bypass `CommandHistory`, so undo covers few actions                                     | `crates/livecraft-gui/src/*.rs`                         | 1            |
-| Entity identity is `usize` indexes in commands and messages, which break on insert or delete                                       | `command.rs`, `engine.rs`                               | 1            |
-| `.als` writer regenerates XML from the model; every unknown element is lost                                                        | `als.rs`                                                | 2            |
-| Session clip slots without an active clip are played back as a sequential timeline                                                 | `graph.rs` `dispatch_clip_events`                       | 1            |
-| Large files mixing concerns: `model.rs` (1208 lines), `graph.rs` (1072), `devices.rs` (990)                                        | as listed                                               | 1            |
-| GUI layout uses estimated sizes and colours, not measurements of Live                                                              | `crates/livecraft-gui/src/*.rs`                         | 3            |
+| Problem                                                                                                              | Where                                                   | Plan phase   |
+| -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------ |
+| Audio callback takes `Arc<Mutex<AudioGraph>>::try_lock`; contention outputs silence                                  | `engine.rs` `write_audio*`                              | 1            |
+| Audio callback clones a whole `Clip` (with its note `Vec`) for every track every block                               | `graph.rs` `dispatch_clip_events`                       | 1            |
+| `AudioParamMsg::SetDeviceParam` carries a `String` key, freed on the audio thread                                    | `engine.rs`                                             | 1            |
+| Audio clips decode their WAV file from disk on the audio thread the first time they play                             | `audio_clip.rs` `render_clip_samples` via `get_or_load` | 1 (M05, M11) |
+| `process_buffer_interleaved` grows its scratch buffers on the audio thread when the driver block exceeds 8192 frames | `graph.rs`                                              | 1            |
+| `DspProcessor` processes one sample per virtual call and looks parameters up by string                               | `processor.rs`                                          | 1            |
+| GUI mutates `Project` directly; most edits bypass `CommandHistory`, so undo covers few actions                       | `crates/livecraft-gui/src/*.rs`                         | 1            |
+| Entity identity is `usize` indexes in commands and messages, which break on insert or delete                         | `command.rs`, `engine.rs`                               | 1            |
+| `.als` writer regenerates XML from the model; every unknown element is lost                                          | `als.rs`                                                | 2            |
+| Session clip slots without an active clip are played back as a sequential timeline                                   | `graph.rs` `dispatch_clip_events`                       | 1            |
+| Large files mixing concerns: `model.rs` (1208 lines), `graph.rs` (1072), `devices.rs` (990)                          | as listed                                               | 1            |
+| GUI layout uses estimated sizes and colours, not measurements of Live                                                | `crates/livecraft-gui/src/*.rs`                         | 3            |
 
 ## Growth Signals
 

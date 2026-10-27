@@ -35,13 +35,13 @@ Verify every M01 acceptance criterion with recorded evidence, update `ARCHITECTU
 
    Date: 2026-10-27. Commit: <git rev-parse --short HEAD>.
 
-   | Acceptance criterion | Met | Evidence |
-   | --- | --- | --- |
-   | cargo xtask ci passes | Yes | xtask: all checks passed, 55 tests |
-   | Characterisation tests pass unchanged | Yes | 2 passed in apps/livecraft/tests/characterisation.rs |
-   | Target packages match target architecture | Yes | livecraft, livecraft-devices, livecraft-dsp, livecraft-engine, livecraft-formats, livecraft-model, livecraft-testkit, livecraft-ui, xtask |
-   | No legacy crate names in Rust source files | Yes | git grep returned 0 matches |
-   | ARCHITECTURE.md module map matches layout | Yes | Module map and dependency rules updated |
+   | Acceptance criterion                       | Met | Evidence                                                                                                                                  |
+   | ------------------------------------------ | --- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+   | cargo xtask ci passes                      | Yes | xtask: all checks passed, 55 tests                                                                                                        |
+   | Characterisation tests pass unchanged      | Yes | 2 passed in apps/livecraft/tests/characterisation.rs                                                                                      |
+   | Target packages match target architecture  | Yes | livecraft, livecraft-devices, livecraft-dsp, livecraft-engine, livecraft-formats, livecraft-model, livecraft-testkit, livecraft-ui, xtask |
+   | No legacy crate names in Rust source files | Yes | git grep returned 0 matches                                                                                                               |
+   | ARCHITECTURE.md module map matches layout  | Yes | Module map and dependency rules updated                                                                                                   |
 
    Test counts: livecraft 6 (4 unit/integration + 2 characterisation), livecraft-model 9, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 16, livecraft-engine 11 (9 unit + 2 wav_limits), livecraft-ui 2, xtask 4; total 55.
    ```
@@ -68,11 +68,11 @@ Verify every M01 acceptance criterion with recorded evidence, update `ARCHITECTU
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `git grep -E "livecraft_core|livecraft_gui|livecraft_cli" -- "*.rs"` | no output |
-| `cargo test -p livecraft --test characterisation` | 2 passed |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                                           | Expected result                      |
+| ------------------------------------------------- | ------------------------------------ |
+| `git grep -E "livecraft_core                      | livecraft_gui                        | livecraft_cli" -- "*.rs"` | no output |
+| `cargo test -p livecraft --test characterisation` | 2 passed                             |
+| `cargo xtask ci`                                  | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

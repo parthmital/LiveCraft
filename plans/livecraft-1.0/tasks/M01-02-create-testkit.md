@@ -149,10 +149,10 @@ Create `crates/livecraft-testkit` with `RenderSummary` and `render_project_summa
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `cargo test -p livecraft-cli --test characterisation` | 2 passed |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                                               | Expected result                      |
+| ----------------------------------------------------- | ------------------------------------ |
+| `cargo test -p livecraft-cli --test characterisation` | 2 passed                             |
+| `cargo xtask ci`                                      | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

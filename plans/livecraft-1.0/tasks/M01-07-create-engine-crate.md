@@ -95,11 +95,11 @@ Create `crates/livecraft-engine`, move `engine.rs`, `graph.rs`, `bouncer.rs`, `a
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `cargo test -p livecraft-dsp` | 1 passed |
-| `cargo test -p livecraft-engine` | tests pass |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                          | Expected result                      |
+| -------------------------------- | ------------------------------------ |
+| `cargo test -p livecraft-dsp`    | 1 passed                             |
+| `cargo test -p livecraft-engine` | tests pass                           |
+| `cargo xtask ci`                 | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

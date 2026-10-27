@@ -103,10 +103,10 @@ Create `crates/livecraft-devices`, move effects, instruments, and `processor.rs`
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `cargo test -p livecraft-devices` | tests pass |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                           | Expected result                      |
+| --------------------------------- | ------------------------------------ |
+| `cargo test -p livecraft-devices` | tests pass                           |
+| `cargo xtask ci`                  | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

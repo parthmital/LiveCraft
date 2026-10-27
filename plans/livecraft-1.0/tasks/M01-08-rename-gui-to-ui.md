@@ -57,11 +57,11 @@ Rename `crates/livecraft-gui` to `crates/livecraft-ui` using `git mv`, update cr
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `git grep "livecraft_gui" -- "*.rs"` | no output |
-| `cargo test -p livecraft-ui` | 2 passed |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                              | Expected result                      |
+| ------------------------------------ | ------------------------------------ |
+| `git grep "livecraft_gui" -- "*.rs"` | no output                            |
+| `cargo test -p livecraft-ui`         | 2 passed                             |
+| `cargo xtask ci`                     | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

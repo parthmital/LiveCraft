@@ -93,10 +93,10 @@ Create `crates/livecraft-formats`, move `als.rs` and `theme.rs` into it via `git
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `cargo test -p livecraft-formats` | tests pass |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                           | Expected result                      |
+| --------------------------------- | ------------------------------------ |
+| `cargo test -p livecraft-formats` | tests pass                           |
+| `cargo xtask ci`                  | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

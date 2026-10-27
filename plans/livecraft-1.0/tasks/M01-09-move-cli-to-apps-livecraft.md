@@ -71,11 +71,11 @@ Move `crates/livecraft-cli` to `apps/livecraft` using `git mv`, rename the packa
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `git grep "livecraft-cli" -- "*.toml" "*.rs"` | no output |
-| `cargo run --bin livecraft -- --version` | `livecraft 0.1.0` |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                                       | Expected result                      |
+| --------------------------------------------- | ------------------------------------ |
+| `git grep "livecraft-cli" -- "*.toml" "*.rs"` | no output                            |
+| `cargo run --bin livecraft -- --version`      | `livecraft 0.1.0`                    |
+| `cargo xtask ci`                              | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

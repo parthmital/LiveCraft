@@ -88,10 +88,10 @@ Create `crates/livecraft-model`, move `model.rs` and `command.rs` into it via `g
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `cargo test -p livecraft-model` | tests pass |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                         | Expected result                      |
+| ------------------------------- | ------------------------------------ |
+| `cargo test -p livecraft-model` | tests pass                           |
+| `cargo xtask ci`                | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 

@@ -63,10 +63,10 @@ Switch all workspace crates from `livecraft_core` to `livecraft_model` and `live
 
 ## Verify
 
-| Command | Expected result |
-| --- | --- |
-| `git grep "livecraft_core" -- "*.rs"` | no output |
-| `cargo xtask ci` | `xtask: all checks passed`, 55 tests |
+| Command                               | Expected result                      |
+| ------------------------------------- | ------------------------------------ |
+| `git grep "livecraft_core" -- "*.rs"` | no output                            |
+| `cargo xtask ci`                      | `xtask: all checks passed`, 55 tests |
 
 ## Commit And Push
 
