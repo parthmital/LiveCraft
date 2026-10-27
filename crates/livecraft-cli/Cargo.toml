@@ -22,6 +22,9 @@ log.workspace = true
 serde_json.workspace = true
 hound.workspace = true
 
+[dev-dependencies]
+insta.workspace = true
+
 [lints]
 workspace = true
 

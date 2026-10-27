@@ -20,7 +20,7 @@ Pin existing offline render metrics (frames, peaks, RMS) and JSON project inspec
 
 ## Steps
 
-1. In `Cargo.toml`, under `[workspace.dependencies]`, add `insta = "1.49.0"`.
+1. In `Cargo.toml`, under `[workspace.dependencies]`, add `insta = { version = "1.49.0", features = ["json"] }`.
 
 2. In `crates/livecraft-cli/Cargo.toml`, add `[dev-dependencies]` section:
 
@@ -126,7 +126,8 @@ Pin existing offline render metrics (frames, peaks, RMS) and JSON project inspec
    #[test]
    fn test_characterisation_inspect_json() {
        let project = Project::new_default("demo");
-       let json = serde_json::to_string_pretty(&project).expect("serialize project json");
+       let val: serde_json::Value = serde_json::to_value(&project).expect("serialize to value");
+       let json = serde_json::to_string_pretty(&val).expect("pretty print sorted json");
        insta::assert_snapshot!("demo_project_inspect", json);
    }
    ```

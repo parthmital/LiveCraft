@@ -26,7 +26,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 ## Phase 1: Core architecture
 
 - [x] Expand M01 Workspace restructure into target crates ([milestone](milestones/M01-workspace-restructure.md))
-- [ ] M01-01 Characterisation tests for render and inspection ([task](tasks/M01-01-characterisation-tests.md))
+- [x] M01-01 Characterisation tests for render and inspection ([task](tasks/M01-01-characterisation-tests.md))
 - [ ] M01-02 Create livecraft-testkit crate ([task](tasks/M01-02-create-testkit.md))
 - [ ] M01-03 Create livecraft-model crate ([task](tasks/M01-03-create-model-crate.md))
 - [ ] M01-04 Create livecraft-formats crate ([task](tasks/M01-04-create-formats-crate.md))

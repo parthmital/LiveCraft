@@ -1,0 +1,579 @@
+---
+source: crates/livecraft-cli/tests/characterisation.rs
+assertion_line: 101
+expression: json
+---
+{
+  "creator": "LiveCraft Engine",
+  "master_track": {
+    "arrangement_clips": [],
+    "automation_lanes": [],
+    "clip_slots": [],
+    "color": "#888888",
+    "device_chain": [
+      {
+        "device_type": "Limiter",
+        "id": 301,
+        "is_enabled": true,
+        "name": "Limiter",
+        "parameters": {
+          "ceiling_db": -0.30000001192092896,
+          "gain_db": 0.0,
+          "release_ms": 150.0
+        }
+      }
+    ],
+    "id": 7,
+    "is_armed": false,
+    "is_muted": false,
+    "is_soloed": false,
+    "monitoring": "Auto",
+    "name": "Master",
+    "pan": 0.0,
+    "sends": [
+      0.0,
+      0.0
+    ],
+    "track_type": "Master",
+    "volume_db": 0.0
+  },
+  "name": "demo",
+  "return_tracks": [
+    {
+      "arrangement_clips": [],
+      "automation_lanes": [],
+      "clip_slots": [
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 5000
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 5001
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 5002
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 5003
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 5004
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 5005
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 5006
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 5007
+        }
+      ],
+      "color": "#b94cff",
+      "device_chain": [
+        {
+          "device_type": "Reverb",
+          "id": 201,
+          "is_enabled": true,
+          "name": "Reverb",
+          "parameters": {
+            "damping": 0.4000000059604645,
+            "decay_time_sec": 2.200000047683716,
+            "dry_wet": 0.25,
+            "room_size": 0.6499999761581421,
+            "stereo_width": 1.0
+          }
+        }
+      ],
+      "id": 5,
+      "is_armed": false,
+      "is_muted": false,
+      "is_soloed": false,
+      "monitoring": "Auto",
+      "name": "A-Reverb",
+      "pan": 0.0,
+      "sends": [
+        0.0,
+        0.0
+      ],
+      "track_type": "Return",
+      "volume_db": 0.0
+    },
+    {
+      "arrangement_clips": [],
+      "automation_lanes": [],
+      "clip_slots": [
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 6000
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 6001
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 6002
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 6003
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 6004
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 6005
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 6006
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 6007
+        }
+      ],
+      "color": "#b94cff",
+      "device_chain": [
+        {
+          "device_type": "Delay",
+          "id": 202,
+          "is_enabled": true,
+          "name": "Delay",
+          "parameters": {
+            "dry_wet": 0.30000001192092896,
+            "feedback": 0.3499999940395355,
+            "ping_pong": 1.0,
+            "time_ms": 375.0
+          }
+        }
+      ],
+      "id": 6,
+      "is_armed": false,
+      "is_muted": false,
+      "is_soloed": false,
+      "monitoring": "Auto",
+      "name": "B-Delay",
+      "pan": 0.0,
+      "sends": [
+        0.0,
+        0.0
+      ],
+      "track_type": "Return",
+      "volume_db": 0.0
+    }
+  ],
+  "scale": {
+    "is_active": false,
+    "root_note": 0,
+    "scale_type": "Minor"
+  },
+  "scenes": [
+    {
+      "color": "#464646",
+      "id": 1,
+      "name": "1",
+      "tempo": null,
+      "time_signature": null
+    },
+    {
+      "color": "#464646",
+      "id": 2,
+      "name": "2",
+      "tempo": null,
+      "time_signature": null
+    },
+    {
+      "color": "#464646",
+      "id": 3,
+      "name": "3",
+      "tempo": null,
+      "time_signature": null
+    },
+    {
+      "color": "#464646",
+      "id": 4,
+      "name": "4",
+      "tempo": null,
+      "time_signature": null
+    },
+    {
+      "color": "#464646",
+      "id": 5,
+      "name": "5",
+      "tempo": null,
+      "time_signature": null
+    },
+    {
+      "color": "#464646",
+      "id": 6,
+      "name": "6",
+      "tempo": null,
+      "time_signature": null
+    },
+    {
+      "color": "#464646",
+      "id": 7,
+      "name": "7",
+      "tempo": null,
+      "time_signature": null
+    },
+    {
+      "color": "#464646",
+      "id": 8,
+      "name": "8",
+      "tempo": null,
+      "time_signature": null
+    }
+  ],
+  "schema_version": "LiveCraft 1.0 (Ableton Live 12.0 compatible)",
+  "tracks": [
+    {
+      "arrangement_clips": [],
+      "automation_lanes": [],
+      "clip_slots": [
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 1000
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 1001
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 1002
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 1003
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 1004
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 1005
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 1006
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 1007
+        }
+      ],
+      "color": "#ffa844",
+      "device_chain": [
+        {
+          "device_type": "Operator",
+          "id": 101,
+          "is_enabled": true,
+          "name": "Operator",
+          "parameters": {
+            "attack_ms": 5.0,
+            "decay_ms": 120.0,
+            "filter_cutoff": 2400.0,
+            "filter_resonance": 0.30000001192092896,
+            "osc1_coarse": 1.0,
+            "osc1_level": 1.0,
+            "osc1_waveform": 0.0,
+            "osc2_coarse": 2.0,
+            "osc2_level": 0.5,
+            "osc2_waveform": 1.0,
+            "release_ms": 300.0,
+            "sustain": 0.699999988079071
+          }
+        }
+      ],
+      "id": 1,
+      "is_armed": false,
+      "is_muted": false,
+      "is_soloed": false,
+      "monitoring": "Auto",
+      "name": "1-MIDI",
+      "pan": 0.0,
+      "sends": [
+        0.0,
+        0.0
+      ],
+      "track_type": "Midi",
+      "volume_db": 0.0
+    },
+    {
+      "arrangement_clips": [],
+      "automation_lanes": [],
+      "clip_slots": [
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 2000
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 2001
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 2002
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 2003
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 2004
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 2005
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 2006
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 2007
+        }
+      ],
+      "color": "#ffa844",
+      "device_chain": [],
+      "id": 2,
+      "is_armed": false,
+      "is_muted": false,
+      "is_soloed": false,
+      "monitoring": "Auto",
+      "name": "2-MIDI",
+      "pan": 0.0,
+      "sends": [
+        0.0,
+        0.0
+      ],
+      "track_type": "Midi",
+      "volume_db": 0.0
+    },
+    {
+      "arrangement_clips": [],
+      "automation_lanes": [],
+      "clip_slots": [
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 3000
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 3001
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 3002
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 3003
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 3004
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 3005
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 3006
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 3007
+        }
+      ],
+      "color": "#40d2ff",
+      "device_chain": [
+        {
+          "device_type": "EqEight",
+          "id": 102,
+          "is_enabled": true,
+          "name": "EQ Eight",
+          "parameters": {
+            "band_1_enabled": 1.0,
+            "band_1_freq": 100.0,
+            "band_1_gain": 0.0,
+            "band_1_q": 0.7070000171661377,
+            "band_2_enabled": 1.0,
+            "band_2_freq": 200.0,
+            "band_2_gain": 0.0,
+            "band_2_q": 0.7070000171661377,
+            "band_3_enabled": 1.0,
+            "band_3_freq": 400.0,
+            "band_3_gain": 0.0,
+            "band_3_q": 0.7070000171661377,
+            "band_4_enabled": 1.0,
+            "band_4_freq": 800.0,
+            "band_4_gain": 0.0,
+            "band_4_q": 0.7070000171661377,
+            "band_5_enabled": 1.0,
+            "band_5_freq": 1600.0,
+            "band_5_gain": 0.0,
+            "band_5_q": 0.7070000171661377,
+            "band_6_enabled": 1.0,
+            "band_6_freq": 3200.0,
+            "band_6_gain": 0.0,
+            "band_6_q": 0.7070000171661377,
+            "band_7_enabled": 1.0,
+            "band_7_freq": 6400.0,
+            "band_7_gain": 0.0,
+            "band_7_q": 0.7070000171661377,
+            "band_8_enabled": 1.0,
+            "band_8_freq": 12800.0,
+            "band_8_gain": 0.0,
+            "band_8_q": 0.7070000171661377
+          }
+        }
+      ],
+      "id": 3,
+      "is_armed": false,
+      "is_muted": false,
+      "is_soloed": false,
+      "monitoring": "Auto",
+      "name": "3-Audio",
+      "pan": 0.0,
+      "sends": [
+        0.0,
+        0.0
+      ],
+      "track_type": "Audio",
+      "volume_db": 0.0
+    },
+    {
+      "arrangement_clips": [],
+      "automation_lanes": [],
+      "clip_slots": [
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 4000
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 4001
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 4002
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 4003
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 4004
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 4005
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 4006
+        },
+        {
+          "clip": null,
+          "has_stop_button": true,
+          "id": 4007
+        }
+      ],
+      "color": "#40d2ff",
+      "device_chain": [],
+      "id": 4,
+      "is_armed": false,
+      "is_muted": false,
+      "is_soloed": false,
+      "monitoring": "Auto",
+      "name": "4-Audio",
+      "pan": 0.0,
+      "sends": [
+        0.0,
+        0.0
+      ],
+      "track_type": "Audio",
+      "volume_db": 0.0
+    }
+  ],
+  "transport": {
+    "bpm": 120.0,
+    "is_playing": false,
+    "is_recording": false,
+    "loop_enabled": false,
+    "loop_length_beats": 16.0,
+    "loop_start_beats": 0.0,
+    "metronome_enabled": false,
+    "playhead_beats": 0.0,
+    "time_signature": [
+      4,
+      4
+    ]
+  },
+  "tuning": null
+}
