@@ -1,6 +1,6 @@
 pub mod als;
-pub mod command;
-pub mod model;
+pub use livecraft_model::command;
+pub use livecraft_model::model;
 pub mod theme;
 
 pub use als::*;

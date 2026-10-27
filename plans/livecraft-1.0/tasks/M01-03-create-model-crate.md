@@ -28,11 +28,16 @@ Create `crates/livecraft-model`, move `model.rs` and `command.rs` into it via `g
    name = "livecraft-model"
    version.workspace = true
    edition.workspace = true
+   rust-version.workspace = true
    license.workspace = true
    repository.workspace = true
+   publish.workspace = true
 
    [dependencies]
    serde.workspace = true
+
+   [lints]
+   workspace = true
    ```
 
 2. In root `Cargo.toml`, under `[workspace.dependencies]`, add:

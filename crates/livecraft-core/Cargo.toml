@@ -8,6 +8,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+livecraft-model = { path = "../livecraft-model" }
 serde.workspace = true
 quick-xml.workspace = true
 flate2.workspace = true

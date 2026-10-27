@@ -1528,6 +1528,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "flate2",
+ "livecraft-model",
  "log",
  "quick-xml 0.42.0",
  "serde",
@@ -1557,6 +1558,13 @@ dependencies = [
  "livecraft-core",
  "livecraft-dsp",
  "log",
+]
+
+[[package]]
+name = "livecraft-model"
+version = "0.1.0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
