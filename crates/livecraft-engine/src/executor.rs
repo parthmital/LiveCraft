@@ -9,10 +9,12 @@
 use crate::collector;
 use crate::compiled::{CompiledGraph, MAX_BLOCK, Node, RAMP_STEP};
 use crate::graph::sanitize_output_sample;
+use crate::snapshot::{ClipState, EngineSnapshot, MAX_NODES, Transport, cpu_load};
 use livecraft_devices::ProcessContext;
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
 use livecraft_model::param::ParamId;
 use livecraft_time::beats_per_sample;
+use std::time::Instant;
 
 /// Capacity of the command queue, in commands.
 pub const COMMAND_CAPACITY: usize = 1024;
@@ -95,11 +97,21 @@ pub enum EngineEvent {
 #[error("the engine queue is full")]
 pub struct QueueFull;
 
-/// The session side: sends commands and graphs, and reads events.
+/// Why a graph was not submitted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum SubmitError {
+    #[error(transparent)]
+    Queue(#[from] QueueFull),
+    #[error("the graph has {nodes} nodes, and the engine publishes at most {max}")]
+    TooManyNodes { nodes: usize, max: usize },
+}
+
+/// The session side: sends commands and graphs, reads events, and reads the engine snapshot.
 pub struct EngineHandle {
     commands: rtrb::Producer<EngineCommand>,
     graphs: rtrb::Producer<Box<CompiledGraph>>,
     events: rtrb::Consumer<EngineEvent>,
+    snapshots: triple_buffer::Output<EngineSnapshot>,
 }
 
 impl EngineHandle {
@@ -110,8 +122,20 @@ impl EngineHandle {
 
     /// Submits a graph built by `GraphCompiler`, in the order it was compiled. The graph replaces
     /// the running one at the next block boundary.
-    pub fn submit_graph(&mut self, graph: CompiledGraph) -> Result<(), QueueFull> {
-        self.graphs.push(Box::new(graph)).map_err(|_| QueueFull)
+    pub fn submit_graph(&mut self, graph: CompiledGraph) -> Result<(), SubmitError> {
+        if graph.nodes().len() > MAX_NODES {
+            return Err(SubmitError::TooManyNodes {
+                nodes: graph.nodes().len(),
+                max: MAX_NODES,
+            });
+        }
+        self.graphs.push(Box::new(graph)).map_err(|_| QueueFull)?;
+        Ok(())
+    }
+
+    /// The newest snapshot the audio thread has published.
+    pub fn snapshot(&mut self) -> &EngineSnapshot {
+        self.snapshots.read()
     }
 
     /// Appends the events the audio thread has sent since the last call.
@@ -141,6 +165,8 @@ pub struct Engine {
     frame: u64,
     /// Parameter changes that take effect at a later frame, in the order they were sent.
     pending: Vec<PendingParam>,
+    /// Publishes the state after each callback. The session reads it through `EngineHandle`.
+    snapshots: triple_buffer::Input<EngineSnapshot>,
 }
 
 impl Engine {
@@ -157,6 +183,16 @@ impl Engine {
         let (graph_tx, graph_rx) = rtrb::RingBuffer::new(GRAPH_CAPACITY);
         let (retired_tx, retired_rx) = rtrb::RingBuffer::new(GRAPH_CAPACITY);
         let (event_tx, event_rx) = rtrb::RingBuffer::new(EVENT_CAPACITY);
+        if graph.nodes().len() > MAX_NODES {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidInput,
+                format!(
+                    "the graph has {} nodes, and the engine publishes at most {MAX_NODES}",
+                    graph.nodes().len()
+                ),
+            ));
+        }
+        let (snapshot_tx, snapshot_rx) = triple_buffer::triple_buffer(&EngineSnapshot::default());
         collector::spawn(retired_rx, shared)?;
         let engine = Engine {
             graph: Box::new(graph),
@@ -171,11 +207,13 @@ impl Engine {
             origin_frame: 0,
             frame: 0,
             pending: Vec::with_capacity(COMMAND_CAPACITY),
+            snapshots: snapshot_tx,
         };
         let handle = EngineHandle {
             commands: command_tx,
             graphs: graph_tx,
             events: event_rx,
+            snapshots: snapshot_rx,
         };
         Ok((engine, handle))
     }
@@ -186,6 +224,7 @@ impl Engine {
         if channels == 0 {
             return;
         }
+        let started = Instant::now();
         self.apply_pending();
         let frames = out.len() / channels;
         let mut start = 0;
@@ -216,6 +255,30 @@ impl Engine {
             self.frame += block as u64;
             start += block;
         }
+        self.publish(frames, started.elapsed().as_secs_f32());
+    }
+
+    /// Writes this callback's state into the snapshot and publishes it. Only fixed-size fields are
+    /// written, so nothing allocates or locks here.
+    fn publish(&mut self, frames: usize, elapsed_seconds: f32) {
+        let playhead_beats = self.playhead_at(self.frame);
+        let snapshot = self.snapshots.input_buffer_mut();
+        snapshot.transport = Transport {
+            playing: self.playing,
+            playhead_beats,
+            bpm: self.bpm,
+        };
+        let nodes = self.graph.nodes();
+        snapshot.node_count = nodes.len().min(MAX_NODES);
+        for (out, node) in snapshot.nodes.iter_mut().zip(nodes) {
+            out.meter = node.meter;
+            out.clip = ClipState {
+                active_slot: node.clips.active_slot,
+                playing: node.clips.playing,
+            };
+        }
+        snapshot.cpu_load = cpu_load(elapsed_seconds, frames, self.sample_rate);
+        self.snapshots.publish();
     }
 
     /// Applies the queued commands, then swaps in the newest submitted graph if there is room to
@@ -678,5 +741,83 @@ mod tests {
         assert!(peaks[1] > 0.1 * peaks[0]);
         assert!(peaks[6] < 0.5 * peaks[0]);
         assert!(peaks[peaks.len() - 1] < 0.01 * peaks[0]);
+    }
+
+    #[test]
+    fn the_snapshot_reports_the_transport_and_the_levels() {
+        let (mut engine, mut handle, _compiler) = started(&Project::new_default("Levels"));
+        handle.send(EngineCommand::SetPlaying(true)).expect("send");
+        render_blocks(&mut engine, 2);
+        let snapshot = handle.snapshot();
+        assert!(snapshot.transport.playing);
+        assert_eq!(snapshot.transport.bpm, 120.0);
+        // Two blocks of 512 frames at 120 BPM and 44.1 kHz, where a beat is 22050 frames.
+        let expected = 1024.0 * 2.0 / 44100.0;
+        assert!((snapshot.transport.playhead_beats - expected).abs() < 1e-9);
+        assert!(snapshot.node_count > 1);
+        assert!(snapshot.nodes[0].meter.peak_l > 0.0);
+        assert!(snapshot.cpu_load >= 0.0 && snapshot.cpu_load.is_finite());
+    }
+
+    #[test]
+    fn the_snapshot_reports_the_launched_clip_of_a_track() {
+        let mut project = Project::new_default("Clip state");
+        let mut clip = Clip::new_midi(900, "Chord", 4.0);
+        if let ClipPayload::Midi(ref mut data) = clip.payload {
+            data.notes.push(MidiNote::new(60, 0.0, 4.0, 100));
+        }
+        project.tracks[0].clip_slots[0].clip = Some(clip);
+        let collector = Collector::new();
+        let mut compiler = GraphCompiler::new(RATE, collector.handle());
+        let graph = compiler.compile(&project);
+        let (mut engine, mut handle) = Engine::start(graph, RATE, collector).expect("start");
+        handle
+            .send(EngineCommand::TriggerClip {
+                track: TrackId(1),
+                slot: 0,
+            })
+            .expect("send");
+        handle.send(EngineCommand::SetPlaying(true)).expect("send");
+        render_blocks(&mut engine, 1);
+        assert_eq!(
+            handle.snapshot().nodes[0].clip,
+            ClipState {
+                active_slot: Some(0),
+                playing: true,
+            }
+        );
+    }
+
+    #[test]
+    fn a_graph_with_more_nodes_than_the_snapshot_holds_is_refused() {
+        use crate::clip::ClipLane;
+        use crate::compiled::{Mixer, Node, NodeKind};
+        let (_engine, mut handle, _compiler) = started(&Project::new_default("Large"));
+        let mixer = Mixer {
+            volume_db: 0.0,
+            pan: 0.0,
+            is_muted: false,
+            is_soloed: false,
+            sends: Vec::new(),
+        };
+        let nodes: Vec<Node> = (0..=MAX_NODES)
+            .map(|index| {
+                Node::new(
+                    TrackId(index as u64 + 1),
+                    NodeKind::Track,
+                    mixer.clone(),
+                    Vec::new(),
+                    ClipLane::new(Vec::new(), Vec::new(), false, 0),
+                )
+            })
+            .collect();
+        let large = CompiledGraph::new(nodes, MAX_NODES + 1, 0, Vec::new(), Vec::new());
+        assert_eq!(
+            handle.submit_graph(large),
+            Err(SubmitError::TooManyNodes {
+                nodes: MAX_NODES + 1,
+                max: MAX_NODES,
+            })
+        );
     }
 }

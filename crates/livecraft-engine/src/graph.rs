@@ -33,7 +33,7 @@ pub fn sanitize_output_sample(sample: f32) -> f32 {
     if sample.is_finite() { sample } else { 0.0 }
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct TrackMeter {
     pub peak_l: f32,
     pub peak_r: f32,

@@ -60,6 +60,8 @@ pub struct ClipLane {
     sounding: Vec<(usize, u8)>,
     /// Set when the clip changes or stops, so the notes that are sounding get note-offs.
     stop_pending: bool,
+    /// True when a clip played in the last block.
+    pub playing: bool,
 }
 
 impl ClipLane {
@@ -76,6 +78,7 @@ impl ClipLane {
             plays_clips,
             sounding: Vec::with_capacity(capacity),
             stop_pending: false,
+            playing: false,
         }
     }
 
@@ -101,6 +104,7 @@ impl ClipLane {
         right: &mut [f32],
     ) {
         let beats_per_frame = ctx.beats_per_frame;
+        self.playing = false;
         if self.stop_pending || !self.plays_clips || beats_per_frame == 0.0 {
             self.end_sounding(events);
         }
@@ -111,6 +115,7 @@ impl ClipLane {
         if let Some(slot) = self.active_slot {
             let clip = self.slots.get(slot).and_then(Option::as_ref);
             if let Some(clip) = clip {
+                self.playing = true;
                 let length = clip.length_beats.max(1.0);
                 play(
                     PlayPass {
@@ -132,6 +137,7 @@ impl ClipLane {
                     && position < arranged.start_beat + arranged.length_beats
             });
             if let Some(arranged) = found {
+                self.playing = true;
                 let relative = position - arranged.start_beat;
                 let length = arranged.clip.length_beats.max(1.0);
                 let (loop_length, clip_position) = if arranged.clip.is_looping {

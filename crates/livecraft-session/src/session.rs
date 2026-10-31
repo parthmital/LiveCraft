@@ -281,8 +281,8 @@ impl Session {
         match engine.graph.try_lock() {
             Ok(graph) => EngineStatus {
                 playhead_beats: graph.playhead_beats,
-                track_meters: graph.track_states.iter().map(|s| s.meter.clone()).collect(),
-                master_meter: graph.master_meter.clone(),
+                track_meters: graph.track_states.iter().map(|s| s.meter).collect(),
+                master_meter: graph.master_meter,
                 active_slots: graph
                     .track_states
                     .iter()
