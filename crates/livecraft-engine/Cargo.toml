@@ -20,17 +20,19 @@ log.workspace = true
 rtrb.workspace = true
 basedrop.workspace = true
 triple_buffer.workspace = true
-assert_no_alloc = { workspace = true, optional = true }
+assert_no_alloc = { workspace = true, optional = true, default-features = false }
 thiserror.workspace = true
 
 [dev-dependencies]
-assert_no_alloc.workspace = true
+assert_no_alloc = { workspace = true, default-features = false }
 
 [features]
-default = ["rt-checks"]
-# Runs audio code inside `assert_no_alloc`, which aborts on allocation. The check is disabled in
-# release builds by the crate's default `disable_release` feature.
+default = ["rt-checks", "disable-release-checks"]
+# Runs audio code inside `assert_no_alloc`, which aborts on allocation.
 rt-checks = ["dep:assert_no_alloc"]
+# Turns the checks off in release builds. Build with `--no-default-features --features rt-checks` to
+# keep them on in release, which the 10-minute playback test needs (M05 item 11).
+disable-release-checks = ["assert_no_alloc?/disable_release"]
 
 [lints]
 workspace = true
