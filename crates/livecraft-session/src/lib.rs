@@ -18,5 +18,6 @@ pub use preferences::{
 };
 pub use registry::CommandRegistry;
 pub use session::{
-    DriverFactory, EngineStatus, Session, SessionAudioError, TrackMeter, demo_set, load_set,
+    AUDIO_RETRY, DriverFactory, EngineStatus, Session, SessionAudioError, TrackMeter, demo_set,
+    load_set,
 };

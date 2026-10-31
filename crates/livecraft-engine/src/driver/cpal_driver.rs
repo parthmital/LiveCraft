@@ -4,7 +4,7 @@
 //! `open` picks the host, the devices, the sample rate, and the buffer size. `start` builds and plays
 //! the streams. The output callback calls `Engine::process` and records the output delay in an atomic.
 //! The input callback pushes its samples into a ring that the engine reads, and records the input
-//! delay. The output error callback records a lost device, which `status` reports.
+//! delay. The output and input error callbacks record a lost device, which `status` reports.
 
 use super::{AudioDriver, DriverConfig, DriverError, DriverStatus, Latency};
 use crate::executor::Engine;
@@ -126,6 +126,7 @@ impl CpalDriver {
         let channels = usize::from(setup.config.channels);
         let rate = setup.config.sample_rate;
         let input_frames = Arc::clone(&self.input_frames);
+        let lost = Arc::clone(&self.lost);
         let stream = setup.device.build_input_stream(
             setup.config,
             move |data: &[T], info: &cpal::InputCallbackInfo| {
@@ -142,7 +143,13 @@ impl CpalDriver {
                     }
                 }
             },
-            |err: cpal::Error| log::error!("Audio input error: {err}"),
+            // Losing the input device loses the driver too, so the session reopens both (M06 item 8).
+            move |err: cpal::Error| {
+                log::error!("Audio input error: {err}");
+                if err.kind() == ErrorKind::DeviceNotAvailable {
+                    let _ = lost.set(format!("the audio input device is not available: {err}"));
+                }
+            },
             None,
         )?;
         Ok(stream)

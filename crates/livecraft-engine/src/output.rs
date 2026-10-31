@@ -67,6 +67,16 @@ impl Playback {
             .map_or(DriverStatus::Stopped, |driver| driver.status())
     }
 
+    /// The driver's buffer size in frames, or None when the Set renders without a driver.
+    pub fn buffer_frames(&self) -> Option<u32> {
+        self.driver.as_ref().map(|driver| driver.buffer_frames())
+    }
+
+    /// The driver's output channels, or None when the Set renders without a driver.
+    pub fn channels(&self) -> Option<usize> {
+        self.driver.as_ref().map(|driver| driver.channels())
+    }
+
     /// The input and output latency of the driver. It is zero when the Set renders without a driver.
     pub fn latency(&self) -> Latency {
         self.driver

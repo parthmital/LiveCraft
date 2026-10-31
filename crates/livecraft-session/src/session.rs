@@ -11,7 +11,8 @@ use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
 use crate::preferences::{AudioPreferences, MidiPreferences, Preferences, PreferencesError};
 use livecraft_engine::driver::{
-    AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, list_devices,
+    AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, DriverStatus, NullDriver,
+    list_devices,
 };
 use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
@@ -20,7 +21,10 @@ use livecraft_formats::als::{AlsError, AlsParser};
 use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
 use livecraft_model::model::{MidiNote, Project};
 use std::path::{Path, PathBuf};
-use std::time::Instant;
+use std::time::{Duration, Instant};
+
+/// How long the session waits between attempts to reopen a lost audio output (M06 item 8).
+pub const AUDIO_RETRY: Duration = Duration::from_secs(2);
 
 pub use livecraft_engine::snapshot::TrackMeter;
 
@@ -104,6 +108,13 @@ pub struct Session {
     driver_factory: DriverFactory,
     /// Where the preferences are saved after an audio change, or `None` when there is no file.
     prefs_path: Option<PathBuf>,
+    /// Why the audio output is not the one the preferences name, for the status bar.
+    audio_error: Option<String>,
+    /// When to try the preferred output again, while the Set plays on the silent driver.
+    audio_retry: Option<Instant>,
+    /// The state handed to the running output when it started. It is carried over again when the
+    /// output is replaced before its engine has published a snapshot.
+    carried: Option<Carried>,
 }
 
 impl Session {
@@ -137,6 +148,9 @@ impl Session {
             preferences,
             driver_factory,
             prefs_path,
+            audio_error: None,
+            audio_retry: None,
+            carried: None,
         }
     }
 
@@ -182,22 +196,111 @@ impl Session {
         &mut self,
         audio: AudioPreferences,
     ) -> Result<(), SessionAudioError> {
-        let mut next = open_output(
-            &self.project,
-            &self.driver_factory,
-            &DriverConfig::from(&audio),
-            &self.preferences.midi,
-        )?;
-        if let Some(previous) = self.engine.as_mut() {
-            carry_over(previous, &mut next, &self.project);
+        let driver = (self.driver_factory)(&DriverConfig::from(&audio))?;
+        if let Err(error) = self.switch_output(driver) {
+            // The old output is closed by now, so the Set plays on silently and retries.
+            self.fall_back(error.to_string(), Instant::now());
+            return Err(error);
         }
-        // Replacing the engine drops the previous one, which stops its output.
-        self.engine = Some(next);
+        self.audio_error = None;
+        self.audio_retry = None;
         self.preferences.audio = audio;
         if let Some(path) = &self.prefs_path {
             self.preferences.save(path)?;
         }
         Ok(())
+    }
+
+    /// Why the audio output is not the one the preferences name, or None when it is. The status bar
+    /// shows it.
+    pub fn audio_error(&self) -> Option<&str> {
+        self.audio_error.as_deref()
+    }
+
+    /// Checks the audio output (M06 item 8). The app calls it every frame. When the device is lost, the
+    /// Set carries on on a silent driver at the same rate, so the transport keeps running, and the error
+    /// is reported. From then on, the preferred output is tried again every `AUDIO_RETRY`.
+    pub fn poll_audio(&mut self) {
+        self.poll_audio_at(Instant::now());
+    }
+
+    /// As `poll_audio`, at the time `now`. Tests pass the time, so they need not wait for a retry.
+    pub fn poll_audio_at(&mut self, now: Instant) {
+        if let Some(engine) = self.engine.as_ref()
+            && let DriverStatus::Lost(message) = engine.driver_status()
+        {
+            log::warn!("The audio output was lost, so the Set plays on silently: {message}");
+            self.fall_back(message, now);
+            return;
+        }
+        if self.audio_retry.is_none_or(|at| now < at) {
+            return;
+        }
+        let config = DriverConfig::from(&self.preferences.audio);
+        let result = (self.driver_factory)(&config)
+            .map_err(SessionAudioError::from)
+            .and_then(|driver| self.switch_output(driver));
+        match result {
+            Ok(()) => {
+                log::info!("The audio output is back");
+                self.audio_error = None;
+                self.audio_retry = None;
+            }
+            Err(SessionAudioError::Driver(error)) => {
+                // The device is still missing, and the silent driver kept running.
+                log::debug!("The audio output is still unavailable: {error}");
+                self.audio_retry = Some(now + AUDIO_RETRY);
+            }
+            Err(error) => {
+                // The silent driver was closed to start the device, so start it again.
+                self.fall_back(error.to_string(), now);
+            }
+        }
+    }
+
+    /// Plays the Set on `driver` from where the current output is: the playhead, the transport, and
+    /// the launched clips carry over. The current output, with its MIDI ports, is closed first, since a
+    /// MIDI port may not open twice.
+    fn switch_output(&mut self, driver: Box<dyn AudioDriver>) -> Result<(), SessionAudioError> {
+        let pending = self.carried.take();
+        let carried = match self.engine.as_mut() {
+            Some(previous) => Carried::read(previous, &self.project, pending),
+            None => pending,
+        };
+        self.engine = None;
+        let ports = midi_ports(&self.preferences.midi);
+        let mut next = Playback::open_with_driver(&self.project, driver, &ports)
+            .map_err(SessionAudioError::Output)?;
+        if let Some(carried) = &carried {
+            carried.apply(&mut next);
+        }
+        self.carried = carried;
+        self.engine = Some(next);
+        Ok(())
+    }
+
+    /// Moves the Set onto a silent driver at the current rate and buffer size, records `message`, and
+    /// schedules a retry of the preferred output.
+    fn fall_back(&mut self, message: String, now: Instant) {
+        // Without a running output, the preferred rate and buffer size, or 44.1 kHz and 512 frames.
+        let audio = &self.preferences.audio;
+        let preferred = (
+            audio.sample_rate.unwrap_or(44_100),
+            audio.buffer_size.unwrap_or(512),
+            2,
+        );
+        let (rate, frames, channels) = self.engine.as_ref().map_or(preferred, |engine| {
+            (
+                engine.sample_rate as u32,
+                engine.buffer_frames().unwrap_or(preferred.1),
+                engine.channels().unwrap_or(preferred.2),
+            )
+        });
+        if let Err(error) = self.switch_output(Box::new(NullDriver::new(rate, frames, channels))) {
+            log::error!("The silent audio driver could not start: {error}");
+        }
+        self.audio_error = Some(message);
+        self.audio_retry = Some(now + AUDIO_RETRY);
     }
 
     /// Saves the Set to a `.als` file (manual 5.4.1) and records it as saved.
@@ -410,11 +513,16 @@ fn open_output(
     midi: &MidiPreferences,
 ) -> Result<Playback, SessionAudioError> {
     let driver = factory(config)?;
-    let ports = MidiPorts {
+    Playback::open_with_driver(project, driver, &midi_ports(midi))
+        .map_err(SessionAudioError::Output)
+}
+
+/// The MIDI ports that `midi` asks for, among the ports this machine offers.
+fn midi_ports(midi: &MidiPreferences) -> MidiPorts {
+    MidiPorts {
         inputs: midi.input_ports_to_open(&list_midi_ports().inputs),
         outputs: midi.output_ports_to_open(),
-    };
-    Playback::open_with_driver(project, driver, &ports).map_err(SessionAudioError::Output)
+    }
 }
 
 /// Opens the output and the MIDI inputs that `preferences` name. When that output cannot be opened, the
@@ -445,22 +553,42 @@ fn open_engine(
         .ok()
 }
 
-/// Carries the playhead, the transport, and the launched clips of `previous` over to `next`. They
-/// are read from the latest snapshot of `previous`, so they are as the audio thread last published.
-fn carry_over(previous: &mut Playback, next: &mut Playback, project: &Project) {
-    let snapshot = previous.handle.snapshot();
-    let playhead = snapshot.transport.playhead_beats;
-    let playing = snapshot.transport.playing;
-    let launched: Vec<(TrackId, usize)> = project
-        .tracks
-        .iter()
-        .take(snapshot.node_count)
-        .zip(&snapshot.nodes)
-        .filter_map(|(track, node)| node.clip.active_slot.map(|slot| (track.id, slot)))
-        .collect();
-    for (track, slot) in launched {
-        send_command(next, EngineCommand::TriggerClip { track, slot });
+/// The playhead, the transport, and the launched clips of an output, carried over to the next one.
+#[derive(Debug, Clone)]
+struct Carried {
+    playhead: f64,
+    playing: bool,
+    launched: Vec<(TrackId, usize)>,
+}
+
+impl Carried {
+    /// Reads them from the latest snapshot of `playback`, so they are as the audio thread last
+    /// published them. Before the engine has published, they are `pending`, the state it was started
+    /// with.
+    fn read(playback: &mut Playback, project: &Project, pending: Option<Carried>) -> Option<Self> {
+        let snapshot = playback.handle.snapshot();
+        if snapshot.frames == 0 {
+            return pending;
+        }
+        let launched = project
+            .tracks
+            .iter()
+            .take(snapshot.node_count)
+            .zip(&snapshot.nodes)
+            .filter_map(|(track, node)| node.clip.active_slot.map(|slot| (track.id, slot)))
+            .collect();
+        Some(Self {
+            playhead: snapshot.transport.playhead_beats,
+            playing: snapshot.transport.playing,
+            launched,
+        })
     }
-    send_command(next, EngineCommand::SetPlayhead(playhead));
-    send_command(next, EngineCommand::SetPlaying(playing));
+
+    fn apply(&self, next: &mut Playback) {
+        for &(track, slot) in &self.launched {
+            send_command(next, EngineCommand::TriggerClip { track, slot });
+        }
+        send_command(next, EngineCommand::SetPlayhead(self.playhead));
+        send_command(next, EngineCommand::SetPlaying(self.playing));
+    }
 }

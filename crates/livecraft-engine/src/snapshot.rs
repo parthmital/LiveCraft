@@ -84,6 +84,9 @@ pub struct EngineSnapshot {
     pub output: TrackMeter,
     /// The time the last block took, as a share of its buffer period. 1.0 means the whole period.
     pub cpu_load: f32,
+    /// The frames the engine has rendered. It is 0 until the first callback publishes, so a reader can
+    /// tell the default snapshot from a published one.
+    pub frames: u64,
 }
 
 impl Default for EngineSnapshot {
@@ -94,6 +97,7 @@ impl Default for EngineSnapshot {
             node_count: 0,
             output: TrackMeter::default(),
             cpu_load: 0.0,
+            frames: 0,
         }
     }
 }

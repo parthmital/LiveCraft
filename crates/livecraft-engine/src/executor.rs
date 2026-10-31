@@ -448,6 +448,7 @@ impl Engine {
         }
         snapshot.output = self.graph.output_meter;
         snapshot.cpu_load = cpu_load(elapsed_seconds, frames, self.sample_rate);
+        snapshot.frames = self.frame;
         self.snapshots.publish();
         if let Some(midi) = self.midi_out.as_mut() {
             midi.anchor.write(Some(anchor));

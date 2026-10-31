@@ -1,13 +1,18 @@
-//! Opening and changing the audio output of a Set (M06 items 3 and 4). The factories build
-//! `NullDriver`s, so these tests need no audio device.
+//! Opening, changing, losing, and recovering the audio output of a Set (M06 items 3, 4, and 8). The
+//! factories build `NullDriver`s, so these tests need no audio device.
 
-use livecraft_engine::driver::{AudioDriver, DriverConfig, DriverError, NullDriver};
+use livecraft_engine::driver::{
+    AudioDriver, DriverConfig, DriverError, DriverStatus, Latency, NullDriver,
+};
+use livecraft_engine::executor::Engine;
 use livecraft_model::ids::TrackId;
 use livecraft_model::model::Project;
 use livecraft_session::{
-    AudioPreferences, DriverFactory, Preferences, Session, SessionAudioError, demo_set,
+    AUDIO_RETRY, AudioPreferences, DriverFactory, Preferences, Session, SessionAudioError, demo_set,
 };
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::thread::sleep;
 use std::time::{Duration, Instant};
 
@@ -231,4 +236,132 @@ fn a_midi_input_that_is_not_connected_does_not_stop_the_set_from_playing() {
         "the playhead moves with a missing MIDI input",
         || session.status().playhead_beats > before,
     );
+}
+
+/// A device that plays silently until it is unplugged, and then reports itself lost.
+struct TestDevice {
+    inner: NullDriver,
+    unplugged: Arc<AtomicBool>,
+}
+
+impl AudioDriver for TestDevice {
+    fn name(&self) -> &str {
+        "Test device"
+    }
+    fn sample_rate(&self) -> u32 {
+        self.inner.sample_rate()
+    }
+    fn buffer_frames(&self) -> u32 {
+        self.inner.buffer_frames()
+    }
+    fn channels(&self) -> usize {
+        self.inner.channels()
+    }
+    fn latency(&self) -> Latency {
+        self.inner.latency()
+    }
+    fn start(&mut self, engine: Engine) -> Result<(), DriverError> {
+        self.inner.start(engine)
+    }
+    fn status(&self) -> DriverStatus {
+        if self.unplugged.load(Ordering::Relaxed) {
+            DriverStatus::Lost("the test device was unplugged".to_string())
+        } else {
+            self.inner.status()
+        }
+    }
+}
+
+/// The test device's plug, and how many times the factory opened it.
+#[derive(Clone, Default)]
+struct Plug {
+    unplugged: Arc<AtomicBool>,
+    opened: Arc<AtomicUsize>,
+}
+
+impl Plug {
+    fn set_unplugged(&self, unplugged: bool) {
+        self.unplugged.store(unplugged, Ordering::Relaxed);
+    }
+
+    /// A factory that opens the test device while it is plugged in, and finds no device otherwise.
+    fn factory(&self) -> DriverFactory {
+        let plug = self.clone();
+        Box::new(
+            move |config: &DriverConfig| -> Result<Box<dyn AudioDriver>, DriverError> {
+                if plug.unplugged.load(Ordering::Relaxed) {
+                    return Err(DriverError::NoOutputDevice);
+                }
+                plug.opened.fetch_add(1, Ordering::Relaxed);
+                Ok(Box::new(TestDevice {
+                    inner: NullDriver::new(config.sample_rate.unwrap_or(48_000), 256, 2),
+                    unplugged: Arc::clone(&plug.unplugged),
+                }))
+            },
+        )
+    }
+}
+
+/// Fails unless the playhead moves within 500 ms of `since`.
+fn assert_playhead_moves(session: &mut Session, what: &str) {
+    let since = session.status().playhead_beats;
+    wait_for(Duration::from_millis(500), what, || {
+        session.status().playhead_beats > since
+    });
+}
+
+#[test]
+fn an_unplugged_device_leaves_the_set_playing_silently_and_reports_the_error() {
+    let plug = Plug::default();
+    let mut session = Session::with_driver_factory(demo(), plug.factory(), None);
+    session.set_playing(true);
+    assert_playhead_moves(&mut session, "the transport moves on the device");
+    assert_eq!(session.audio_error(), None);
+
+    plug.set_unplugged(true);
+    let now = Instant::now();
+    session.poll_audio_at(now);
+    assert_eq!(session.audio_error(), Some("the test device was unplugged"));
+    assert_playhead_moves(&mut session, "the transport moves on the silent driver");
+    assert_eq!(session.status().sample_rate, Some(48_000.0));
+
+    // Before the retry time, nothing is tried. At it, the device is still missing.
+    session.poll_audio_at(now + AUDIO_RETRY / 2);
+    session.poll_audio_at(now + AUDIO_RETRY);
+    assert_eq!(plug.opened.load(Ordering::Relaxed), 1);
+    assert!(session.audio_error().is_some());
+    assert_playhead_moves(
+        &mut session,
+        "the transport still moves while the device is missing",
+    );
+}
+
+#[test]
+fn a_device_plugged_back_in_is_used_again_at_the_next_retry() {
+    let plug = Plug::default();
+    let mut session = Session::with_driver_factory(demo(), plug.factory(), None);
+    session.trigger_clip(TrackId(1), 0);
+    session.set_playing(true);
+    wait_for(Duration::from_millis(500), "the clip launches", || {
+        session.status().active_slots.first() == Some(&Some(0))
+    });
+
+    plug.set_unplugged(true);
+    let now = Instant::now();
+    session.poll_audio_at(now);
+    assert!(session.audio_error().is_some());
+
+    plug.set_unplugged(false);
+    session.poll_audio_at(now + AUDIO_RETRY);
+    assert_eq!(session.audio_error(), None);
+    assert_eq!(plug.opened.load(Ordering::Relaxed), 2);
+    assert_playhead_moves(&mut session, "the transport moves on the device again");
+    wait_for(
+        Duration::from_millis(500),
+        "the clip is still launched",
+        || session.status().active_slots.first() == Some(&Some(0)),
+    );
+    // A healthy device is not reopened.
+    session.poll_audio_at(now + AUDIO_RETRY * 3);
+    assert_eq!(plug.opened.load(Ordering::Relaxed), 2);
 }

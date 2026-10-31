@@ -229,6 +229,13 @@ impl eframe::App for LiveCraftApp {
             ctx.request_repaint();
         }
 
+        // A lost audio device moves the Set to a silent driver, and the session retries the device
+        // (M06 item 8). Repaint while it is lost, so the retries run without input.
+        self.session.poll_audio();
+        if self.session.audio_error().is_some() {
+            ctx.request_repaint_after(livecraft_session::AUDIO_RETRY);
+        }
+
         // The engine's playhead, meters, and active clips, read without blocking the audio thread
         let status = self.session.status();
         let playhead_beats = status.playhead_beats;
@@ -291,15 +298,22 @@ impl eframe::App for LiveCraftApp {
                     );
 
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        let engine_text = match status.sample_rate {
-                            Some(rate) => format!("{:.1} kHz", rate / 1000.0),
-                            None => "No audio device".to_string(),
-                        };
-                        ui.label(
-                            egui::RichText::new(engine_text)
-                                .size(10.0)
-                                .color(Color32::from_rgb(0x70, 0x70, 0x70)),
-                        );
+                        let (engine_text, color) =
+                            match (self.session.audio_error(), status.sample_rate) {
+                                (Some(error), _) => (
+                                    format!("Audio device unavailable: {error}"),
+                                    self.palette.amber,
+                                ),
+                                (None, Some(rate)) => (
+                                    format!("{:.1} kHz", rate / 1000.0),
+                                    Color32::from_rgb(0x70, 0x70, 0x70),
+                                ),
+                                (None, None) => (
+                                    "No audio device".to_string(),
+                                    Color32::from_rgb(0x70, 0x70, 0x70),
+                                ),
+                            };
+                        ui.label(egui::RichText::new(engine_text).size(10.0).color(color));
                     });
                 });
             });
