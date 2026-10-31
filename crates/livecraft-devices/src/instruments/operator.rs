@@ -1,5 +1,10 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use crate::device_processor::{
+    AudioIo, DeviceProcessor, EventList, EventSink, NoteEvent, NoteSource, ProcessContext,
+    render_notes,
+};
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -521,5 +526,125 @@ impl OperatorSynth {
         }
 
         (total_l * 0.35, total_r * 0.35)
+    }
+}
+
+/// The waveform for a parameter value, which is the rounded index in the waveform list. Other
+/// indices give `fallback`.
+fn waveform_from_index(value: f32, fallback: Waveform) -> Waveform {
+    match value.round() as i32 {
+        0 => Waveform::Sine,
+        1 => Waveform::Sawtooth,
+        2 => Waveform::Square,
+        3 => Waveform::Triangle,
+        4 => Waveform::Noise,
+        _ => fallback,
+    }
+}
+
+impl NoteSource for OperatorSynth {
+    fn apply_note(&mut self, event: &NoteEvent) {
+        match *event {
+            NoteEvent::On {
+                pitch,
+                velocity,
+                freq_hz,
+                ..
+            } => self.note_on_with_freq(pitch, velocity, freq_hz),
+            NoteEvent::Off { pitch, .. } => self.note_off(pitch),
+        }
+    }
+
+    fn next_frame(&mut self) -> (f32, f32) {
+        self.process_sample()
+    }
+}
+
+impl DeviceProcessor for OperatorSynth {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        render_notes(self, io, events);
+    }
+
+    /// Ids are positions in the Operator table of `livecraft_model::device`. Id 2, the coarse
+    /// tuning of oscillator 1, has no effect in this port, as before M05. `process_sample` syncs
+    /// the operators from these fields on every frame.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.osc1_wave = waveform_from_index(value, Waveform::Sine),
+            1 => self.osc1_level = value.clamp(0.0, 2.0),
+            3 => self.osc2_wave = waveform_from_index(value, Waveform::Sawtooth),
+            4 => self.osc2_level = value.clamp(0.0, 2.0),
+            5 => self.osc2_coarse = value.clamp(0.25, 16.0),
+            6 => self.filter_cutoff = value.clamp(20.0, 20000.0),
+            7 => self.filter_resonance = value.clamp(0.1, 10.0),
+            8 => self.envelope.attack_sec = (value * 0.001).clamp(0.001, 10.0),
+            9 => self.envelope.decay_sec = (value * 0.001).clamp(0.001, 10.0),
+            10 => self.envelope.sustain_level = value.clamp(0.0, 1.0),
+            11 => self.envelope.release_sec = (value * 0.001).clamp(0.001, 10.0),
+            12 => self.algorithm = (value.round() as u8).clamp(1, 11),
+            13 => self.feedback = value.clamp(0.0, 1.0),
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {
+        self.all_notes_off();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{assert_block_size_does_not_change_notes, run_notes};
+
+    fn on(pitch: u8) -> NoteEvent {
+        NoteEvent::On {
+            offset: 0,
+            pitch,
+            velocity: 100,
+            freq_hz: 440.0,
+        }
+    }
+
+    #[test]
+    fn operator_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_notes(
+            || OperatorSynth::new(44100.0),
+            &[
+                (100, on(60)),
+                (
+                    1500,
+                    NoteEvent::Off {
+                        offset: 0,
+                        pitch: 60,
+                    },
+                ),
+            ],
+        );
+    }
+
+    #[test]
+    fn a_note_on_is_silent_before_its_offset() {
+        let mut operator = OperatorSynth::new(44100.0);
+        let (left, _) = run_notes(&mut operator, 256, 256, &[(100, on(60))]);
+        assert!(left[..100].iter().all(|&s| s == 0.0));
+        assert!(left[100..].iter().any(|&s| s != 0.0));
+    }
+
+    #[test]
+    fn operator_filter_cutoff_changes_the_output() {
+        let mut bright = OperatorSynth::new(44100.0);
+        let mut dark = OperatorSynth::new(44100.0);
+        dark.set_param(ParamId(6), 200.0, 0);
+        let events = [(0, on(60))];
+        let (bright_l, _) = run_notes(&mut bright, 2048, 512, &events);
+        let (dark_l, _) = run_notes(&mut dark, 2048, 512, &events);
+        assert_ne!(bright_l, dark_l);
     }
 }

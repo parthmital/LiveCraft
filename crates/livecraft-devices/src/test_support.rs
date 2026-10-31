@@ -1,6 +1,8 @@
 //! Helpers that check device processors: block size invariance and parameter effects (M05).
 
-use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
+use crate::device_processor::{
+    AudioIo, DeviceProcessor, EventList, EventSink, NoteEvent, ProcessContext,
+};
 use livecraft_model::param::ParamId;
 
 pub fn context(frames: usize) -> ProcessContext {
@@ -81,4 +83,47 @@ pub fn assert_parameter_changes_output<P: DeviceProcessor>(
     changed.set_param(ParamId(id), value, 0);
     let (changed_l, _) = run(&mut changed, &input, 512);
     assert_ne!(bits(&default_l), bits(&changed_l));
+}
+
+/// Renders `frames` frames of a note source that starts silent. Each `(frame, event)` pair takes
+/// effect at that absolute frame; the engine's job of cutting events into blocks is done here.
+pub fn run_notes<P: DeviceProcessor>(
+    processor: &mut P,
+    frames: usize,
+    block: usize,
+    events: &[(usize, NoteEvent)],
+) -> (Vec<f32>, Vec<f32>) {
+    let mut left = vec![0.0f32; frames];
+    let mut right = vec![0.0f32; frames];
+    for start in (0..frames).step_by(block) {
+        let end = (start + block).min(frames);
+        let mut block_events = EventList::with_capacity(events.len());
+        for &(frame, event) in events {
+            if (start..end).contains(&frame) {
+                assert!(block_events.push(event.at((frame - start) as u32)));
+            }
+        }
+        let mut io = AudioIo {
+            left: &mut left[start..end],
+            right: &mut right[start..end],
+        };
+        processor.process(
+            &context(end - start),
+            &mut io,
+            &block_events,
+            &mut EventSink::default(),
+        );
+    }
+    (left, right)
+}
+
+/// Checks that a note source gives the same bits for 512-frame blocks and for 7-frame blocks.
+pub fn assert_block_size_does_not_change_notes<P: DeviceProcessor>(
+    mut make: impl FnMut() -> P,
+    events: &[(usize, NoteEvent)],
+) {
+    let (whole_l, whole_r) = run_notes(&mut make(), 2048, 512, events);
+    let (block_l, block_r) = run_notes(&mut make(), 2048, 7, events);
+    assert_eq!(bits(&whole_l), bits(&block_l));
+    assert_eq!(bits(&whole_r), bits(&block_r));
 }

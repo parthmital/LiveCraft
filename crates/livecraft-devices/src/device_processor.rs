@@ -55,6 +55,54 @@ pub enum NoteEvent {
     },
 }
 
+impl NoteEvent {
+    /// Frames from the start of the block at which the event happens.
+    pub fn offset(&self) -> u32 {
+        match *self {
+            NoteEvent::On { offset, .. } | NoteEvent::Off { offset, .. } => offset,
+        }
+    }
+
+    /// The same event at another offset. The engine uses it to move an event between blocks.
+    pub fn at(self, offset: u32) -> Self {
+        match self {
+            NoteEvent::On {
+                pitch,
+                velocity,
+                freq_hz,
+                ..
+            } => NoteEvent::On {
+                offset,
+                pitch,
+                velocity,
+                freq_hz,
+            },
+            NoteEvent::Off { pitch, .. } => NoteEvent::Off { offset, pitch },
+        }
+    }
+}
+
+/// A source that plays notes and makes one stereo frame at a time. The instruments implement it,
+/// and `render_notes` runs it over a block.
+pub trait NoteSource {
+    fn apply_note(&mut self, event: &NoteEvent);
+    fn next_frame(&mut self) -> (f32, f32);
+}
+
+/// Renders a block from a note source: each event takes effect on the frame at its offset, and the
+/// frame's output is added to `io`, which holds the input of the source.
+pub fn render_notes(source: &mut impl NoteSource, io: &mut AudioIo<'_>, events: &EventList) {
+    let mut pending = events.iter().peekable();
+    for frame in 0..io.frames() {
+        while let Some(event) = pending.next_if(|event| event.offset() as usize <= frame) {
+            source.apply_note(event);
+        }
+        let (left, right) = source.next_frame();
+        io.left[frame] += left;
+        io.right[frame] += right;
+    }
+}
+
 /// A fixed-capacity list of note events. It is allocated once, off the audio thread, and `push`
 /// refuses events beyond its capacity instead of growing.
 #[derive(Debug, Clone, Default)]
