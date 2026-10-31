@@ -5,10 +5,12 @@
 //! device. `VirtualDriver` renders on demand, for offline work (M08).
 
 mod cpal_driver;
+mod devices;
 mod null;
 mod virtual_driver;
 
 pub use cpal_driver::CpalDriver;
+pub use devices::{DeviceInfo, DeviceList, HostInfo, list_devices};
 pub use null::NullDriver;
 pub use virtual_driver::VirtualDriver;
 

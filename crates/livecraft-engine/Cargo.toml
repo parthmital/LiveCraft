@@ -13,6 +13,7 @@ livecraft-dsp.workspace = true
 livecraft-devices.workspace = true
 livecraft-time.workspace = true
 cpal.workspace = true
+serde.workspace = true
 hound.workspace = true
 crossbeam-channel.workspace = true
 anyhow.workspace = true

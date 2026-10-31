@@ -3,6 +3,16 @@ use livecraft_engine::bouncer::{OfflineBouncer, RenderOptions};
 use livecraft_formats::als::AlsParser;
 use livecraft_model::model::*;
 use std::fs;
+use std::process::{Command, Output};
+
+/// Runs the `livecraft` binary with `args`.
+fn livecraft_devices(args: &[&str]) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_livecraft"))
+        .arg("devices")
+        .args(args)
+        .output()
+        .expect("run the livecraft binary")
+}
 
 #[test]
 fn test_cli_new_and_roundtrip_project() {
@@ -136,4 +146,36 @@ fn test_cli_midi_transformations_and_tuning() {
 
     let xml = AlsParser::export_to_xml(&project).expect("Failed to export XML with tuning");
     assert!(xml.contains("Pattern"));
+}
+
+#[test]
+fn devices_json_is_an_object_with_an_array_of_hosts() {
+    let output = livecraft_devices(&["--json"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let list: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the output is JSON");
+    assert!(list["hosts"].is_array(), "no hosts array in {list}");
+}
+
+#[test]
+fn devices_text_has_an_outputs_block_for_each_host_in_the_json() {
+    let json = livecraft_devices(&["--json"]);
+    let list: serde_json::Value = serde_json::from_slice(&json.stdout).expect("the output is JSON");
+    let hosts = list["hosts"].as_array().expect("a hosts array").len();
+
+    let text = livecraft_devices(&[]);
+    assert!(
+        text.status.success(),
+        "{}",
+        String::from_utf8_lossy(&text.stderr)
+    );
+    let text = String::from_utf8_lossy(&text.stdout);
+    assert_eq!(
+        text.lines().filter(|line| *line == "  Outputs:").count(),
+        hosts
+    );
 }

@@ -4,6 +4,7 @@
 //! repository. A missing file means the defaults. Unknown keys and missing sections are ignored,
 //! so a file written by another build still loads.
 
+use livecraft_engine::driver::DriverConfig;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
@@ -33,6 +34,19 @@ pub struct AudioPreferences {
     pub sample_rate: Option<u32>,
     /// The buffer size in frames.
     pub buffer_size: Option<u32>,
+}
+
+impl From<&AudioPreferences> for DriverConfig {
+    /// The audio driver settings that the preferences name. The driver type is the host.
+    fn from(audio: &AudioPreferences) -> Self {
+        Self {
+            host: audio.driver_type.clone(),
+            output_device: audio.output_device.clone(),
+            input_device: audio.input_device.clone(),
+            sample_rate: audio.sample_rate,
+            buffer_frames: audio.buffer_size,
+        }
+    }
 }
 
 /// MIDI input and output ports, each with its switches.
@@ -226,6 +240,16 @@ mod tests {
         let loaded = Preferences::load(&path).expect("load the preferences");
         assert_eq!(loaded, sample());
         assert!(!dir.0.join("Preferences.toml.tmp").exists());
+    }
+
+    #[test]
+    fn the_audio_preferences_become_the_driver_config_they_name() {
+        let config = DriverConfig::from(&sample().audio);
+        assert_eq!(config.host.as_deref(), Some("WASAPI"));
+        assert_eq!(config.output_device.as_deref(), Some("Speakers"));
+        assert_eq!(config.input_device, None);
+        assert_eq!(config.sample_rate, Some(48_000));
+        assert_eq!(config.buffer_frames, Some(128));
     }
 
     #[test]

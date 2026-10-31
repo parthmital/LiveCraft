@@ -40,7 +40,7 @@ cargo run --bin livecraft -- gui
 
 | Command                  | What it does                            | Expected result                          | Common error and fix                                                                                                                         |
 | ------------------------ | --------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 318 tests pass                           | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)                                                   |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 331 tests pass                           | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)                                                   |
 | `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                                                                     |
 | `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                                                                        |
 | `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: render plays each track's first clip slot and its arrangement clips, and a new Set has no clips; check with `inspect --clips` |
@@ -136,6 +136,7 @@ The binary is `livecraft`. Run `livecraft <command> --help` for every option. Wi
 | `livecraft play [file] [-d seconds]`                                                                                 | Play through the default output with ASCII meters                                                                                                                |
 | `livecraft synth [-n 60] [-w saw] [-o out.wav] [-d 2]`                                                               | Render or play a single test tone                                                                                                                                |
 | `livecraft convert <input> <output>`                                                                                 | Convert between `.als` and `.json`                                                                                                                               |
+| `livecraft devices [--json]`                                                                                         | List the audio hosts and their input and output devices, with sample rates and buffer sizes (`--json` prints the list as JSON)                                   |
 | `livecraft command list`                                                                                             | Print the name of every registered command                                                                                                                       |
 | `livecraft command run <file> <name> '<json args>' -o <out.als>`                                                     | Run one command on a Live Set and save the result as `.als`                                                                                                      |
 | `livecraft gui [file] [--screenshot out.png] [--view session or arrangement] [--tab 0 or 1] [--theme dark or light]` | Open the GUI, or save one frame as PNG and exit                                                                                                                  |
@@ -146,6 +147,8 @@ The binary is `livecraft`. Run `livecraft <command> --help` for every option. Wi
 | ---------------- | -------- | --------------------------------------------------- | ------------------ | ------------------- |
 | `RUST_LOG`       | Optional | Log level for `env_logger`; `-v` sets it to `debug` | `RUST_LOG=info`    | Unset (errors only) |
 | `RUST_BACKTRACE` | Optional | Print a backtrace on panic                          | `RUST_BACKTRACE=1` | Unset               |
+
+Audio settings are read from `LiveCraft/Preferences.toml` in the platform config folder (`%APPDATA%` on Windows) when a Set opens. A missing or unreadable file gives the defaults.
 
 No secrets, accounts, or network services are used.
 
@@ -160,7 +163,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-On 2026-10-31, `cargo xtask ci` passes with 318 tests (livecraft 9, livecraft-model 47, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 57, livecraft-engine 71, livecraft-session 86, livecraft-time 34, livecraft-ui 2, xtask 5, livecraft-testkit 0). `livecraft command list` prints 42 registered commands. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
+On 2026-10-31, `cargo xtask ci` passes with 331 tests (livecraft 11, livecraft-model 47, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 57, livecraft-engine 78, livecraft-session 90, livecraft-time 34, livecraft-ui 2, xtask 5, livecraft-testkit 0). `livecraft command list` prints 42 registered commands. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
 
 ## Troubleshooting
 

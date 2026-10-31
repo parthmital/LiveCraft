@@ -9,13 +9,14 @@ use crate::commands::clip::CreateMidiClip;
 use crate::commands::note::AddNote;
 use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
-use livecraft_engine::driver::DriverConfig;
+use crate::preferences::{AudioPreferences, Preferences};
+use livecraft_engine::driver::{DeviceList, DriverConfig, list_devices};
 use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::{AlsError, AlsParser};
 use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
 use livecraft_model::model::{MidiNote, Project};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 pub use livecraft_engine::snapshot::TrackMeter;
@@ -76,6 +77,8 @@ pub struct Session {
     dirty: bool,
     /// The Set as the engine last received it, so each change sends only what differs.
     sent: Project,
+    /// The preferences the Set was opened with.
+    preferences: Preferences,
 }
 
 impl Session {
@@ -90,13 +93,38 @@ impl Session {
             engine,
             dirty: false,
             sent,
+            preferences: Preferences::default(),
         }
     }
 
-    /// Opens a Set with the audio output of the default device, when there is one.
+    /// Opens a Set with the audio output that the preferences file names (manual 41.2), or the
+    /// default output when that one cannot be opened.
     pub fn open(project: Project) -> Self {
-        let engine = Playback::open(&project, &DriverConfig::default()).ok();
-        Self::new(project, engine)
+        Self::open_at(project, Preferences::default_path())
+    }
+
+    /// Opens a Set with the audio output that the preferences at `prefs_path` name. A missing or
+    /// unreadable file gives the defaults. When the named output cannot be opened, the default
+    /// output is used instead.
+    fn open_at(project: Project, prefs_path: Option<PathBuf>) -> Self {
+        let preferences = prefs_path
+            .as_deref()
+            .map_or_else(Preferences::default, load_preferences);
+        let engine = open_engine(&project, &preferences.audio);
+        let mut session = Self::new(project, engine);
+        session.preferences = preferences;
+        session
+    }
+
+    /// The audio hosts and devices this machine offers, for the settings and `livecraft devices`
+    /// (M06 item 3, manual 41.2).
+    pub fn audio_devices() -> DeviceList {
+        list_devices()
+    }
+
+    /// The preferences the Set was opened with.
+    pub fn preferences(&self) -> &Preferences {
+        &self.preferences
     }
 
     /// Saves the Set to a `.als` file (manual 5.4.1) and records it as saved.
@@ -284,5 +312,87 @@ impl Session {
     pub fn stop_all(&mut self) {
         self.set_playing(false);
         self.set_playhead(0.0);
+    }
+}
+
+/// The preferences at `path`, or the defaults when the file cannot be read.
+fn load_preferences(path: &Path) -> Preferences {
+    Preferences::load(path).unwrap_or_else(|error| {
+        log::warn!("The preferences could not be read, so the defaults are used: {error}");
+        Preferences::default()
+    })
+}
+
+/// Opens the output that `audio` names. When that output cannot be opened, the default output is
+/// tried. The result is `None` when neither opens, and the Set then plays without audio.
+fn open_engine(project: &Project, audio: &AudioPreferences) -> Option<Playback> {
+    Playback::open(project, &DriverConfig::from(audio))
+        .or_else(|error| {
+            log::warn!(
+                "The audio output in the preferences could not be opened, so the default output is used: {error:#}"
+            );
+            Playback::open(project, &DriverConfig::default())
+        })
+        .map_err(|error| log::warn!("No audio output could be opened: {error:#}"))
+        .ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A folder under the system temp directory for one test's preferences file, removed on drop.
+    struct ScratchFolder(PathBuf);
+
+    impl ScratchFolder {
+        fn new(test: &str) -> Self {
+            let path = std::env::temp_dir()
+                .join(format!("livecraft-session-{}-{test}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            Self(path)
+        }
+
+        /// The path of the preferences file in this folder, with `text` written to it when given.
+        fn prefs(&self, text: Option<&str>) -> PathBuf {
+            let path = self.0.join("Preferences.toml");
+            if let Some(text) = text {
+                std::fs::create_dir_all(&self.0).expect("create the test folder");
+                std::fs::write(&path, text).expect("write the preferences");
+            }
+            path
+        }
+    }
+
+    impl Drop for ScratchFolder {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn a_missing_preferences_file_opens_the_set_with_the_defaults() {
+        let folder = ScratchFolder::new("missing");
+        let session = Session::open_at(Project::new_default("Missing"), Some(folder.prefs(None)));
+        assert_eq!(session.preferences(), &Preferences::default());
+    }
+
+    #[test]
+    fn the_preferences_file_is_read_when_the_set_opens() {
+        let folder = ScratchFolder::new("read");
+        let session = Session::open_at(
+            Project::new_default("Read"),
+            Some(folder.prefs(Some("[audio]\nbuffer_size = 128\n"))),
+        );
+        assert_eq!(session.preferences().audio.buffer_size, Some(128));
+    }
+
+    #[test]
+    fn an_invalid_preferences_file_opens_the_set_with_the_defaults() {
+        let folder = ScratchFolder::new("invalid");
+        let session = Session::open_at(
+            Project::new_default("Invalid"),
+            Some(folder.prefs(Some("[audio\nbuffer_size = "))),
+        );
+        assert_eq!(session.preferences(), &Preferences::default());
     }
 }

@@ -1664,6 +1664,7 @@ dependencies = [
  "livecraft-time",
  "log",
  "rtrb",
+ "serde",
  "thiserror 2.0.21",
  "triple_buffer",
 ]

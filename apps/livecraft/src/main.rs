@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use livecraft_devices::operator::{OperatorSynth, Waveform};
 use livecraft_engine::bouncer::{OfflineBouncer, RenderOptions};
-use livecraft_engine::driver::DriverConfig;
+use livecraft_engine::driver::{DeviceInfo, DeviceList, DriverConfig};
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::AlsParser;
 use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, TrackType};
@@ -141,6 +141,12 @@ enum Commands {
         input: PathBuf,
         /// Output file (.als or .json)
         output: PathBuf,
+    },
+    /// List the audio hosts and their input and output devices (manual 41.2)
+    Devices {
+        /// Print the list as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// Launch the desktop interface
     Gui {
@@ -408,9 +414,62 @@ fn main() -> anyhow::Result<()> {
                 );
             }
         }
+        Some(Commands::Devices { json }) => {
+            let devices = livecraft_session::Session::audio_devices();
+            if json {
+                println!("{}", serde_json::to_string_pretty(&devices)?);
+            } else {
+                print_device_list(&devices);
+            }
+        }
     }
 
     Ok(())
+}
+
+/// Prints each audio host, then its output and input devices, with the default marked.
+fn print_device_list(devices: &DeviceList) {
+    if devices.hosts.is_empty() {
+        println!("No audio hosts are available.");
+    }
+    for host in &devices.hosts {
+        println!("{}{}", host.name, default_mark(host.is_default));
+        print_device_group("Outputs", &host.outputs);
+        print_device_group("Inputs", &host.inputs);
+    }
+}
+
+fn print_device_group(heading: &str, devices: &[DeviceInfo]) {
+    println!("  {heading}:");
+    if devices.is_empty() {
+        println!("    none");
+    }
+    for device in devices {
+        let rates = if device.sample_rates.is_empty() {
+            "no offered sample rate".to_string()
+        } else {
+            device
+                .sample_rates
+                .iter()
+                .map(|rate| format!("{rate} Hz"))
+                .collect::<Vec<_>>()
+                .join(", ")
+        };
+        let buffers = match device.buffer_frames {
+            Some((min, max)) => format!("buffer {min} to {max} frames"),
+            None => "buffer size not reported".to_string(),
+        };
+        println!(
+            "    {}{}: {} channels, {rates}, {buffers}",
+            device.name,
+            default_mark(device.is_default),
+            device.channels
+        );
+    }
+}
+
+fn default_mark(is_default: bool) -> &'static str {
+    if is_default { " (default)" } else { "" }
 }
 
 fn print_project_card(proj: &Project, path: &Path) {
