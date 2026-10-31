@@ -466,7 +466,7 @@ pub fn render_session_view(
                         painter.text(
                             Pos2::new(m_rect.center().x, m_rect.center().y + 1.0),
                             egui::Align2::CENTER_CENTER,
-                            "Master",
+                            "Main",
                             egui::FontId::proportional(11.0),
                             palette.control_foreground,
                         );

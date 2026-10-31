@@ -4,6 +4,7 @@ use crate::browser::LiveBrowser;
 use crate::devices::render_device_chain;
 use crate::pianoroll::render_piano_roll;
 use crate::session::render_session_view;
+use crate::settings::SettingsWindow;
 use crate::style::{LivePalette, apply_live_style};
 use crate::transport::{ViewMode, render_transport_bar};
 use eframe::egui::{self, Color32, Key, Vec2};
@@ -30,6 +31,8 @@ pub struct LiveCraftApp {
     pub screenshot_path: Option<PathBuf>,
     pub frame_counter: u32,
     pub browser_visible: bool,
+    /// The Settings window (Ctrl + , in Live, manual 2.3).
+    pub settings: SettingsWindow,
 }
 
 impl LiveCraftApp {
@@ -67,6 +70,10 @@ impl LiveCraftApp {
 
         let bottom_tab = options.initial_tab.unwrap_or(0);
         let selected_track = project.tracks.first().map_or(TrackId(0), |track| track.id);
+        let mut settings = SettingsWindow::default();
+        if options.open_settings {
+            settings.show_window();
+        }
         Self {
             session: Session::open(project),
             project_path,
@@ -80,6 +87,7 @@ impl LiveCraftApp {
             screenshot_path: options.screenshot_path,
             frame_counter: 0,
             browser_visible: true,
+            settings,
         }
     }
 
@@ -91,6 +99,11 @@ impl LiveCraftApp {
     }
 
     fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
+        // Ctrl + , -> Settings (docs/keyboard-shortcuts.md)
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma)) {
+            self.settings.show_window();
+        }
+
         // Spacebar -> Toggle Playback
         if ctx.input(|i| i.key_pressed(Key::Space)) {
             let playing = !self.session.project().transport.is_playing;
@@ -234,6 +247,10 @@ impl eframe::App for LiveCraftApp {
         self.session.poll_audio();
         if self.session.audio_error().is_some() {
             ctx.request_repaint_after(livecraft_session::AUDIO_RETRY);
+        }
+
+        if let Some(message) = self.settings.ui(ctx, &mut self.session) {
+            self.status_message = message;
         }
 
         // The engine's playhead, meters, and active clips, read without blocking the audio thread

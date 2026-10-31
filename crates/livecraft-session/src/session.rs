@@ -11,8 +11,8 @@ use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
 use crate::preferences::{AudioPreferences, MidiPreferences, Preferences, PreferencesError};
 use livecraft_engine::driver::{
-    AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, DriverStatus, NullDriver,
-    list_devices,
+    AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, DriverStatus, Latency,
+    NullDriver, list_devices,
 };
 use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
@@ -174,6 +174,35 @@ impl Session {
             .map_or_else(Preferences::default, load_preferences);
         let engine = open_engine(&project, &factory, &preferences);
         Self::from_parts(project, engine, factory, preferences, prefs_path)
+    }
+
+    /// The MIDI input and output ports this machine offers, for the settings (manual 2.3).
+    pub fn midi_ports() -> MidiPorts {
+        list_midi_ports()
+    }
+
+    /// The input and output latency of the running output, and its sample rate, for the settings
+    /// (manual 2.3). None when the Set plays without audio.
+    pub fn latency(&self) -> Option<(Latency, u32)> {
+        self.engine
+            .as_ref()
+            .map(|engine| (engine.latency(), engine.sample_rate as u32))
+    }
+
+    /// Changes which MIDI ports feed the engine and receive notes (M06 item 9, manual 2.3). The output
+    /// is reopened with the same audio settings so the ports change, and playback carries on. The new
+    /// settings are saved when the session has a preferences file.
+    pub fn set_midi_preferences(&mut self, midi: MidiPreferences) -> Result<(), SessionAudioError> {
+        self.preferences.midi = midi;
+        let driver = (self.driver_factory)(&DriverConfig::from(&self.preferences.audio))?;
+        if let Err(error) = self.switch_output(driver) {
+            self.fall_back(error.to_string(), Instant::now());
+            return Err(error);
+        }
+        if let Some(path) = &self.prefs_path {
+            self.preferences.save(path)?;
+        }
+        Ok(())
     }
 
     /// The audio hosts and devices this machine offers, for the settings and `livecraft devices`

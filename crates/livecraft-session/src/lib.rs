@@ -13,6 +13,8 @@ pub mod session;
 
 pub use command::{Command, CommandError, Operation};
 pub use history::{HistoryEntry, MERGE_GAP, OPENING_LABEL, Transaction, UndoHistory};
+pub use livecraft_engine::driver::{DeviceInfo, DeviceList, HostInfo, Latency};
+pub use livecraft_engine::midi_io::MidiPorts;
 pub use preferences::{
     AudioPreferences, MidiPortPreference, MidiPreferences, Preferences, PreferencesError,
 };

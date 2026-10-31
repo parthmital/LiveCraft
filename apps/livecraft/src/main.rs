@@ -169,6 +169,10 @@ enum Commands {
         /// Color theme ("light" or "dark")
         #[arg(long)]
         theme: Option<String>,
+
+        /// Open the Settings window at start
+        #[arg(long)]
+        settings: bool,
     },
 }
 
@@ -239,6 +243,7 @@ fn main() -> anyhow::Result<()> {
             view,
             tab,
             theme,
+            settings,
         }) => {
             let options = livecraft_ui::GuiOptions {
                 project_path: project,
@@ -246,6 +251,7 @@ fn main() -> anyhow::Result<()> {
                 initial_view: view,
                 initial_tab: tab,
                 theme,
+                open_settings: settings,
             };
             if let Err(e) = livecraft_ui::run_gui_with_options(options) {
                 eprintln!("Error starting GUI: {:?}", e);

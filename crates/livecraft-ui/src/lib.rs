@@ -5,6 +5,7 @@ pub mod devices;
 pub mod mixer;
 pub mod pianoroll;
 pub mod session;
+pub mod settings;
 pub mod style;
 pub mod transport;
 pub mod widgets;
@@ -23,6 +24,8 @@ pub struct GuiOptions {
     pub initial_view: Option<String>,
     pub initial_tab: Option<usize>,
     pub theme: Option<String>,
+    /// Opens the Settings window at start, so a screenshot can show it.
+    pub open_settings: bool,
 }
 
 pub fn run_gui(project_path: Option<&Path>) -> anyhow::Result<()> {

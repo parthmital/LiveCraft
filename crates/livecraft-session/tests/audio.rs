@@ -8,7 +8,8 @@ use livecraft_engine::executor::Engine;
 use livecraft_model::ids::TrackId;
 use livecraft_model::model::Project;
 use livecraft_session::{
-    AUDIO_RETRY, AudioPreferences, DriverFactory, Preferences, Session, SessionAudioError, demo_set,
+    AUDIO_RETRY, AudioPreferences, DriverFactory, MidiPortPreference, MidiPreferences, Preferences,
+    Session, SessionAudioError, demo_set,
 };
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -364,4 +365,40 @@ fn a_device_plugged_back_in_is_used_again_at_the_next_retry() {
     // A healthy device is not reopened.
     session.poll_audio_at(now + AUDIO_RETRY * 3);
     assert_eq!(plug.opened.load(Ordering::Relaxed), 2);
+}
+
+#[test]
+fn changed_midi_settings_keep_the_set_playing_and_are_saved() {
+    let path = prefs_path("midi_settings");
+    let mut session = Session::with_driver_factory(demo(), null_factory(), Some(path.clone()));
+    session.set_playing(true);
+    sleep(Duration::from_millis(50));
+    let before = session.status().playhead_beats;
+    let midi = MidiPreferences {
+        inputs: vec![MidiPortPreference {
+            name: "No Such Keyboard".to_string(),
+            track: true,
+            ..MidiPortPreference::default()
+        }],
+        outputs: Vec::new(),
+    };
+    session
+        .set_midi_preferences(midi.clone())
+        .expect("the MIDI ports change");
+    wait_for(
+        Duration::from_millis(500),
+        "the playhead moves on after the change",
+        || session.status().playhead_beats > before,
+    );
+    assert_eq!(session.preferences().midi, midi);
+    let saved = Preferences::load(&path).expect("the preferences were saved");
+    assert_eq!(saved.midi, midi);
+}
+
+#[test]
+fn the_latency_of_a_silent_output_is_zero_at_its_rate() {
+    let session = Session::with_driver_factory(demo(), null_factory(), None);
+    let (latency, rate) = session.latency().expect("the Set plays on an output");
+    assert_eq!(rate, 44_100);
+    assert_eq!(latency, Latency::default());
 }
