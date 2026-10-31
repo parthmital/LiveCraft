@@ -1,22 +1,30 @@
 //! Compiles a Live Set into a `CompiledGraph` (M05 item 5). This runs on the session side, never on
 //! the audio thread: it allocates the processors and buffers the audio thread then uses.
 
-use crate::compiled::{CompiledGraph, DeviceSlot, Mixer, Node, NodeKind};
+use crate::compiled::{CompiledGraph, DeviceSlot, Mixer, Node, NodeKind, Transfer};
 use livecraft_devices::{create_device_processor, is_instrument};
+use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{Device, Project, Track};
 
+/// Compiles Sets into graphs. It remembers the layout of the last graph it compiled, so each new
+/// graph lists the devices it takes over. Compile and submit graphs in the same order.
 pub struct GraphCompiler {
     sample_rate: f32,
+    /// The track and device ids of each node of the last graph, in node order.
+    previous: Vec<(TrackId, Vec<DeviceId>)>,
 }
 
 impl GraphCompiler {
     pub fn new(sample_rate: f32) -> Self {
-        Self { sample_rate }
+        Self {
+            sample_rate,
+            previous: Vec::new(),
+        }
     }
 
     /// Compiles the Set into the nodes the renderer runs. A device without a native processor makes
     /// no sound, so it is left out of the chain.
-    pub fn compile(&self, project: &Project) -> CompiledGraph {
+    pub fn compile(&mut self, project: &Project) -> CompiledGraph {
         let tracks = project
             .tracks
             .iter()
@@ -27,12 +35,47 @@ impl GraphCompiler {
             .map(|track| self.node(track, NodeKind::Return));
         let main = self.node(&project.main_track, NodeKind::Main);
         let nodes: Vec<Node> = tracks.chain(returns).chain(std::iter::once(main)).collect();
+        let transfers = self.transfers(&nodes);
+        self.previous = nodes
+            .iter()
+            .map(|node| {
+                (
+                    node.track,
+                    node.devices.iter().map(|slot| slot.id).collect(),
+                )
+            })
+            .collect();
         CompiledGraph::new(
             nodes,
             project.tracks.len(),
             project.return_tracks.len(),
             project.scenes.iter().map(|scene| scene.id).collect(),
+            transfers,
         )
+    }
+
+    /// Every device that the previous graph also had, paired with its old and new position.
+    fn transfers(&self, nodes: &[Node]) -> Vec<Transfer> {
+        let mut transfers = Vec::new();
+        for (to_node, node) in nodes.iter().enumerate() {
+            let Some(from_node) = self
+                .previous
+                .iter()
+                .position(|(track, _)| *track == node.track)
+            else {
+                continue;
+            };
+            let previous_devices = &self.previous[from_node].1;
+            for (to_slot, slot) in node.devices.iter().enumerate() {
+                if let Some(from_slot) = previous_devices.iter().position(|id| *id == slot.id) {
+                    transfers.push(Transfer {
+                        from: (from_node, from_slot),
+                        to: (to_node, to_slot),
+                    });
+                }
+            }
+        }
+        transfers
     }
 
     fn node(&self, track: &Track, kind: NodeKind) -> Node {
@@ -46,6 +89,7 @@ impl GraphCompiler {
                     id: device.id,
                     enabled: device.is_enabled,
                     processor,
+                    values: device.parameters.iter().collect(),
                 })
             })
             .collect();

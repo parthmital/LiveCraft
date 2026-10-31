@@ -4,6 +4,7 @@
 use livecraft_devices::{NoteEvent, ProcessContext};
 use livecraft_engine::compiled::MAX_BLOCK;
 use livecraft_engine::compiler::GraphCompiler;
+use livecraft_engine::executor::{Engine, EngineCommand};
 use livecraft_engine::rt::checked;
 use livecraft_model::ids::TrackId;
 use livecraft_model::model::Project;
@@ -36,4 +37,24 @@ fn rendering_a_block_with_notes_allocates_nothing() {
     checked(|| graph.render(&ctx));
     let (left, _) = graph.output(MAX_BLOCK);
     assert!(left.iter().any(|&sample| sample != 0.0));
+}
+
+#[test]
+fn the_driver_callback_applies_a_command_and_a_swap_without_allocating() {
+    let project = Project::new_default("Callback");
+    let mut compiler = GraphCompiler::new(44100.0);
+    let (mut engine, mut handle) =
+        Engine::start(compiler.compile(&project), 44100.0).expect("start the engine");
+    handle
+        .submit_graph(compiler.compile(&project))
+        .expect("submit a graph");
+    handle
+        .send(EngineCommand::SetTrackVolume {
+            track: TrackId(1),
+            volume_db: -3.0,
+        })
+        .expect("send a command");
+    let mut out = vec![0.0f32; MAX_BLOCK * 2];
+    checked(|| engine.process(&mut out, 2));
+    assert!(out.iter().all(|sample| sample.is_finite()));
 }

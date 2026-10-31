@@ -11,6 +11,7 @@
 use crate::graph::TrackMeter;
 use livecraft_devices::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
+use livecraft_model::param::ParamId;
 
 /// Most frames one render call handles. The engine cuts a driver buffer into blocks of this size.
 pub const MAX_BLOCK: usize = 512;
@@ -36,11 +37,22 @@ pub struct Mixer {
     pub sends: Vec<f32>,
 }
 
-/// A device of a node and whether it is enabled. A disabled device is skipped.
+/// A device of a node: whether it is enabled, its processor, and the parameter values the Set
+/// holds for it. A disabled device is skipped.
 pub struct DeviceSlot {
     pub id: DeviceId,
     pub enabled: bool,
     pub processor: Box<dyn DeviceProcessor>,
+    pub values: Vec<(ParamId, f32)>,
+}
+
+/// Moves the processor of a device that a new graph keeps from the previous graph's slot to the new
+/// graph's slot (the transfer list, TARGET-ARCHITECTURE "Engine Decisions"). `from` and `to` are
+/// (node index, device slot index).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Transfer {
+    pub from: (usize, usize),
+    pub to: (usize, usize),
 }
 
 /// One track, return track, or the Main track, with its buffers.
@@ -104,6 +116,7 @@ pub struct CompiledGraph {
     pub scenes: Vec<SceneId>,
     /// The level of the output after the Main volume, which is what the device writes out.
     pub output_meter: TrackMeter,
+    transfers: Vec<Transfer>,
 }
 
 /// Amplitude for a volume in dB. Volumes at or below -59 dB are silent, as the Set's fader shows.
@@ -123,12 +136,13 @@ fn pan_gains(pan: f32) -> (f32, f32) {
 
 impl CompiledGraph {
     /// Assembles a graph from its nodes, which must be the tracks, then the return tracks, then the
-    /// Main track.
+    /// Main track. `transfers` lists the devices this graph takes over from the one it replaces.
     pub fn new(
         nodes: Vec<Node>,
         track_count: usize,
         return_count: usize,
         scenes: Vec<SceneId>,
+        transfers: Vec<Transfer>,
     ) -> Self {
         Self {
             nodes,
@@ -136,6 +150,31 @@ impl CompiledGraph {
             return_count,
             scenes,
             output_meter: TrackMeter::default(),
+            transfers,
+        }
+    }
+
+    /// Takes the processors this graph keeps from `previous`, so their state carries over, and
+    /// applies the Set's parameter values to them. It moves pointers and sets parameters only, so it
+    /// does not allocate, and the processors the new graph replaces end up in `previous` to be freed
+    /// off the audio thread.
+    pub fn adopt_state(&mut self, previous: &mut CompiledGraph) {
+        for transfer in &self.transfers {
+            let source = previous
+                .nodes
+                .get_mut(transfer.from.0)
+                .and_then(|node| node.devices.get_mut(transfer.from.1));
+            let target = self
+                .nodes
+                .get_mut(transfer.to.0)
+                .and_then(|node| node.devices.get_mut(transfer.to.1));
+            let (Some(source), Some(target)) = (source, target) else {
+                continue;
+            };
+            std::mem::swap(&mut source.processor, &mut target.processor);
+            for &(id, value) in &target.values {
+                target.processor.set_param(id, value, 0);
+            }
         }
     }
 
