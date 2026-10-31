@@ -13,6 +13,7 @@ use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{
     Clip, ClipPayload, Device, MidiClipData, MonitoringMode, Project, Track, TuningSystem,
 };
+use livecraft_model::param::ParamId;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -107,7 +108,7 @@ impl GraphCompiler {
                     id: device.id,
                     enabled: device.is_enabled,
                     processor,
-                    values: device.parameters.iter().collect(),
+                    values: parameter_values(device),
                 })
             })
             .collect();
@@ -201,6 +202,17 @@ impl GraphCompiler {
             }
         }
     }
+}
+
+/// The largest parameter table of any device (EQ Eight's 32 values).
+const MAX_PARAMETERS: usize = 32;
+
+/// The stored values of a device, with room for its whole table, so a parameter command adds to them
+/// without allocating on the audio thread.
+fn parameter_values(device: &Device) -> Vec<(ParamId, f32)> {
+    let mut values = Vec::with_capacity(MAX_PARAMETERS);
+    values.extend(device.parameters.iter());
+    values
 }
 
 /// The notes a MIDI clip plays: muted notes are left out, and each frequency comes from the Set's

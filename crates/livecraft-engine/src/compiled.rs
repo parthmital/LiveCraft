@@ -235,6 +235,29 @@ impl CompiledGraph {
         }
     }
 
+    /// Sets a parameter of a device on a track. The processor takes the value at once, and the stored
+    /// values follow, so a graph swap keeps it.
+    pub fn set_device_param(
+        &mut self,
+        track: TrackId,
+        device: DeviceId,
+        param: ParamId,
+        value: f32,
+    ) {
+        let Some(node) = self.node_mut(track) else {
+            return;
+        };
+        let Some(slot) = node.devices.iter_mut().find(|slot| slot.id == device) else {
+            return;
+        };
+        slot.processor.set_param(param, value, 0);
+        if let Some(entry) = slot.values.iter_mut().find(|(id, _)| *id == param) {
+            entry.1 = value;
+        } else if slot.values.len() < slot.values.capacity() {
+            slot.values.push((param, value));
+        }
+    }
+
     /// Stops the clips on every track.
     pub fn stop_all(&mut self) {
         for node in &mut self.nodes[..self.track_count] {

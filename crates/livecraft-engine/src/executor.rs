@@ -10,7 +10,8 @@ use crate::collector;
 use crate::compiled::{CompiledGraph, MAX_BLOCK, Node};
 use crate::graph::sanitize_output_sample;
 use livecraft_devices::ProcessContext;
-use livecraft_model::ids::{SceneId, TrackId};
+use livecraft_model::ids::{DeviceId, SceneId, TrackId};
+use livecraft_model::param::ParamId;
 use livecraft_time::beats_per_sample;
 
 /// Capacity of the command queue, in commands.
@@ -61,6 +62,13 @@ pub enum EngineCommand {
         scene: SceneId,
     },
     StopAll,
+    /// Sets a parameter of a device on a track, by its id in the device table.
+    SetDeviceParam {
+        track: TrackId,
+        device: DeviceId,
+        param: ParamId,
+        value: f32,
+    },
 }
 
 /// A discrete event from the audio thread, read by the session.
@@ -263,6 +271,12 @@ impl Engine {
             EngineCommand::StopClip { track } => self.graph.stop_clip(track),
             EngineCommand::TriggerScene { scene } => self.graph.launch_scene(scene),
             EngineCommand::StopAll => self.graph.stop_all(),
+            EngineCommand::SetDeviceParam {
+                track,
+                device,
+                param,
+                value,
+            } => self.graph.set_device_param(track, device, param, value),
         }
     }
 
@@ -377,5 +391,26 @@ mod tests {
             handle.send(command).expect("room in the queue");
         }
         assert_eq!(handle.send(command), Err(QueueFull));
+    }
+
+    #[test]
+    fn a_parameter_command_gives_the_same_output_as_the_value_in_the_set() {
+        use livecraft_model::ids::DeviceId;
+        let project = Project::new_default("Param");
+        let mut edited = project.clone();
+        edited.tracks[0].device_chain[0].set_param("osc1_level", 0.25);
+        let (mut in_the_set, _set_handle, _set_compiler) = started(&edited);
+        let expected = render_blocks(&mut in_the_set, 2);
+
+        let (mut engine, mut handle, _compiler) = started(&project);
+        handle
+            .send(EngineCommand::SetDeviceParam {
+                track: TrackId(1),
+                device: DeviceId(101),
+                param: ParamId(1),
+                value: 0.25,
+            })
+            .expect("send");
+        assert_eq!(render_blocks(&mut engine, 2), expected);
     }
 }
