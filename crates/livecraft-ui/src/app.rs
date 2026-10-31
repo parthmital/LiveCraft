@@ -9,9 +9,9 @@ use eframe::egui::{self, Color32, Key, Vec2};
 use livecraft_engine::engine::AudioEngine;
 use livecraft_engine::graph::TrackMeter;
 use livecraft_formats::als::AlsParser;
-use livecraft_model::command::CommandHistory;
 use livecraft_model::ids::{IdAllocator, TrackId};
 use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, Track, TrackType};
+use livecraft_session::UndoHistory;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, PartialEq)]
@@ -27,7 +27,7 @@ pub struct LiveCraftApp {
     pub project: Project,
     pub project_path: Option<PathBuf>,
     pub engine: Option<AudioEngine>,
-    pub command_history: CommandHistory,
+    pub command_history: UndoHistory,
     pub view_mode: ViewMode,
     pub selected_track: TrackId,
     pub selected_clip: Option<(TrackId, usize)>, // (track, slot_idx)
@@ -100,7 +100,7 @@ impl LiveCraftApp {
             project,
             project_path: path_buf,
             engine,
-            command_history: CommandHistory::default(),
+            command_history: UndoHistory::default(),
             view_mode,
             selected_track,
             selected_clip: Some((selected_track, 0)),
@@ -223,10 +223,12 @@ impl LiveCraftApp {
         }
 
         // Ctrl+Y -> Redo
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Y))
-            && self.command_history.redo(&mut self.project)
-        {
-            self.status_message = "Redo".to_string();
+        if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Y)) {
+            match self.command_history.redo(&mut self.project, &mut self.ids) {
+                Ok(true) => self.status_message = "Redo".to_string(),
+                Ok(false) => {}
+                Err(error) => self.status_message = format!("Redo failed: {error}"),
+            }
         }
 
         // Ctrl+S -> Save

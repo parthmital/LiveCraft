@@ -1657,6 +1657,7 @@ name = "livecraft-session"
 version = "0.1.0"
 dependencies = [
  "livecraft-model",
+ "livecraft-time",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -1689,6 +1690,7 @@ dependencies = [
  "livecraft-engine",
  "livecraft-formats",
  "livecraft-model",
+ "livecraft-session",
  "livecraft-time",
  "log",
 ]

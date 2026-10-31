@@ -12,6 +12,7 @@ livecraft-model = { path = "../livecraft-model" }
 livecraft-formats = { path = "../livecraft-formats" }
 livecraft-engine.workspace = true
 livecraft-time.workspace = true
+livecraft-session.workspace = true
 eframe.workspace = true
 egui.workspace = true
 log.workspace = true

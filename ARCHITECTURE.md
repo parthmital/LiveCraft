@@ -41,7 +41,6 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-model/src/scale.rs`                | Scales and scale snapping                                                                    | `ScaleConfig`, `ScaleType`, `note_name`                                    | none                                 |
 | `crates/livecraft-model/src/tuning.rs`               | Scala tuning systems and frequency lookup                                                    | `TuningSystem`                                                             | none                                 |
 | `crates/livecraft-model/src/color.rs`                | Live's clip and track colour palette, as hex strings until the colour index                  | `ABLETON_PALETTE`                                                          | none                                 |
-| `crates/livecraft-model/src/command.rs`               | `Command` enum and `CommandHistory` undo and redo                                            | `Command`, `CommandHistory`                                                | none                                 |
 | `crates/livecraft-formats/src/als.rs`                 | `.als` gzip XML read and write                                                               | `AlsParser::load_project`, `save_project_to_als`                           | model                                |
 | `crates/livecraft-formats/src/theme.rs`               | `.ask` theme parsing                                                                         | `AbletonTheme`                                                             | model                                |
 | `crates/livecraft-dsp/src/biquad.rs`                  | DSP primitives (biquad filter)                                                               | `BiquadFilter`, `FilterType`                                               | none                                 |
@@ -63,6 +62,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-session/src/command.rs`             | `Operation` (a named, serialisable edit with undo), `Command` (its object-safe form), `CommandError` | `Operation`, `Command`, `CommandError`                          | model                                |
 | `crates/livecraft-session/src/history.rs`             | `UndoHistory`: apply, undo, redo, gesture merge within 500 ms, and a step limit (default 1000) | `UndoHistory`, `MERGE_GAP`                                                 | model                                |
 | `crates/livecraft-session/src/registry.rs`            | `CommandRegistry`: stable names to constructors that decode JSON arguments                   | `CommandRegistry`                                                          | model                                |
+| `crates/livecraft-session/src/commands/{automation,track,transport}.rs` | Ported M01 edits: automation points, track create and volume, tempo (M04 items 3 and 4 to 7 add the rest) | one `Operation` per edit, `commands::registry()`                | model, time                          |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules
@@ -71,7 +71,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 - `livecraft-formats` depends on model.
 - `livecraft-devices` depends on model, dsp, and time.
 - `livecraft-engine` depends on model, dsp, devices, formats, and time.
-- `livecraft-session` depends on model today. The 1.0 layout adds time, formats, and engine when its session and registry use them (M04 items 3 to 9); `LAYERS` already allows them.
+- `livecraft-session` depends on time and model today. The 1.0 layout adds formats and engine when its session uses them (M04 items 8 and 9); `LAYERS` already allows them.
 - `livecraft-ui` depends on model, formats, engine, and time. The engine edge is temporary and is removed when M04 moves every view onto `livecraft-session`.
 - `livecraft` (`apps/livecraft`) depends on model, formats, engine, devices, and ui.
 - `livecraft-testkit` is a dev-only dependency and may use model and engine.
@@ -81,7 +81,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 
 ## Where New Code Goes
 
-- New document data or edit operation: the entity's module in `livecraft-model/src/` (for example `track.rs` or `clip.rs`), re-exported from `model.rs`, with a `Command` variant in `command.rs`.
+- New document data or edit operation: the entity's module in `livecraft-model/src/` (for example `track.rs` or `clip.rs`), re-exported from `model.rs`, plus an `Operation` in `livecraft-session/src/commands/<area>.rs`, registered in that module's `register`.
 - New DSP building block (filter, oscillator, envelope): `livecraft-dsp/src/`.
 - New effect or instrument: a file in `livecraft-devices/src/effects/` or `instruments/`, a `DspProcessor` impl in `processor.rs`, a `DeviceType` variant in `livecraft-model`.
 - New view or panel: a new file in `livecraft-ui/src/`, called from `app.rs`.
@@ -107,7 +107,7 @@ Each is scheduled in [plans/livecraft-1.0/PLAN.md](plans/livecraft-1.0/PLAN.md).
 | `process_buffer_interleaved` grows its scratch buffers on the audio thread when the driver block exceeds 8192 frames | `graph.rs`                                              | 1            |
 | `DspProcessor` processes one sample per virtual call and looks parameters up by string                               | `processor.rs`                                          | 1            |
 | GUI mutates `Project` directly; most edits bypass `CommandHistory`, so undo covers few actions                       | `crates/livecraft-ui/src/*.rs`                          | 1            |
-| Clip-slot, note, and send positions are still used as identities in commands and messages (tracks, clips, scenes, devices, and automation lanes are typed since M03) | `command.rs`, `engine.rs` | 1 (M04, M18) |
+| Clip-slot, note, and send positions are still used as identities in commands and messages (tracks, clips, scenes, devices, and automation lanes are typed since M03) | `engine.rs`, `livecraft-session/src/commands/automation.rs` (points by index), note commands (M04 item 5 and M18) | 1 (M04, M18) |
 | `.als` writer regenerates XML from the model; every unknown element is lost                                          | `als.rs`                                                | 2            |
 | Session clip slots without an active clip are played back as a sequential timeline                                   | `graph.rs` `dispatch_clip_events`                       | 1            |
 | Large files mixing concerns: `graph.rs` (1080), `als.rs` (1008), `devices.rs` (995)         | as listed                                               | 1            |

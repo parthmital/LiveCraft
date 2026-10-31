@@ -43,6 +43,7 @@ const LAYERS: &[(&str, &[&str])] = &[
         "livecraft-ui",
         &[
             "livecraft-model",
+            "livecraft-session",
             "livecraft-formats",
             "livecraft-engine",
             "livecraft-time",

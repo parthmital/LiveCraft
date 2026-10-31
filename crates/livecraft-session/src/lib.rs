@@ -4,6 +4,7 @@
 //! dispatch operations by name, and the `UndoHistory` records them so each one can be undone.
 
 pub mod command;
+pub mod commands;
 pub mod history;
 pub mod registry;
 

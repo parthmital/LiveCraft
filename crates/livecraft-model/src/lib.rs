@@ -1,7 +1,6 @@
 pub mod automation;
 pub mod clip;
 pub mod color;
-pub mod command;
 pub mod device;
 pub mod edit;
 pub mod ids;

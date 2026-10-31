@@ -6,7 +6,7 @@
 //! `Operation` is a `Command` through the blanket impl below.
 
 use livecraft_model::edit::EditError;
-use livecraft_model::ids::IdAllocator;
+use livecraft_model::ids::{IdAllocator, LaneId, TrackId};
 use livecraft_model::model::Project;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -20,6 +20,23 @@ pub enum CommandError {
     UnknownCommand(String),
     #[error("the arguments of `{name}` do not decode: {message}")]
     BadArguments { name: String, message: String },
+    #[error("track {track} has no automation lane {lane}")]
+    NoSuchLane { track: TrackId, lane: LaneId },
+    #[error("lane {lane} of track {track} has no point at index {index}")]
+    NoSuchPoint {
+        track: TrackId,
+        lane: LaneId,
+        index: usize,
+    },
+    #[error("{what} must be between {min} and {max}, not {value}")]
+    OutOfRange {
+        what: &'static str,
+        min: f64,
+        max: f64,
+        value: f64,
+    },
+    #[error("{what} must be a finite number, not {value}")]
+    NotFinite { what: &'static str, value: f64 },
 }
 
 /// One kind of edit to a Live Set.
