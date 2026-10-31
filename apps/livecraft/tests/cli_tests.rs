@@ -6,7 +6,7 @@ use std::fs;
 
 #[test]
 fn test_cli_new_and_roundtrip_project() {
-    let tmp_dir = std::env::temp_dir().join("livecraft_cli_test_1");
+    let tmp_dir = std::env::temp_dir().join("livecraft_app_test_1");
     let _ = fs::create_dir_all(&tmp_dir);
     let als_path = tmp_dir.join("NewSong.als");
     let json_path = tmp_dir.join("NewSong.json");
@@ -39,7 +39,7 @@ fn test_cli_new_and_roundtrip_project() {
 
 #[test]
 fn test_cli_synth_to_wav() {
-    let tmp_dir = std::env::temp_dir().join("livecraft_cli_test_2");
+    let tmp_dir = std::env::temp_dir().join("livecraft_app_test_2");
     let _ = fs::create_dir_all(&tmp_dir);
     let out_wav = tmp_dir.join("synth_saw.wav");
 
@@ -78,7 +78,7 @@ fn test_cli_synth_to_wav() {
 
 #[test]
 fn test_cli_render_and_stem_pipeline() {
-    let tmp_dir = std::env::temp_dir().join("livecraft_cli_test_3");
+    let tmp_dir = std::env::temp_dir().join("livecraft_app_test_3");
     let _ = fs::create_dir_all(&tmp_dir);
     let full_mix = tmp_dir.join("full_mix.wav");
     let stems_dir = tmp_dir.join("stems");

@@ -93,3 +93,5 @@ Verify every M01 acceptance criterion with recorded evidence, update `ARCHITECTU
 ## If Something Fails
 
 - Read the whole error and find the root cause. If this file is wrong (an anchor, API, or expected value changed), correct it and add `Revision <date>: <what and why>` at its end. If the line still cannot be finished, log it under Blockers in `CHECKLIST.md`.
+
+Revision 2026-10-31: The Verify grep wrote the pipes as `\|`. In extended regex that is a literal pipe, so the command matched nothing and could not fail. The corrected pattern is `livecraft_core|livecraft_gui|livecraft_cli`. It found three test temp-directory names in `apps/livecraft/tests/cli_tests.rs`, which are renamed to `livecraft_app_test_1` to `_3`, because the acceptance criterion forbids the old crate name in Rust source. Test code is not production code, so the Do Not rule is not broken. The step that sets `Last verified` to 2026-10-27 is changed to 2026-10-31, the date of this verification, because 2026-10-27 predates the M01 work.

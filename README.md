@@ -156,7 +156,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-Baseline on 2026-10-28: cargo xtask ci passes; 55 tests (cli 6, model 9, formats 6, dsp 1, devices 17, engine 10, gui 2, xtask 4). One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
+Baseline on 2026-10-31: `cargo xtask ci` passes with 55 tests (livecraft 6, livecraft-model 9, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 17, livecraft-engine 10, livecraft-ui 2, xtask 4). One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
 
 ## Troubleshooting
 

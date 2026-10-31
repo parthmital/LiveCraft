@@ -1,7 +1,7 @@
 # Architecture
 
 Purpose: how the code is organised today and why, and where it falls short. Read when: adding a module, moving code, or changing dependencies between parts.
-Last verified: 2026-10-28.
+Last verified: 2026-10-31.
 
 The target architecture that replaces this one is defined in `plans/livecraft-1.0/reference/TARGET-ARCHITECTURE.md`. Update this file as each plan task lands, so it always describes the code as it is.
 
@@ -45,7 +45,13 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 ## Dependency Rules
 
 - `livecraft-model` and `livecraft-dsp` have no internal dependencies and no audio, UI, or OS dependencies.
-- Layers run model and dsp, then formats and devices, then engine, then ui, then cli. Never add a reverse edge.
+- `livecraft-formats` depends on model.
+- `livecraft-devices` depends on model and dsp.
+- `livecraft-engine` depends on model, dsp, devices, and formats.
+- `livecraft-ui` depends on model, formats, and engine. The engine edge is temporary and is removed when M04 adds `livecraft-session`.
+- `livecraft` (`apps/livecraft`) depends on model, formats, engine, devices, and ui.
+- `livecraft-testkit` is a dev-only dependency and may use model and engine.
+- Never add a reverse edge. A new crate needs a `LAYERS` entry, or `cargo xtask layering` fails.
 - Only `apps/livecraft` (package `livecraft`) produces a binary.
 - Enforced by `cargo xtask layering` (part of `cargo xtask ci`): the `LAYERS` table in `xtask/src/main.rs` is the source of truth.
 
@@ -86,4 +92,4 @@ Each is scheduled in [plans/livecraft-1.0/PLAN.md](plans/livecraft-1.0/PLAN.md).
 ## Growth Signals
 
 - Any source file over 800 lines, or a module with more than one reason to change: split it.
-- A second front end (for example a control server) needs state that lives in `LiveCraftApp`: move that state into a UI-independent crate (planned as `livecraft-app`).
+- A second front end (for example a control server) needs state that lives in `LiveCraftApp`: move that state into a UI-independent crate (planned as `livecraft-session`, see `plans/livecraft-1.0/reference/TARGET-ARCHITECTURE.md`).
