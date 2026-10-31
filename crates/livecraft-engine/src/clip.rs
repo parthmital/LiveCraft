@@ -269,20 +269,41 @@ fn schedule_notes(
     sounding: &mut Vec<(usize, u8)>,
 ) {
     let seg_len = (seg_end - seg_start) as f64;
+    // A sounding note whose span no longer holds the segment's first frame ended at the segment
+    // boundary: at a loop wrap, or at the last frame of the previous segment or block.
+    sounding.retain(|&(index, pitch)| {
+        let holds = notes
+            .get(index)
+            .is_some_and(|note| base >= note.start && base < note.end);
+        if !holds {
+            let _ = events.push(NoteEvent::Off {
+                offset: seg_start as u32,
+                pitch,
+            });
+        }
+        holds
+    });
     for (index, note) in notes.iter().enumerate() {
         let first = ((note.start - base) / dt).ceil();
         let last = ((note.end - base) / dt).ceil();
         if first >= last {
             continue;
         }
-        if first >= 0.0 && first < seg_len && sounding.len() < sounding.capacity() {
+        if first >= 0.0 && first < seg_len {
             let offset = (seg_start + first as usize) as u32;
-            if events.push(NoteEvent::On {
-                offset,
-                pitch: note.pitch,
-                velocity: note.velocity,
-                freq_hz: note.freq_hz,
-            }) {
+            // A note that restarts while it still sounds (it spans the whole loop) is retriggered.
+            if let Some(at) = sounding.iter().position(|&(i, _)| i == index) {
+                let (_, pitch) = sounding.swap_remove(at);
+                let _ = events.push(NoteEvent::Off { offset, pitch });
+            }
+            if sounding.len() < sounding.capacity()
+                && events.push(NoteEvent::On {
+                    offset,
+                    pitch: note.pitch,
+                    velocity: note.velocity,
+                    freq_hz: note.freq_hz,
+                })
+            {
                 sounding.push((index, note.pitch));
             }
         }
@@ -446,6 +467,53 @@ mod tests {
                 pitch: 60
             }
         )));
+    }
+
+    /// The (offset, is_on, pitch) of each event, in order.
+    fn listed(events: &EventList) -> Vec<(u32, bool, u8)> {
+        events
+            .iter()
+            .map(|event| match *event {
+                NoteEvent::On { offset, pitch, .. } => (offset, true, pitch),
+                NoteEvent::Off { offset, pitch } => (offset, false, pitch),
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_note_that_ends_at_the_loop_end_is_released_at_the_wrap() {
+        let collector = Collector::new();
+        let mut lane = lane_with(midi_clip(&collector, 1.0, vec![note(0.5, 1.0, 60)]));
+        // Two passes of a one-beat loop in one block: the note ends where the loop wraps.
+        let events = schedule(&mut lane, &context(8, 0.0, 0.25));
+        assert_eq!(
+            listed(&events),
+            vec![(2, true, 60), (4, false, 60), (6, true, 60)]
+        );
+        assert_eq!(lane.sounding.len(), 1);
+    }
+
+    #[test]
+    fn a_note_that_ends_at_the_loop_end_of_a_block_is_released_at_the_next_block() {
+        let collector = Collector::new();
+        let mut lane = lane_with(midi_clip(&collector, 1.0, vec![note(0.5, 1.0, 60)]));
+        let first = schedule(&mut lane, &context(4, 0.0, 0.25));
+        assert_eq!(listed(&first), vec![(2, true, 60)]);
+        let second = schedule(&mut lane, &context(4, 1.0, 0.25));
+        assert_eq!(listed(&second), vec![(0, false, 60), (2, true, 60)]);
+        assert_eq!(lane.sounding.len(), 1);
+    }
+
+    #[test]
+    fn a_note_that_spans_the_whole_loop_is_retriggered_not_stacked() {
+        let collector = Collector::new();
+        let mut lane = lane_with(midi_clip(&collector, 1.0, vec![note(0.0, 1.0, 60)]));
+        let events = schedule(&mut lane, &context(8, 0.0, 0.25));
+        assert_eq!(
+            listed(&events),
+            vec![(0, true, 60), (4, false, 60), (4, true, 60)]
+        );
+        assert_eq!(lane.sounding.len(), 1);
     }
 
     #[test]

@@ -133,14 +133,14 @@ impl EventList {
         }
     }
 
-    /// Sorts the events by offset, keeping the order of events that share an offset. It sorts in
-    /// place with an insertion sort, so it never allocates.
+    /// Sorts the events by offset, with note-offs before note-ons at the same offset so a note that
+    /// ends where another of the same pitch starts never cuts the new one. Other events that share an
+    /// offset keep their order. It sorts in place with an insertion sort, so it never allocates.
     pub fn sort_by_offset(&mut self) {
+        let key = |event: &NoteEvent| (event.offset(), matches!(event, NoteEvent::On { .. }));
         for index in 1..self.events.len() {
             let mut position = index;
-            while position > 0
-                && self.events[position - 1].offset() > self.events[position].offset()
-            {
+            while position > 0 && key(&self.events[position - 1]) > key(&self.events[position]) {
                 self.events.swap(position - 1, position);
                 position -= 1;
             }
@@ -214,6 +214,24 @@ mod tests {
         events.clear();
         assert!(events.is_empty());
         assert!(events.push(off));
+    }
+
+    #[test]
+    fn sorting_puts_note_offs_before_note_ons_at_the_same_offset() {
+        let on = |offset, pitch| NoteEvent::On {
+            offset,
+            pitch,
+            velocity: 100,
+            freq_hz: 261.6,
+        };
+        let off = |offset, pitch| NoteEvent::Off { offset, pitch };
+        let mut events = EventList::with_capacity(4);
+        for event in [on(4, 60), off(4, 60), on(2, 62), off(4, 64)] {
+            assert!(events.push(event));
+        }
+        events.sort_by_offset();
+        let sorted: Vec<NoteEvent> = events.iter().copied().collect();
+        assert_eq!(sorted, vec![on(2, 62), off(4, 60), off(4, 64), on(4, 60)]);
     }
 
     #[test]
