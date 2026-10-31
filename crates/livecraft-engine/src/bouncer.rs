@@ -1,6 +1,7 @@
 use crate::graph::AudioGraph;
 use hound::{WavSpec, WavWriter};
 use livecraft_model::model::Project;
+use livecraft_time::seconds_for_beats;
 use std::fs;
 use std::path::Path;
 
@@ -57,7 +58,7 @@ impl OfflineBouncer {
         // Calculate total samples from duration_bars and BPM
         let beats_total =
             (options.duration_bars * project.transport.time_signature.0 as u32) as f64;
-        let total_seconds = (beats_total / project.transport.bpm as f64) * 60.0;
+        let total_seconds = seconds_for_beats(beats_total, project.transport.bpm as f64);
         let total_samples = (total_seconds * options.sample_rate as f64) as usize;
 
         let block_size = 512;

@@ -1606,6 +1606,7 @@ version = "0.1.0"
 dependencies = [
  "livecraft-dsp",
  "livecraft-model",
+ "livecraft-time",
  "log",
 ]
 
@@ -1624,6 +1625,7 @@ dependencies = [
  "livecraft-devices",
  "livecraft-dsp",
  "livecraft-model",
+ "livecraft-time",
  "log",
 ]
 
@@ -1673,6 +1675,7 @@ dependencies = [
  "livecraft-engine",
  "livecraft-formats",
  "livecraft-model",
+ "livecraft-time",
  "log",
 ]
 

@@ -17,6 +17,7 @@ use livecraft_devices::reverb::ReverbEffect;
 use livecraft_devices::saturator::SaturatorEffect;
 use livecraft_devices::simpler::SimplerInstrument;
 use livecraft_model::model::*;
+use livecraft_time::beats_per_sample;
 
 /// Replaces NaN and infinity with silence; finite samples pass through bit-exactly.
 #[inline]
@@ -768,7 +769,7 @@ impl AudioGraph {
     pub fn process_buffer(&mut self, buffer_l: &mut [f32], buffer_r: &mut [f32]) {
         let num_samples = buffer_l.len();
         let dt_beats = if self.is_playing {
-            (self.bpm as f64 / 60.0) / (self.sample_rate as f64)
+            beats_per_sample(self.bpm as f64, self.sample_rate as f64)
         } else {
             0.0
         };

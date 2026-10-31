@@ -41,7 +41,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `apps/livecraft/src/main.rs`                          | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | model, formats, engine, devices, ui  |
 | `crates/livecraft-testkit/src/lib.rs`                 | Test helpers shared across crates                                                            | `render_project_summary`, `RenderSummary`                                  | model, engine                        |
 | `crates/livecraft-time/src/units.rs`                  | Musical time units: beats and samples, with arithmetic                                       | `Beats`, `Samples`                                                         | none                                 |
-| `crates/livecraft-time/src/tempo.rs`                  | Tempo map (step and linear ramp changes) and beat, second, and sample conversion             | `TempoMap`, `MIN_BPM`, `MAX_BPM`                                           | none                                 |
+| `crates/livecraft-time/src/tempo.rs`                  | Tempo map (step and linear ramp changes) and beat, second, and sample conversion             | `TempoMap`, `MIN_BPM`, `MAX_BPM`, `seconds_per_beat`, `samples_per_beat`, `beats_per_sample`, `seconds_for_beats` | none                                 |
 | `crates/livecraft-time/src/meter.rs`                  | Time signature map (changes at bar boundaries) and bar.beat.sixteenth conversion and display | `TimeSignatureMap`, `BarBeatSixteenth`, `TimeError`                        | none                                 |
 | `crates/livecraft-time/src/grid.rs`                   | Grid and clip launch quantization (Live's Quantize menu) and the next grid line at or after a position | `Grid`, `LaunchQuantization`, `quantize_launch`                            | none                                 |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
@@ -50,9 +50,9 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 
 - `livecraft-model`, `livecraft-dsp`, and `livecraft-time` have no internal dependencies and no audio, UI, or OS dependencies.
 - `livecraft-formats` depends on model.
-- `livecraft-devices` depends on model and dsp.
-- `livecraft-engine` depends on model, dsp, devices, and formats.
-- `livecraft-ui` depends on model, formats, and engine. The engine edge is temporary and is removed when M04 adds `livecraft-session`.
+- `livecraft-devices` depends on model, dsp, and time.
+- `livecraft-engine` depends on model, dsp, devices, formats, and time.
+- `livecraft-ui` depends on model, formats, engine, and time. The engine edge is temporary and is removed when M04 adds `livecraft-session`.
 - `livecraft` (`apps/livecraft`) depends on model, formats, engine, devices, and ui.
 - `livecraft-testkit` is a dev-only dependency and may use model and engine.
 - Never add a reverse edge. A new crate needs a `LAYERS` entry, or `cargo xtask layering` fails.

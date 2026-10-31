@@ -16,7 +16,10 @@ const LAYERS: &[(&str, &[&str])] = &[
     ("livecraft-model", &[]),
     ("livecraft-formats", &["livecraft-model"]),
     ("livecraft-dsp", &[]),
-    ("livecraft-devices", &["livecraft-model", "livecraft-dsp"]),
+    (
+        "livecraft-devices",
+        &["livecraft-model", "livecraft-dsp", "livecraft-time"],
+    ),
     (
         "livecraft-engine",
         &[
@@ -24,11 +27,17 @@ const LAYERS: &[(&str, &[&str])] = &[
             "livecraft-dsp",
             "livecraft-devices",
             "livecraft-formats",
+            "livecraft-time",
         ],
     ),
     (
         "livecraft-ui",
-        &["livecraft-model", "livecraft-formats", "livecraft-engine"],
+        &[
+            "livecraft-model",
+            "livecraft-formats",
+            "livecraft-engine",
+            "livecraft-time",
+        ],
     ),
     (
         "livecraft",

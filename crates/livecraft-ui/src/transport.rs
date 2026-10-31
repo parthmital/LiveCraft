@@ -2,6 +2,7 @@ use crate::style::LivePalette;
 use crate::widgets::{live_divider, live_lcd_box, live_toggle_button};
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use livecraft_model::model::{NOTE_NAMES, Project, ScaleType};
+use livecraft_time::{MAX_BPM, MIN_BPM};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewMode {
@@ -128,18 +129,18 @@ pub fn render_transport_bar(
         let bpm_str = format!("{:.2}", bpm);
         let bpm_lcd = live_lcd_box(ui, &bpm_str, Vec2::new(56.0, 24.0), palette.amber, false);
         if bpm_lcd.dragged() {
-            bpm = (bpm - bpm_lcd.drag_delta().y * 0.2).clamp(20.0, 999.0);
+            bpm = (bpm - bpm_lcd.drag_delta().y * 0.2).clamp(MIN_BPM as f32, MAX_BPM as f32);
             project.transport.bpm = bpm;
         }
 
         // Nudge buttons
         let nudge_down = live_toggle_button(ui, false, palette.amber, "<", Vec2::new(16.0, 24.0));
         if nudge_down.clicked() {
-            project.transport.bpm = (project.transport.bpm - 0.5).max(20.0);
+            project.transport.bpm = (project.transport.bpm - 0.5).max(MIN_BPM as f32);
         }
         let nudge_up = live_toggle_button(ui, false, palette.amber, ">", Vec2::new(16.0, 24.0));
         if nudge_up.clicked() {
-            project.transport.bpm = (project.transport.bpm + 0.5).min(999.0);
+            project.transport.bpm = (project.transport.bpm + 0.5).min(MAX_BPM as f32);
         }
 
         // Time Signature LCD well

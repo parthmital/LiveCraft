@@ -6,6 +6,26 @@ pub const MIN_BPM: f64 = 20.0;
 /// Highest tempo Live's Tempo control accepts (manual 7.2.1, page 191). Conversions do not clamp to it.
 pub const MAX_BPM: f64 = 999.0;
 
+/// Seconds in one beat at `bpm`, with the tempo floored at `MIN_BPM`.
+pub fn seconds_per_beat(bpm: f64) -> f64 {
+    60.0 / bpm.max(MIN_BPM)
+}
+
+/// Sample frames in one beat at `bpm`, with the tempo floored at `MIN_BPM`.
+pub fn samples_per_beat(bpm: f64, sample_rate: f64) -> f64 {
+    seconds_per_beat(bpm) * sample_rate
+}
+
+/// Beats that pass in one sample frame at `bpm`. The tempo is not floored, so a zero tempo stops the playhead.
+pub fn beats_per_sample(bpm: f64, sample_rate: f64) -> f64 {
+    (bpm / 60.0) / sample_rate
+}
+
+/// Seconds for `beats` at `bpm`, with the tempo floored at `MIN_BPM`.
+pub fn seconds_for_beats(beats: f64, bpm: f64) -> f64 {
+    (beats / bpm.max(MIN_BPM)) * 60.0
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct Point {
     at: Beats,
@@ -277,6 +297,17 @@ mod tests {
         assert_eq!(TempoMap::constant(0.0).bpm_at(Beats(0.0)), MIN_BPM);
         assert_eq!(TempoMap::constant(f64::NAN).bpm_at(Beats(0.0)), MIN_BPM);
         assert_eq!(TempoMap::constant(0.0).beats_to_seconds(Beats(1.0)), 3.0);
+    }
+
+    #[test]
+    fn free_conversions_match_the_engine_arithmetic() {
+        assert_eq!(seconds_per_beat(120.0), 0.5);
+        assert_eq!(seconds_per_beat(0.0), 3.0);
+        assert_eq!(samples_per_beat(120.0, 44_100.0), 22_050.0);
+        assert_eq!(seconds_for_beats(4.0, 120.0), 2.0);
+        assert_eq!(seconds_for_beats(4.0, 0.0), 12.0);
+        assert_eq!(beats_per_sample(120.0, 44_100.0), 2.0 / 44_100.0);
+        assert_eq!(beats_per_sample(0.0, 44_100.0), 0.0);
     }
 
     #[test]

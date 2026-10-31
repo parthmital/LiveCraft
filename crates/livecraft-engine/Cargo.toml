@@ -11,6 +11,7 @@ publish.workspace = true
 livecraft-model.workspace = true
 livecraft-dsp.workspace = true
 livecraft-devices.workspace = true
+livecraft-time.workspace = true
 cpal.workspace = true
 hound.workspace = true
 crossbeam-channel.workspace = true

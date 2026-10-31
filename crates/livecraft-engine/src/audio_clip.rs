@@ -1,5 +1,6 @@
 use hound::WavReader;
 use livecraft_model::model::{Clip, ClipPayload};
+use livecraft_time::samples_per_beat;
 use std::collections::HashMap;
 use std::path::Path;
 
@@ -149,9 +150,9 @@ impl AudioSampleCache {
 
                 let gain_lin = 10.0f32.powf(audio_data.gain_db / 20.0);
                 let time_scale = if audio_data.is_warped {
-                    (60.0 / bpm.max(20.0) as f64) * audio.sample_rate as f64
+                    samples_per_beat(f64::from(bpm), audio.sample_rate as f64)
                 } else {
-                    (60.0 / audio_data.original_bpm.max(20.0)) * audio.sample_rate as f64
+                    samples_per_beat(audio_data.original_bpm, audio.sample_rate as f64)
                 };
 
                 let n = out_l.len().min(out_r.len());

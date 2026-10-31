@@ -1,5 +1,6 @@
 use crate::biquad::{BiquadFilter, FilterType};
 use livecraft_model::model::Device;
+use livecraft_time::seconds_per_beat;
 
 #[derive(Debug, Clone)]
 pub struct DelayEffect {
@@ -42,7 +43,7 @@ impl DelayEffect {
 
     pub fn set_tempo_synced(&mut self, bpm: f32, subdivision: f32) {
         // e.g. subdivision 0.5 = 1/8th note
-        let beat_sec = 60.0 / bpm.max(20.0);
+        let beat_sec = seconds_per_beat(f64::from(bpm)) as f32;
         self.delay_time_ms = (beat_sec * subdivision * 1000.0).clamp(1.0, 1900.0);
     }
 
