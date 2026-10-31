@@ -62,6 +62,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-time/src/grid.rs`                   | Grid and clip launch quantization (Live's Quantize menu) and the next grid line at or after a position | `Grid`, `LaunchQuantization`, `quantize_launch`                            | none                                 |
 | `crates/livecraft-session/src/command.rs`             | `Operation` (a named, serialisable edit with undo), `Command` (its object-safe form), `CommandError` | `Operation`, `Command`, `CommandError`                          | model                                |
 | `crates/livecraft-session/src/history.rs`             | `UndoHistory`: apply, undo, redo, gesture merge within 500 ms, and a step limit (default 1000) | `UndoHistory`, `MERGE_GAP`                                                 | model                                |
+| `crates/livecraft-session/src/registry.rs`            | `CommandRegistry`: stable names to constructors that decode JSON arguments                   | `CommandRegistry`                                                          | model                                |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules

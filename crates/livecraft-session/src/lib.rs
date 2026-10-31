@@ -5,6 +5,8 @@
 
 pub mod command;
 pub mod history;
+pub mod registry;
 
 pub use command::{Command, CommandError, Operation};
 pub use history::{MERGE_GAP, UndoHistory};
+pub use registry::CommandRegistry;
