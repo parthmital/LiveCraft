@@ -1,5 +1,7 @@
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone)]
@@ -99,5 +101,51 @@ impl ChorusEffect {
         let s1 = buf[idx1 % buf_len];
 
         s0 + frac * (s1 - s0)
+    }
+}
+
+impl DeviceProcessor for ChorusEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
+    }
+
+    /// Ids are positions in the Chorus table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.rate_hz = value.clamp(0.1, 10.0),
+            1 => self.depth = value.clamp(0.0, 1.0),
+            2 => self.feedback = value.clamp(0.0, 0.75),
+            3 => self.dry_wet = value.clamp(0.0, 1.0),
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn chorus_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || ChorusEffect::new(44100.0),
+            &[(0, 2.0), (1, 0.7), (3, 0.5)],
+        );
+    }
+
+    #[test]
+    fn chorus_depth_changes_the_output() {
+        assert_parameter_changes_output(|| ChorusEffect::new(44100.0), 1, 0.0);
     }
 }
