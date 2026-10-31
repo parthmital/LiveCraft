@@ -83,7 +83,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 | `image`               | 0.25 (PNG only)         | Saves `--screenshot` captures                                        |
 | `quick-xml`, `flate2` | 0.42, 1.0               | `.als` XML parsing and gzip in `crates/livecraft-formats/src/als.rs` |
 | `crossbeam-channel`   | 0.5                     | Bounded parameter queue from GUI or CLI to the audio callback        |
-| `clap`                | 4.5                     | CLI argument parsing in `crates/livecraft-cli`                       |
+| `clap`                | 4.5                     | CLI argument parsing in `apps/livecraft`                             |
 | `serde`, `serde_json` | 1.0                     | JSON project format and `inspect --json`                             |
 | `anyhow`, `thiserror` | 1.0, 2                  | Error handling                                                       |
 | `log`, `env_logger`   | 0.4, 0.11               | Logging, configured through `RUST_LOG`                               |
@@ -94,8 +94,9 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 LiveCraft/
 |-- .cargo/
 |-- .github/
+|-- apps/
+|   `-- livecraft/
 |-- crates/
-|   |-- livecraft-cli/
 |   |-- livecraft-devices/
 |   |-- livecraft-dsp/
 |   |-- livecraft-engine/
@@ -112,7 +113,8 @@ LiveCraft/
 `-- rust-toolchain.toml
 ```
 
-- `crates/`: one Cargo package per layer; responsibilities and allowed dependencies are in [ARCHITECTURE.md](ARCHITECTURE.md#module-map). `livecraft-cli` builds the `livecraft` binary.
+- `apps/livecraft/`: the `livecraft` binary (package `livecraft`), which opens the GUI or runs CLI subcommands.
+- `crates/`: one Cargo package per layer; responsibilities and allowed dependencies are in [ARCHITECTURE.md](ARCHITECTURE.md#module-map).
 - `docs/`: the Live 12 manual guide and shortcut tables. The manual PDF itself is Git-ignored and kept locally.
 - `plans/livecraft-1.0/`: the roadmap to 1.0: phases (`PLAN.md`), progress (`CHECKLIST.md`), owner-only requests (`OWNER-QUEUE.md`), milestone specs, plan-wide reference decisions, pending task files, and the manual query tool.
 - `xtask/`: `cargo xtask ci` (format, clippy, tests, release build, crate layering, Markdown links, cargo-deny).

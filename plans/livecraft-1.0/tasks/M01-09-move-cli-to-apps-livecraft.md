@@ -96,3 +96,5 @@ Move `crates/livecraft-cli` to `apps/livecraft` using `git mv`, rename the packa
 ## If Something Fails
 
 - Read the whole error and find the root cause. If this file is wrong (an anchor, API, or expected value changed), correct it and add `Revision <date>: <what and why>` at its end. If the line still cannot be finished, log it under Blockers in `CHECKLIST.md`.
+
+Revision 2026-10-31: Step 2 asked to remove `livecraft-cli` from `[workspace.dependencies]`, but that table had no such entry, so nothing was removed. The CLI's path dependencies `../livecraft-model` and `../livecraft-formats` do not resolve from `apps/livecraft`. They now use `livecraft-model.workspace = true` and `livecraft-formats.workspace = true`, the existing workspace entries. The commit also updates the docs that name the crate (README, ARCHITECTURE, AGENTS) and the insta snapshot header `source:` path, since they must match the moved files.

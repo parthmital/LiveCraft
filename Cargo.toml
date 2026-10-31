@@ -1,14 +1,8 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/livecraft-model",
-    "crates/livecraft-formats",
-    "crates/livecraft-dsp",
-    "crates/livecraft-devices",
-    "crates/livecraft-engine",
-    "crates/livecraft-ui",
-    "crates/livecraft-cli",
-    "crates/livecraft-testkit",
+    "apps/*",
+    "crates/*",
     "xtask",
 ]
 

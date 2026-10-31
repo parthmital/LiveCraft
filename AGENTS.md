@@ -8,7 +8,7 @@ Last verified: 2026-10-28.
 - Format check: `cargo fmt --all -- --check` (fix: `cargo fmt --all`)
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
 - Test all: `cargo test --workspace`
-- Test one crate: `cargo test -p livecraft-model` (also `livecraft-formats`, `livecraft-dsp`, `livecraft-devices`, `livecraft-engine`, `livecraft-ui`, `livecraft-cli`)
+- Test one crate: `cargo test -p livecraft-model` (also `livecraft-formats`, `livecraft-dsp`, `livecraft-devices`, `livecraft-engine`, `livecraft-ui`, `livecraft`)
 - Test one test: `cargo test -p livecraft-devices test_eq8_processing`
 - Release build: `cargo build --release --workspace`
 - Toolchain: pinned to Rust 1.99.1 by `rust-toolchain.toml`; crate metadata comes from `[workspace.package]` in `Cargo.toml`.
@@ -34,7 +34,7 @@ Last verified: 2026-10-28.
 - Crate direction: see `ARCHITECTURE.md#dependency-rules`; `LAYERS` in `xtask/src/main.rs` enforces it. Never add a reverse edge.
 - Tests live in a `#[cfg(test)] mod tests` block of the module they test, or in `crates/<crate>/tests/` for cross-module behaviour. Every new behaviour gets a test in the same commit.
 - Errors: library code returns `Result` with `thiserror` enums or `anyhow::Result`; no `unwrap()` or `expect()` outside tests.
-- Logging: library crates use `log::error!`, `log::warn!`, `log::info!`, `log::debug!`; never `eprintln!` or `println!`. Only `crates/livecraft-cli` prints to the terminal. Never log on the audio thread.
+- Logging: library crates use `log::error!`, `log::warn!`, `log::info!`, `log::debug!`; never `eprintln!` or `println!`. Only `apps/livecraft` prints to the terminal. Never log on the audio thread.
 - Audio callback code (`write_audio*` in `crates/livecraft-engine/src/engine.rs` and everything it calls) must not allocate, lock, log, or do I/O. See `ARCHITECTURE.md#known-violations` for where today's code breaks this.
 - Live terms are used exactly as the manual spells them (Session View, Clip View, Track Activator, Main track).
 - MIDI note names follow Live: note 60 is C3.

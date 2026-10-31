@@ -1,5 +1,5 @@
 [package]
-name = "livecraft-cli"
+name = "livecraft"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -12,8 +12,8 @@ name = "livecraft"
 path = "src/main.rs"
 
 [dependencies]
-livecraft-model = { path = "../livecraft-model" }
-livecraft-formats = { path = "../livecraft-formats" }
+livecraft-model.workspace = true
+livecraft-formats.workspace = true
 livecraft-engine.workspace = true
 livecraft-devices.workspace = true
 livecraft-ui.workspace = true

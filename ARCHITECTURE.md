@@ -38,7 +38,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-ui/src/app.rs`                      | Frame loop, shortcuts, panel layout, engine wiring                                           | `LiveCraftApp`                                                             | model, formats, engine               |
 | `crates/livecraft-ui/src/{view}.rs`                   | One view or panel per file (transport, session, arrange, mixer, devices, pianoroll, browser) | `render_*` functions                                                       | as above                             |
 | `crates/livecraft-ui/src/widgets.rs`, `style.rs`      | Knobs, faders, meters, LCD fields; palettes                                                  | `live_knob`, `live_fader`, `LivePalette`                                   | as above                             |
-| `crates/livecraft-cli/src/main.rs`                    | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | model, formats, engine, devices, ui  |
+| `apps/livecraft/src/main.rs`                          | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | model, formats, engine, devices, ui  |
 | `crates/livecraft-testkit/src/lib.rs`                 | Test helpers shared across crates                                                            | `render_project_summary`, `RenderSummary`                                  | model, engine                        |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
@@ -46,7 +46,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 
 - `livecraft-model` and `livecraft-dsp` have no internal dependencies and no audio, UI, or OS dependencies.
 - Layers run model and dsp, then formats and devices, then engine, then ui, then cli. Never add a reverse edge.
-- Only `livecraft-cli` produces a binary.
+- Only `apps/livecraft` (package `livecraft`) produces a binary.
 - Enforced by `cargo xtask layering` (part of `cargo xtask ci`): the `LAYERS` table in `xtask/src/main.rs` is the source of truth.
 
 ## Where New Code Goes
@@ -55,7 +55,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 - New DSP building block (filter, oscillator, envelope): `livecraft-dsp/src/`.
 - New effect or instrument: a file in `livecraft-devices/src/effects/` or `instruments/`, a `DspProcessor` impl in `processor.rs`, a `DeviceType` variant in `livecraft-model`.
 - New view or panel: a new file in `livecraft-ui/src/`, called from `app.rs`.
-- New CLI subcommand: `livecraft-cli/src/main.rs` plus a test in `crates/livecraft-cli/tests/cli_tests.rs`.
+- New CLI subcommand: `apps/livecraft/src/main.rs` plus a test in `apps/livecraft/tests/cli_tests.rs`.
 
 ## Decisions
 

@@ -1,5 +1,5 @@
 ---
-source: crates/livecraft-cli/tests/characterisation.rs
+source: apps/livecraft/tests/characterisation.rs
 assertion_line: 101
 expression: json
 ---

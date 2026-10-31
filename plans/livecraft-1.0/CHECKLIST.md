@@ -34,7 +34,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 - [x] M01-06 Create livecraft-devices crate
 - [x] M01-07 Create livecraft-engine crate and trim livecraft-dsp
 - [x] M01-08 Rename livecraft-gui to livecraft-ui ([task](tasks/M01-08-rename-gui-to-ui.md))
-- [ ] M01-09 Move CLI to apps/livecraft ([task](tasks/M01-09-move-cli-to-apps-livecraft.md))
+- [x] M01-09 Move CLI to apps/livecraft ([task](tasks/M01-09-move-cli-to-apps-livecraft.md))
 - [ ] M01-10 Verify M01 workspace restructure and update docs ([task](tasks/M01-10-milestone-verification.md))
 - [ ] M02 Musical time foundation ([milestone](milestones/M02-musical-time.md))
 - [ ] M03 Document model v2 ([milestone](milestones/M03-document-model-v2.md))

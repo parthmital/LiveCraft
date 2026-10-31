@@ -1506,7 +1506,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4744e383959f0db86ede514b809b1c53251889093803c05267acc7d4e7030d70"
 
 [[package]]
-name = "livecraft-cli"
+name = "livecraft"
 version = "0.1.0"
 dependencies = [
  "anyhow",

@@ -31,7 +31,7 @@ const LAYERS: &[(&str, &[&str])] = &[
         &["livecraft-model", "livecraft-formats", "livecraft-engine"],
     ),
     (
-        "livecraft-cli",
+        "livecraft",
         &[
             "livecraft-model",
             "livecraft-formats",
