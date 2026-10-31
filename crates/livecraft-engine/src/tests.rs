@@ -271,47 +271,6 @@ fn test_graph_dynamic_track_sync() {
 }
 
 #[test]
-fn test_lock_free_param_queue_dispatch() {
-    let project = Project::new_default("LockFreeTest");
-    let mut graph = AudioGraph::new(&project, 44100.0);
-
-    // Verify initial state
-    assert_eq!(graph.bpm, 120.0);
-    assert_eq!(graph.track_states[0].volume_db, 0.0);
-    assert_eq!(graph.track_states[0].pan, 0.0);
-    assert!(!graph.track_states[0].is_muted);
-    assert!(!graph.track_states[0].is_soloed);
-
-    // Apply parameter updates
-    graph.apply_param_msg(crate::engine::AudioParamMsg::SetTempo(135.0));
-    graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackVolume {
-        track: TrackId(1),
-        volume_db: -6.5,
-    });
-    graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackPan {
-        track: TrackId(1),
-        pan: -0.4,
-    });
-    graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackMute {
-        track: TrackId(1),
-        muted: true,
-    });
-    graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackSolo {
-        track: TrackId(1),
-        soloed: true,
-    });
-    graph.apply_param_msg(crate::engine::AudioParamMsg::SetMasterVolume { volume_db: -3.0 });
-
-    // Verify updated state
-    assert_eq!(graph.bpm, 135.0);
-    assert_eq!(graph.track_states[0].volume_db, -6.5);
-    assert_eq!(graph.track_states[0].pan, -0.4);
-    assert!(graph.track_states[0].is_muted);
-    assert!(graph.track_states[0].is_soloed);
-    assert_eq!(graph.master_state.volume_db, -3.0);
-}
-
-#[test]
 fn test_sanitize_output_sample() {
     assert_eq!(sanitize_output_sample(f32::NAN), 0.0);
     assert_eq!(sanitize_output_sample(f32::INFINITY), 0.0);

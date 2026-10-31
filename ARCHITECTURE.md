@@ -9,15 +9,18 @@ The target architecture that replaces this one is defined in `plans/livecraft-1.
 
 One process, three kinds of threads:
 
-- UI thread: `eframe` runs `LiveCraftApp::update` once per frame. It owns the `Project` and mutates it directly.
-- Audio thread: `cpal` calls `write_audio` (`crates/livecraft-engine/src/engine.rs`) for every hardware buffer. It drains `AudioParamMsg` messages and renders the `AudioGraph`.
-- CLI: runs the same `AudioGraph` offline through `OfflineBouncer`, or opens the GUI.
+- UI thread: `eframe` runs `LiveCraftApp::update` once per frame. It reads the `Session` and sends its edits as commands.
+- Session (on the UI thread in this version): owns the `Project`, the undo history, and a `Playback`. After each change it sends the difference to the engine: a structural change compiles a `CompiledGraph` and submits it; a mixer, send, tempo, or device parameter change is an `EngineCommand`.
+- Audio thread: the `cpal` callback (`crates/livecraft-engine/src/output.rs`) calls `Engine::process` (`executor.rs`) for every hardware buffer and nothing else. `Engine` applies queued commands and graph swaps at the start of the callback, renders the compiled graph, and publishes an `EngineSnapshot` through a triple buffer.
+- Collector thread: frees the graphs the audio thread replaced and the shared clip data.
+- CLI: `OfflineBouncer` renders through the same `Engine` with no device.
 
 ```text
-GUI or CLI --AudioParamMsg (crossbeam bounded 1024)--> audio callback
-GUI --sync_project(&Project) via Arc<Mutex<AudioGraph>>::try_lock--> AudioGraph
-audio callback --try_lock--> AudioGraph::process_buffer_interleaved --> cpal output
-GUI --try_lock--> AudioGraph (reads playhead and meters)
+UI --edits and transport--> Session (Project, undo history)
+Session --GraphCompiler::compile + submit_graph (rtrb)--> audio callback: Engine::process
+Session --EngineCommand (rtrb)--> audio callback
+audio callback --EngineSnapshot (triple_buffer)--> Session::status --> UI meters and playhead
+audio callback --replaced graphs (rtrb)--> collector thread (frees)
 ```
 
 ## Module Map
@@ -46,7 +49,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-dsp/src/biquad.rs`                  | DSP primitives (biquad filter)                                                               | `BiquadFilter`, `FilterType`                                               | none                                 |
 | `crates/livecraft-devices/src/processor.rs`           | `DspProcessor` trait and factory from `Device`                                               | `DspProcessor`, `create_processor`                                         | model, dsp                           |
 | `crates/livecraft-devices/src/{effects,instruments}/` | One effect or instrument per file                                                            | `<Name>Effect`, `OperatorSynth`, `SimplerInstrument`, `DrumRackInstrument` | model, dsp                           |
-| `crates/livecraft-engine/src/engine.rs`               | `cpal` stream and parameter queue                                                            | `AudioEngine`, `AudioParamMsg`                                             | model, dsp, devices, formats         |
+| `crates/livecraft-engine/src/output.rs`               | `Playback`: the `cpal` output stream, which calls `Engine::process`, and the session side of the engine (compiler and handle) | `Playback`                                                                 | model, devices, formats, time        |
 | `crates/livecraft-engine/src/graph.rs`                | Per-track state, clip playback, voices, mixing, meters                                       | `AudioGraph`, `TrackDspState`, `TrackMeter`                                | as above                             |
 | `crates/livecraft-engine/src/audio_clip.rs`           | WAV sample cache with a 2^28-sample limit                                                    | `AudioSampleCache`                                                         | as above                             |
 | `crates/livecraft-engine/src/bouncer.rs`              | Offline render and stems                                                                     | `OfflineBouncer`, `RenderOptions`                                          | as above                             |
@@ -62,7 +65,8 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-session/src/command.rs`             | `Operation` (a named, serialisable edit with undo), `Command` (its object-safe form), `CommandError` | `Operation`, `Command`, `CommandError`                          | model                                |
 | `crates/livecraft-session/src/history.rs`             | `UndoHistory`: apply, undo, redo, gesture merge within 500 ms, a step limit (default 1000), transactions (one labelled step), and the Undo History entries with revert and reapply (`go_to`) | `UndoHistory`, `Transaction`, `HistoryEntry`, `MERGE_GAP`, `OPENING_LABEL` | model                                |
 | `crates/livecraft-session/src/registry.rs`            | `CommandRegistry`: stable names to constructors that decode JSON arguments                   | `CommandRegistry`                                                          | model                                |
-| `crates/livecraft-session/src/session.rs`             | `Session`: the open Set, its history, its id allocator, its engine, and the dirty flag; pushes changes to the engine; file open and save; `demo_set` | `Session`, `load_set`, `demo_set`, `EngineStatus`, `TrackMeter`            | time, model, formats, engine         |
+| `crates/livecraft-session/src/session.rs`             | `Session`: the open Set, its history, its id allocator, its `Playback`, and the dirty flag; file open and save; transport calls; `demo_set` | `Session`, `load_set`, `demo_set`, `EngineStatus`, `TrackMeter`            | time, model, formats, engine         |
+| `crates/livecraft-session/src/engine_sync.rs`        | Sends each change to the engine: a new graph for a structural or latency change, commands for the rest | `push_changes` (crate-private)                                             | model, engine                        |
 | `crates/livecraft-session/src/commands/scale.rs`      | Scale settings (active, root note, type) as one edit                                         | one `Operation`                                                            | model                                |
 | `crates/livecraft-session/src/commands/track.rs`      | Track create, delete (with exact undo), name, color, order, arm, solo, mute, monitor, volume, pan, and sends | one `Operation` per edit, `commands::registry()` | model                                |
 | `crates/livecraft-session/src/commands/automation.rs` | Automation point add, remove, and move, kept sorted by beat                                  | one `Operation` per edit                                                   | model                                |
@@ -108,13 +112,11 @@ Each is scheduled in [plans/livecraft-1.0/PLAN.md](plans/livecraft-1.0/PLAN.md).
 
 | Problem                                                                                                              | Where                                                   | Plan phase   |
 | -------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- | ------------ |
-| Audio callback takes `Arc<Mutex<AudioGraph>>::try_lock`; contention outputs silence                                  | `engine.rs` `write_audio*`                              | 1            |
 | Audio callback clones a whole `Clip` (with its note `Vec`) for every track every block                               | `graph.rs` `dispatch_clip_events`                       | 1            |
-| `AudioParamMsg::SetDeviceParam` carries a `String` key, freed on the audio thread                                    | `engine.rs`                                             | 1            |
 | Audio clips decode their WAV file from disk on the audio thread the first time they play                             | `audio_clip.rs` `render_clip_samples` via `get_or_load` | 1 (M05, M11) |
 | `process_buffer_interleaved` grows its scratch buffers on the audio thread when the driver block exceeds 8192 frames | `graph.rs`                                              | 1            |
 | `DspProcessor` processes one sample per virtual call and looks parameters up by string                               | `processor.rs`                                          | 1            |
-| Notes and automation points are still addressed by index in commands (they have no ids until M18 and M22). A slot is named only by its row when a clip is created or moved, and a send by its return track's id (since M04). `engine.rs` still addresses parameters by name | `livecraft-session/src/commands/{note,automation}.rs`, `engine.rs` | 1 (M18, M22) |
+| Notes and automation points are still addressed by index in commands (they have no ids until M18 and M22). A slot is named only by its row when a clip is created or moved, and a send by its return track's id (since M04) | `livecraft-session/src/commands/{note,automation}.rs` | 1 (M18, M22) |
 | `.als` writer regenerates XML from the model; every unknown element is lost                                          | `als.rs`                                                | 2            |
 | Session clip slots without an active clip are played back as a sequential timeline                                   | `graph.rs` `dispatch_clip_events`                       | 1            |
 | Large files mixing concerns: `graph.rs` (1080), `als.rs` (1008), `devices.rs` (995)         | as listed                                               | 1            |

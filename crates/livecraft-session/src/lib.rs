@@ -5,6 +5,7 @@
 
 pub mod command;
 pub mod commands;
+mod engine_sync;
 pub mod history;
 pub mod registry;
 pub mod session;

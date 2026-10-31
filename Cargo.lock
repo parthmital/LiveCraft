@@ -1674,10 +1674,12 @@ dependencies = [
 name = "livecraft-session"
 version = "0.1.0"
 dependencies = [
+ "livecraft-devices",
  "livecraft-engine",
  "livecraft-formats",
  "livecraft-model",
  "livecraft-time",
+ "log",
  "proptest",
  "serde",
  "serde_json",

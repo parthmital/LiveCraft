@@ -77,7 +77,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 | Technology            | Version in `Cargo.toml` | Purpose and where used                                               |
 | --------------------- | ----------------------- | -------------------------------------------------------------------- |
 | Rust                  | 2024 edition            | Whole workspace                                                      |
-| `cpal`                | 0.18                    | Audio output stream in `crates/livecraft-engine/src/engine.rs`       |
+| `cpal`                | 0.18                    | Audio output stream in `crates/livecraft-engine/src/output.rs`       |
 | `hound`               | 3.5                     | WAV read and write for render, stems, and samples                    |
 | `egui`, `eframe`      | 0.37 (wgpu renderer)    | Immediate-mode desktop GUI in `crates/livecraft-ui`                  |
 | `image`               | 0.25 (PNG only)         | Saves `--screenshot` captures                                        |

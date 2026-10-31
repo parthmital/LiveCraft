@@ -1,7 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use livecraft_devices::operator::{OperatorSynth, Waveform};
 use livecraft_engine::bouncer::{OfflineBouncer, RenderOptions};
-use livecraft_engine::engine::AudioEngine;
+use livecraft_engine::output::Playback;
 use livecraft_formats::als::AlsParser;
 use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, TrackType};
 use std::fs;
@@ -530,17 +530,18 @@ fn print_project_inspection(proj: &Project, show_devices: bool, show_clips: bool
 
 fn run_terminal_player(project: &Project, max_duration: u64) -> anyhow::Result<()> {
     println!("\nStarting LiveCraft Real-Time Audio Engine...");
-    let engine = AudioEngine::new(project)?;
+    let mut session =
+        livecraft_session::Session::new(project.clone(), Some(Playback::open(project)?));
 
     // Trigger first available clip on each track
     for trk in project.tracks.iter() {
         if let Some(slot) = trk.clip_slots.first()
             && slot.clip.is_some()
         {
-            engine.trigger_clip(trk.id, 0);
+            session.trigger_clip(trk.id, 0);
         }
     }
-    engine.play();
+    session.set_playing(true);
 
     println!("============================================================");
     println!("  LIVECRAFT LIVE TERMINAL PLAYBACK");
@@ -567,14 +568,15 @@ fn run_terminal_player(project: &Project, max_duration: u64) -> anyhow::Result<(
             break;
         }
 
-        if let Ok(graph) = engine.graph.lock() {
-            let beats = graph.playhead_beats;
+        {
+            let status = session.status();
+            let beats = status.playhead_beats;
             let bar = (beats / 4.0) as u32 + 1;
             let beat = (beats % 4.0) as u32 + 1;
             let sixteenth = ((beats * 4.0) % 4.0) as u32 + 1;
 
-            let meter_l = graph.master_meter.peak_db_l();
-            let meter_r = graph.master_meter.peak_db_r();
+            let meter_l = status.master_meter.peak_db_l();
+            let meter_r = status.master_meter.peak_db_r();
 
             let bar_meter_l = render_vu_meter_bar(meter_l);
             let bar_meter_r = render_vu_meter_bar(meter_r);
@@ -589,7 +591,7 @@ fn run_terminal_player(project: &Project, max_duration: u64) -> anyhow::Result<(
         thread::sleep(Duration::from_millis(50));
     }
 
-    engine.stop();
+    session.set_playing(false);
     println!("\nPlayback stopped.");
     Ok(())
 }

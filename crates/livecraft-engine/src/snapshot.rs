@@ -44,6 +44,8 @@ pub struct EngineSnapshot {
     /// `node_count` entries are meaningful.
     pub nodes: [NodeSnapshot; MAX_NODES],
     pub node_count: usize,
+    /// The level of the output, after the Main volume.
+    pub output: TrackMeter,
     /// The time the last block took, as a share of its buffer period. 1.0 means the whole period.
     pub cpu_load: f32,
 }
@@ -54,6 +56,7 @@ impl Default for EngineSnapshot {
             transport: Transport::default(),
             nodes: std::array::from_fn(|_| NodeSnapshot::default()),
             node_count: 0,
+            output: TrackMeter::default(),
             cpu_load: 0.0,
         }
     }

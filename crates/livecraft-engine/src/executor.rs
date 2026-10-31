@@ -277,6 +277,7 @@ impl Engine {
                 playing: node.clips.playing,
             };
         }
+        snapshot.output = self.graph.output_meter;
         snapshot.cpu_load = cpu_load(elapsed_seconds, frames, self.sample_rate);
         self.snapshots.publish();
     }
@@ -517,6 +518,44 @@ mod tests {
             .expect("send");
         let after = render_blocks(&mut engine, 1);
         assert!(after.iter().all(|&bits| f32::from_bits(bits) == 0.0));
+    }
+
+    #[test]
+    fn the_mixer_and_transport_commands_reach_their_node_and_the_snapshot() {
+        let (mut engine, mut handle, _compiler) = started(&Project::new_default("Mixer"));
+        for command in [
+            EngineCommand::SetTempo(135.0),
+            EngineCommand::SetTrackVolume {
+                track: TrackId(1),
+                volume_db: -6.5,
+            },
+            EngineCommand::SetTrackPan {
+                track: TrackId(1),
+                pan: -0.4,
+            },
+            EngineCommand::SetTrackMute {
+                track: TrackId(1),
+                muted: true,
+            },
+            EngineCommand::SetTrackSolo {
+                track: TrackId(1),
+                soloed: true,
+            },
+            EngineCommand::SetTrackVolume {
+                track: TrackId(7),
+                volume_db: -3.0,
+            },
+        ] {
+            handle.send(command).expect("send");
+        }
+        render_blocks(&mut engine, 1);
+        let mixer = &engine.graph.node_mut(TrackId(1)).expect("track 1").mixer;
+        assert_eq!(mixer.volume_db, -6.5);
+        assert_eq!(mixer.pan, -0.4);
+        assert!(mixer.is_muted && mixer.is_soloed);
+        let main = &engine.graph.node_mut(TrackId(7)).expect("main").mixer;
+        assert_eq!(main.volume_db, -3.0);
+        assert_eq!(handle.snapshot().transport.bpm, 135.0);
     }
 
     #[test]

@@ -8,7 +8,7 @@ use crate::compiled::{
     CompiledGraph, DeviceSlot, MAX_NOTE_EVENTS, Mixer, Node, NodeKind, Transfer, compensate_latency,
 };
 use basedrop::{Handle, Shared};
-use livecraft_devices::{create_device_processor, is_instrument};
+use livecraft_devices::{DeviceProcessor, create_device_processor, is_instrument};
 use livecraft_model::device::param_table;
 use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{
@@ -18,6 +18,9 @@ use livecraft_model::param::ParamId;
 use std::collections::HashMap;
 use std::path::Path;
 
+/// Builds the processor of a device, or None when the device has no native processor.
+pub type ProcessorFactory = fn(&Device, f32) -> Option<Box<dyn DeviceProcessor>>;
+
 /// Compiles Sets into graphs. It remembers the layout of the last graph it compiled, so each new
 /// graph lists the devices it takes over, and it keeps the decoded audio, so a file is read once.
 /// Compile and submit graphs in the same order.
@@ -25,8 +28,11 @@ pub struct GraphCompiler {
     sample_rate: f32,
     /// Shares the clip data with the audio thread. Freed by the collector thread.
     handle: Handle,
+    factory: ProcessorFactory,
     /// The track and device ids of each node of the last graph, in node order.
     previous: Vec<(TrackId, Vec<DeviceId>)>,
+    /// The latency each device had in the last graph, in frames.
+    latencies: HashMap<DeviceId, usize>,
     /// Decoded audio by file path. A file that fails to decode is not cached, so it is retried.
     audio: HashMap<String, Shared<DecodedAudio>>,
 }
@@ -34,10 +40,17 @@ pub struct GraphCompiler {
 impl GraphCompiler {
     /// `handle` comes from the collector that the engine runs (see `Engine::start`).
     pub fn new(sample_rate: f32, handle: Handle) -> Self {
+        Self::with_factory(sample_rate, handle, create_device_processor)
+    }
+
+    /// As `new`, with each device's processor built by `factory`.
+    pub fn with_factory(sample_rate: f32, handle: Handle, factory: ProcessorFactory) -> Self {
         Self {
             sample_rate,
             handle,
+            factory,
             previous: Vec::new(),
+            latencies: HashMap::new(),
             audio: HashMap::new(),
         }
     }
@@ -60,6 +73,10 @@ impl GraphCompiler {
             project.tracks.len(),
             project.return_tracks.len(),
         );
+        self.latencies = nodes
+            .iter()
+            .flat_map(|node| node.devices.iter().map(|slot| (slot.id, slot.latency)))
+            .collect();
         let transfers = self.transfers(&nodes);
         self.previous = nodes
             .iter()
@@ -77,6 +94,16 @@ impl GraphCompiler {
             project.scenes.iter().map(|scene| scene.id).collect(),
             transfers,
         )
+    }
+
+    /// True when `device` now reports a different latency from the one the last graph compiled. The
+    /// compensation of a Set is worked out at compile time, so the session recompiles when this holds
+    /// (manual 23.3). A device the last graph did not have counts as zero latency.
+    pub fn latency_changed(&self, device: &Device) -> bool {
+        let compiled = self.latencies.get(&device.id).copied().unwrap_or(0);
+        let now = (self.factory)(device, self.sample_rate)
+            .map_or(0, |processor| processor.latency_samples() as usize);
+        now != compiled
     }
 
     /// Every device that the previous graph also had, paired with its old and new position.
@@ -110,7 +137,7 @@ impl GraphCompiler {
         let devices = chain
             .into_iter()
             .filter_map(|device| {
-                create_device_processor(device, self.sample_rate).map(|processor| {
+                (self.factory)(device, self.sample_rate).map(|processor| {
                     DeviceSlot::new(
                         device.id,
                         device.is_enabled,

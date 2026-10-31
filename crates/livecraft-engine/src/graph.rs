@@ -1,5 +1,4 @@
 use crate::audio_clip::AudioSampleCache;
-use crate::engine::AudioParamMsg;
 use livecraft_devices::autofilter::AutoFilterEffect;
 use livecraft_devices::autopan::AutoPanEffect;
 use livecraft_devices::chorus::ChorusEffect;
@@ -566,84 +565,6 @@ impl AudioGraph {
         self.track_states
             .iter_mut()
             .find(|state| state.track_id == track)
-    }
-
-    pub fn apply_param_msg(&mut self, msg: AudioParamMsg) {
-        match msg {
-            AudioParamMsg::SetTempo(bpm) => {
-                self.bpm = bpm;
-            }
-            AudioParamMsg::SetTrackVolume { track, volume_db } => {
-                if let Some(state) = self.track_state_mut(track) {
-                    state.volume_db = volume_db;
-                }
-            }
-            AudioParamMsg::SetTrackPan { track, pan } => {
-                if let Some(state) = self.track_state_mut(track) {
-                    state.pan = pan;
-                }
-            }
-            AudioParamMsg::SetTrackMute { track, muted } => {
-                if let Some(state) = self.track_state_mut(track) {
-                    state.is_muted = muted;
-                }
-            }
-            AudioParamMsg::SetTrackSolo { track, soloed } => {
-                if let Some(state) = self.track_state_mut(track) {
-                    state.is_soloed = soloed;
-                }
-            }
-            AudioParamMsg::SetTrackSend {
-                track,
-                send_idx,
-                amount,
-            } => {
-                if let Some(state) = self.track_state_mut(track) {
-                    while state.sends.len() <= send_idx {
-                        state.sends.push(0.0);
-                    }
-                    state.sends[send_idx] = amount;
-                }
-            }
-            AudioParamMsg::SetMasterVolume { volume_db } => {
-                self.master_state.volume_db = volume_db;
-            }
-            AudioParamMsg::SetMasterPan { pan } => {
-                self.master_state.pan = pan;
-            }
-            AudioParamMsg::SetDeviceParam {
-                track,
-                device,
-                param_key,
-                value,
-            } => {
-                let sample_rate = self.sample_rate;
-                if track == self.master_state.track_id {
-                    self.master_state
-                        .set_device_param(device, &param_key, value, sample_rate);
-                } else if let Some(state) = self.track_state_mut(track) {
-                    state.set_device_param(device, &param_key, value, sample_rate);
-                }
-            }
-            AudioParamMsg::TriggerClip { track, slot_idx } => {
-                self.trigger_clip(track, slot_idx);
-            }
-            AudioParamMsg::StopClip { track } => {
-                self.stop_clip(track);
-            }
-            AudioParamMsg::TriggerScene { scene } => {
-                self.trigger_scene(scene);
-            }
-            AudioParamMsg::StopAll => {
-                self.stop_all();
-            }
-            AudioParamMsg::SetPlayhead(beats) => {
-                self.playhead_beats = beats;
-            }
-            AudioParamMsg::SetPlaying(playing) => {
-                self.is_playing = playing;
-            }
-        }
     }
 
     pub fn stop_all(&mut self) {

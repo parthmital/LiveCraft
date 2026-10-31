@@ -7,8 +7,10 @@
 use crate::command::{Command, CommandError, Operation};
 use crate::commands::clip::CreateMidiClip;
 use crate::commands::note::AddNote;
+use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
-use livecraft_engine::engine::AudioEngine;
+use livecraft_engine::executor::EngineCommand;
+use livecraft_engine::output::Playback;
 use livecraft_formats::als::{AlsError, AlsParser};
 use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
 use livecraft_model::model::{MidiNote, Project};
@@ -65,44 +67,21 @@ pub struct EngineStatus {
     pub sample_rate: Option<f32>,
 }
 
-/// The mixer values last sent to the engine for one track, so only changed values are sent again.
-#[derive(Debug, Clone, PartialEq)]
-struct SentMix {
-    id: TrackId,
-    volume_db: f32,
-    pan: f32,
-    muted: bool,
-    soloed: bool,
-    sends: Vec<f32>,
-}
-
-impl SentMix {
-    fn of(track: &livecraft_model::model::Track) -> Self {
-        Self {
-            id: track.id,
-            volume_db: track.volume_db,
-            pan: track.pan,
-            muted: track.is_muted,
-            soloed: track.is_soloed,
-            sends: track.sends.clone(),
-        }
-    }
-}
-
 pub struct Session {
     project: Project,
     history: UndoHistory,
     ids: IdAllocator,
-    engine: Option<AudioEngine>,
+    engine: Option<Playback>,
     dirty: bool,
-    sent: Vec<SentMix>,
+    /// The Set as the engine last received it, so each change sends only what differs.
+    sent: Project,
 }
 
 impl Session {
-    /// Opens a Set. The engine, when there is one, was built from this Set.
-    pub fn new(project: Project, engine: Option<AudioEngine>) -> Self {
+    /// Opens a Set. The engine, when there is one, was started from this Set.
+    pub fn new(project: Project, engine: Option<Playback>) -> Self {
         let ids = project.id_allocator();
-        let sent = project.tracks.iter().map(SentMix::of).collect();
+        let sent = project.clone();
         Self {
             project,
             history: UndoHistory::default(),
@@ -113,9 +92,9 @@ impl Session {
         }
     }
 
-    /// Opens a Set with the default audio engine, when an audio device is available.
+    /// Opens a Set with the audio output of the default device, when there is one.
     pub fn open(project: Project) -> Self {
-        let engine = AudioEngine::new(&project).ok();
+        let engine = Playback::open(&project).ok();
         Self::new(project, engine)
     }
 
@@ -230,82 +209,48 @@ impl Session {
         self.sync_engine();
     }
 
-    /// Sends the Set to the engine: its structure, and every mixer value that changed.
+    /// Sends the change since the last sync to the engine (see `engine_sync`).
     fn sync_engine(&mut self) {
-        let Some(engine) = &self.engine else {
-            return;
-        };
-        engine.sync_project(&self.project);
-        let previous = std::mem::take(&mut self.sent);
-        let current: Vec<SentMix> = self.project.tracks.iter().map(SentMix::of).collect();
-        for (index, now) in current.iter().enumerate() {
-            let before = previous.get(index).filter(|sent| sent.id == now.id);
-            let Some(before) = before else {
-                continue;
+        if let Some(engine) = self.engine.as_mut() {
+            push_changes(engine, &self.sent, &self.project);
+        }
+        self.sent = self.project.clone();
+    }
+
+    fn send(&mut self, command: EngineCommand) {
+        if let Some(engine) = self.engine.as_mut() {
+            send_command(engine, command);
+        }
+    }
+
+    /// The engine's playhead, meters, and clip states, read from its latest snapshot. Without an
+    /// engine, the Set's own playhead and no levels.
+    pub fn status(&mut self) -> EngineStatus {
+        let Some(engine) = self.engine.as_mut() else {
+            return EngineStatus {
+                playhead_beats: self.project.transport.playhead_beats,
+                ..EngineStatus::default()
             };
-            if (now.volume_db - before.volume_db).abs() > 0.01 {
-                engine.set_track_volume(now.id, now.volume_db);
-            }
-            if (now.pan - before.pan).abs() > 0.01 {
-                engine.set_track_pan(now.id, now.pan);
-            }
-            if now.muted != before.muted {
-                engine.set_track_mute(now.id, now.muted);
-            }
-            if now.soloed != before.soloed {
-                engine.set_track_solo(now.id, now.soloed);
-            }
-            for (send, level) in now.sends.iter().enumerate() {
-                let sent = before.sends.get(send).copied().unwrap_or(0.0);
-                if (level - sent).abs() > 0.01 {
-                    engine.set_track_send(now.id, send, *level);
-                }
-            }
-        }
-        engine.set_master_volume(self.project.main_track.volume_db);
-        engine.set_master_pan(self.project.main_track.pan);
-        self.sent = current;
-    }
-
-    /// The engine's playhead, meters, and sample rate, or the Set's own playhead when no engine
-    /// is running or the audio thread holds the graph.
-    pub fn status(&self) -> EngineStatus {
-        let fallback = EngineStatus {
-            playhead_beats: self.project.transport.playhead_beats,
-            ..EngineStatus::default()
         };
-        let Some(engine) = &self.engine else {
-            return fallback;
-        };
-        let sample_rate = Some(engine.sample_rate);
-        match engine.graph.try_lock() {
-            Ok(graph) => EngineStatus {
-                playhead_beats: graph.playhead_beats,
-                track_meters: graph.track_states.iter().map(|s| s.meter).collect(),
-                master_meter: graph.master_meter,
-                active_slots: graph
-                    .track_states
-                    .iter()
-                    .map(|s| s.active_clip_slot)
-                    .collect(),
-                sample_rate,
-            },
-            Err(_) => EngineStatus {
-                sample_rate,
-                ..fallback
-            },
+        let snapshot = engine.handle.snapshot();
+        let tracks = self.project.tracks.len();
+        let nodes = &snapshot.nodes[..snapshot.node_count.min(tracks)];
+        EngineStatus {
+            playhead_beats: snapshot.transport.playhead_beats,
+            track_meters: nodes.iter().map(|node| node.meter).collect(),
+            master_meter: snapshot.output,
+            active_slots: nodes.iter().map(|node| node.clip.active_slot).collect(),
+            sample_rate: Some(engine.sample_rate),
         }
     }
 
-    /// Starts playback, or stops it, and records the state in the Set's transport.
+    /// Starts playback, or stops it, and records the state in the Set's transport. Stopping also
+    /// stops the clips, as the Live transport does.
     pub fn set_playing(&mut self, playing: bool) {
         self.project.transport.is_playing = playing;
-        if let Some(engine) = &self.engine {
-            if playing {
-                engine.play();
-            } else {
-                engine.stop();
-            }
+        self.send(EngineCommand::SetPlaying(playing));
+        if !playing {
+            self.send(EngineCommand::StopAll);
         }
     }
 
@@ -317,29 +262,21 @@ impl Session {
     /// Moves the playhead, in beats, in the Set and in the engine.
     pub fn set_playhead(&mut self, beats: f64) {
         self.project.transport.playhead_beats = beats;
-        if let Some(engine) = &self.engine {
-            engine.set_playhead(beats);
-        }
+        self.send(EngineCommand::SetPlayhead(beats));
     }
 
     pub fn trigger_clip(&mut self, track: TrackId, slot: usize) {
-        if let Some(engine) = &self.engine {
-            engine.trigger_clip(track, slot);
-            engine.play();
-        }
+        self.send(EngineCommand::TriggerClip { track, slot });
+        self.send(EngineCommand::SetPlaying(true));
     }
 
     pub fn stop_clip(&mut self, track: TrackId) {
-        if let Some(engine) = &self.engine {
-            engine.stop_clip(track);
-        }
+        self.send(EngineCommand::StopClip { track });
     }
 
     pub fn trigger_scene(&mut self, scene: SceneId) {
-        if let Some(engine) = &self.engine {
-            engine.trigger_scene(scene);
-            engine.play();
-        }
+        self.send(EngineCommand::TriggerScene { scene });
+        self.send(EngineCommand::SetPlaying(true));
     }
 
     /// Stops every clip and playback, and returns the playhead to the start.
