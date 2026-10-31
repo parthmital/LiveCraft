@@ -41,7 +41,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `apps/livecraft/src/main.rs`                          | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | model, formats, engine, devices, ui  |
 | `crates/livecraft-testkit/src/lib.rs`                 | Test helpers shared across crates                                                            | `render_project_summary`, `RenderSummary`                                  | model, engine                        |
 | `crates/livecraft-time/src/units.rs`                  | Musical time units: beats and samples, with arithmetic                                       | `Beats`, `Samples`                                                         | none                                 |
-| `crates/livecraft-time/src/tempo.rs`                  | Tempo map (step changes) and beat, second, and sample conversion                             | `TempoMap`, `MIN_BPM`, `MAX_BPM`                                           | none                                 |
+| `crates/livecraft-time/src/tempo.rs`                  | Tempo map (step and linear ramp changes) and beat, second, and sample conversion             | `TempoMap`, `MIN_BPM`, `MAX_BPM`                                           | none                                 |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules
