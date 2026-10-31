@@ -1,5 +1,6 @@
 use crate::als::*;
 use crate::theme::*;
+use livecraft_model::ids::*;
 use livecraft_model::model::*;
 
 #[test]
@@ -99,16 +100,16 @@ fn test_als_xml_export_and_import() {
 
     assert_eq!(track.device_chain.len(), 3);
     assert_eq!(track.device_chain[0].device_type, DeviceType::Operator);
-    assert_eq!(track.device_chain[0].id, 10);
+    assert_eq!(track.device_chain[0].id, DeviceId(10));
     assert!(track.device_chain[0].is_enabled);
     assert_eq!(track.device_chain[0].get_param("filter_cutoff"), 2800.0);
 
     assert_eq!(track.device_chain[1].device_type, DeviceType::EqEight);
-    assert_eq!(track.device_chain[1].id, 11);
+    assert_eq!(track.device_chain[1].id, DeviceId(11));
     assert!(track.device_chain[1].is_enabled);
 
     assert_eq!(track.device_chain[2].device_type, DeviceType::Compressor);
-    assert_eq!(track.device_chain[2].id, 12);
+    assert_eq!(track.device_chain[2].id, DeviceId(12));
     assert!(!track.device_chain[2].is_enabled);
     assert_eq!(track.device_chain[2].get_param("threshold_db"), -16.0);
 }
@@ -120,7 +121,7 @@ fn test_als_full_roundtrip_with_devices_and_clips() {
     proj.scale.is_active = true;
 
     // Add Operator device with custom cutoff
-    let mut op = Device::new(101, "Lead Synth", DeviceType::Operator);
+    let mut op = Device::new(DeviceId(101), "Lead Synth", DeviceType::Operator);
     op.set_param("filter_cutoff", 3200.0);
     op.set_param("attack_ms", 12.0);
     proj.tracks[0].device_chain.push(op);

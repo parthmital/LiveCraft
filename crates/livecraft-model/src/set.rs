@@ -1,4 +1,5 @@
 use crate::device::{Device, DeviceType};
+use crate::ids::{IdAllocator, SceneId, TrackId};
 use crate::scale::ScaleConfig;
 use crate::scene::Scene;
 use crate::track::{Track, TrackType};
@@ -54,43 +55,43 @@ impl Project {
     pub fn new_default(name: impl Into<String>) -> Self {
         let num_slots = 8;
         let mut tracks = vec![
-            Track::new(1, "1-MIDI", TrackType::Midi, num_slots),
-            Track::new(2, "2-MIDI", TrackType::Midi, num_slots),
-            Track::new(3, "3-Audio", TrackType::Audio, num_slots),
-            Track::new(4, "4-Audio", TrackType::Audio, num_slots),
+            Track::new(TrackId(1), "1-MIDI", TrackType::Midi, num_slots),
+            Track::new(TrackId(2), "2-MIDI", TrackType::Midi, num_slots),
+            Track::new(TrackId(3), "3-Audio", TrackType::Audio, num_slots),
+            Track::new(TrackId(4), "4-Audio", TrackType::Audio, num_slots),
         ];
 
         // Give default instrument to Track 1
         tracks[0]
             .device_chain
-            .push(Device::new(101, "Operator", DeviceType::Operator));
+            .push(Device::new(101.into(), "Operator", DeviceType::Operator));
         // Give Compressor and EQ Eight to Track 3
         tracks[2]
             .device_chain
-            .push(Device::new(102, "EQ Eight", DeviceType::EqEight));
+            .push(Device::new(102.into(), "EQ Eight", DeviceType::EqEight));
 
         let return_tracks = vec![
             {
-                let mut trk = Track::new(5, "A-Reverb", TrackType::Return, num_slots);
+                let mut trk = Track::new(TrackId(5), "A-Reverb", TrackType::Return, num_slots);
                 trk.device_chain
-                    .push(Device::new(201, "Reverb", DeviceType::Reverb));
+                    .push(Device::new(201.into(), "Reverb", DeviceType::Reverb));
                 trk
             },
             {
-                let mut trk = Track::new(6, "B-Delay", TrackType::Return, num_slots);
+                let mut trk = Track::new(TrackId(6), "B-Delay", TrackType::Return, num_slots);
                 trk.device_chain
-                    .push(Device::new(202, "Delay", DeviceType::Delay));
+                    .push(Device::new(202.into(), "Delay", DeviceType::Delay));
                 trk
             },
         ];
 
-        let mut master_track = Track::new(7, "Master", TrackType::Master, 0);
+        let mut master_track = Track::new(TrackId(7), "Master", TrackType::Master, 0);
         master_track
             .device_chain
-            .push(Device::new(301, "Limiter", DeviceType::Limiter));
+            .push(Device::new(301.into(), "Limiter", DeviceType::Limiter));
 
-        let scenes = (1..=num_slots)
-            .map(|i| Scene::new(i as u64, format!("{}", i)))
+        let scenes = (1..=num_slots as u64)
+            .map(|i| Scene::new(SceneId(i), format!("{}", i)))
             .collect();
 
         Self {
@@ -105,5 +106,68 @@ impl Project {
             master_track,
             scenes,
         }
+    }
+
+    /// Finds a track of any kind (audio, MIDI, return, or Main) by id.
+    pub fn track(&self, id: TrackId) -> Option<&Track> {
+        self.tracks
+            .iter()
+            .chain(&self.return_tracks)
+            .chain(std::iter::once(&self.master_track))
+            .find(|track| track.id == id)
+    }
+
+    /// Finds a track of any kind (audio, MIDI, return, or Main) by id, for editing.
+    pub fn track_mut(&mut self, id: TrackId) -> Option<&mut Track> {
+        self.tracks
+            .iter_mut()
+            .chain(self.return_tracks.iter_mut())
+            .chain(std::iter::once(&mut self.master_track))
+            .find(|track| track.id == id)
+    }
+
+    /// Returns the row of a scene in the Session View.
+    pub fn scene_row(&self, id: SceneId) -> Option<usize> {
+        self.scenes.iter().position(|scene| scene.id == id)
+    }
+
+    /// Returns an allocator whose next id is above every id in the Set, so new entities never reuse one.
+    pub fn id_allocator(&self) -> IdAllocator {
+        let mut highest = 0u64;
+        for track in self
+            .tracks
+            .iter()
+            .chain(&self.return_tracks)
+            .chain(std::iter::once(&self.master_track))
+        {
+            highest = highest.max(track.id.0);
+            for device in &track.device_chain {
+                highest = highest.max(device.id.0);
+            }
+            for lane in &track.automation_lanes {
+                highest = highest.max(lane.id.0);
+            }
+            for arranged in &track.arrangement_clips {
+                highest = highest.max(arranged.id.0);
+            }
+            let slot_clips = track
+                .clip_slots
+                .iter()
+                .filter_map(|slot| slot.clip.as_ref());
+            let arranged = track
+                .arrangement_clips
+                .iter()
+                .map(|arranged| &arranged.clip);
+            for clip in slot_clips.chain(arranged) {
+                highest = highest.max(clip.id.0);
+                for lane in &clip.automation_lanes {
+                    highest = highest.max(lane.id.0);
+                }
+            }
+        }
+        for scene in &self.scenes {
+            highest = highest.max(scene.id.0);
+        }
+        IdAllocator::starting_at(highest + 1)
     }
 }

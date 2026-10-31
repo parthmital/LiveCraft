@@ -1,18 +1,19 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use livecraft_formats::theme::parse_hex_color;
+use livecraft_model::ids::{ClipId, TrackId};
 use livecraft_model::model::{ClipPayload, Project};
 
 pub struct ArrangementAction {
     pub set_playhead: Option<f64>,
-    pub select_track: Option<usize>,
-    pub select_clip: Option<usize>,
+    pub select_track: Option<TrackId>,
+    pub select_clip: Option<ClipId>,
 }
 
 pub fn render_arrangement_view(
     ui: &mut Ui,
     project: &mut Project,
-    selected_track_idx: usize,
+    selected_track: TrackId,
     playhead_beats: f64,
     palette: &LivePalette,
 ) -> ArrangementAction {
@@ -210,7 +211,8 @@ pub fn render_arrangement_view(
                 // 2. Track Lanes (Manual p. 165-175): Timeline on Left, Track Strips on Right
                 // -------------------------------------------------------------
                 for (trk_idx, trk) in project.tracks.iter_mut().enumerate() {
-                    let is_selected = trk_idx == selected_track_idx;
+                    let track_id = trk.id;
+                    let is_selected = track_id == selected_track;
 
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing = Vec2::new(0.0, 0.0);
@@ -388,7 +390,7 @@ pub fn render_arrangement_view(
                             let rel_x = (pos.x - lane_rect.min.x).max(0.0);
                             let new_beats = (rel_x / pixels_per_beat) as f64;
                             action.set_playhead = Some(new_beats);
-                            action.select_track = Some(trk_idx);
+                            action.select_track = Some(track_id);
                         }
 
                         // B. Right Track Header Strip (Ableton Live 12 layout)
@@ -556,7 +558,7 @@ pub fn render_arrangement_view(
                         }
 
                         if hdr_resp.clicked() {
-                            action.select_track = Some(trk_idx);
+                            action.select_track = Some(track_id);
                         }
                     });
                 }

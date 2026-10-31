@@ -13,11 +13,11 @@ pub struct RenderSummary {
 pub fn render_project_summary(project: &Project, bars: u32, sample_rate: u32) -> RenderSummary {
     let mut graph = AudioGraph::new(project, sample_rate as f32);
     graph.is_playing = true;
-    for (trk_idx, trk) in project.tracks.iter().enumerate() {
+    for trk in project.tracks.iter() {
         if let Some(slot) = trk.clip_slots.first()
             && slot.clip.is_some()
         {
-            graph.trigger_clip(trk_idx, 0);
+            graph.trigger_clip(trk.id, 0);
         }
     }
     let beats_total = (bars * project.transport.time_signature.0 as u32) as f64;

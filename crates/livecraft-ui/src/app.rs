@@ -10,6 +10,7 @@ use livecraft_engine::engine::AudioEngine;
 use livecraft_engine::graph::TrackMeter;
 use livecraft_formats::als::AlsParser;
 use livecraft_model::command::CommandHistory;
+use livecraft_model::ids::{IdAllocator, TrackId};
 use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, Track, TrackType};
 use std::path::{Path, PathBuf};
 
@@ -28,9 +29,10 @@ pub struct LiveCraftApp {
     pub engine: Option<AudioEngine>,
     pub command_history: CommandHistory,
     pub view_mode: ViewMode,
-    pub selected_track_idx: usize,
-    pub selected_clip: Option<(usize, usize)>, // (track_idx, slot_idx)
-    pub bottom_tab: usize,                     // 0 = Device Chain, 1 = Piano Roll / Clip View
+    pub selected_track: TrackId,
+    pub selected_clip: Option<(TrackId, usize)>, // (track, slot_idx)
+    pub ids: IdAllocator,
+    pub bottom_tab: usize, // 0 = Device Chain, 1 = Piano Roll / Clip View
     pub browser: LiveBrowser,
     pub palette: LivePalette,
     pub status_message: String,
@@ -92,14 +94,17 @@ impl LiveCraftApp {
             })
             .collect();
 
+        let ids = project.id_allocator();
+        let selected_track = project.tracks.first().map_or(TrackId(0), |track| track.id);
         Self {
             project,
             project_path: path_buf,
             engine,
             command_history: CommandHistory::default(),
             view_mode,
-            selected_track_idx: 0,
-            selected_clip: Some((0, 0)),
+            selected_track,
+            selected_clip: Some((selected_track, 0)),
+            ids,
             bottom_tab,
             browser: LiveBrowser::default(),
             palette,
@@ -166,11 +171,11 @@ impl LiveCraftApp {
         if ctx.input(|i| {
             i.modifiers.command && !i.modifiers.shift && !i.modifiers.alt && i.key_pressed(Key::T)
         }) {
-            let next_id = self.project.tracks.len() as u64 + 1;
-            let name = format!("{}-Audio", next_id);
+            let number = self.project.tracks.len() + 1;
+            let name = format!("{}-Audio", number);
             self.project
                 .tracks
-                .push(Track::new(next_id, name, TrackType::Audio, 8));
+                .push(Track::new(self.ids.track(), name, TrackType::Audio, 8));
             self.status_message = "Inserted Audio Track".to_string();
         }
 
@@ -178,17 +183,17 @@ impl LiveCraftApp {
         if ctx.input(|i| {
             i.modifiers.command && i.modifiers.shift && !i.modifiers.alt && i.key_pressed(Key::T)
         }) {
-            let next_id = self.project.tracks.len() as u64 + 1;
-            let name = format!("{}-MIDI", next_id);
+            let number = self.project.tracks.len() + 1;
+            let name = format!("{}-MIDI", number);
             self.project
                 .tracks
-                .push(Track::new(next_id, name, TrackType::Midi, 8));
+                .push(Track::new(self.ids.track(), name, TrackType::Midi, 8));
             self.status_message = "Inserted MIDI Track".to_string();
         }
 
         // 0 -> Toggle Mute / Track Activator on selected track (Chapter 42.19)
         if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::Num0))
-            && let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx)
+            && let Some(trk) = self.project.track_mut(self.selected_track)
         {
             trk.is_muted = !trk.is_muted;
             self.status_message = format!("Track {} muted: {}", trk.name, trk.is_muted);
@@ -196,7 +201,7 @@ impl LiveCraftApp {
 
         // S -> Toggle Solo on selected track (Chapter 42.19)
         if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::S))
-            && let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx)
+            && let Some(trk) = self.project.track_mut(self.selected_track)
         {
             trk.is_soloed = !trk.is_soloed;
             self.status_message = format!("Track {} soloed: {}", trk.name, trk.is_soloed);
@@ -204,7 +209,7 @@ impl LiveCraftApp {
 
         // C -> Toggle Arm on selected track (Chapter 42.19)
         if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::C))
-            && let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx)
+            && let Some(trk) = self.project.track_mut(self.selected_track)
         {
             trk.is_armed = !trk.is_armed;
             self.status_message = format!("Track {} armed: {}", trk.name, trk.is_armed);
@@ -295,25 +300,25 @@ impl LiveCraftApp {
             for (idx, trk) in self.project.tracks.iter().enumerate() {
                 if let Some(snap) = self.last_tracks_snapshot.get_mut(idx) {
                     if (trk.volume_db - snap.volume_db).abs() > 0.01 {
-                        eng.set_track_volume(idx, trk.volume_db);
+                        eng.set_track_volume(trk.id, trk.volume_db);
                         snap.volume_db = trk.volume_db;
                     }
                     if (trk.pan - snap.pan).abs() > 0.01 {
-                        eng.set_track_pan(idx, trk.pan);
+                        eng.set_track_pan(trk.id, trk.pan);
                         snap.pan = trk.pan;
                     }
                     if trk.is_muted != snap.is_muted {
-                        eng.set_track_mute(idx, trk.is_muted);
+                        eng.set_track_mute(trk.id, trk.is_muted);
                         snap.is_muted = trk.is_muted;
                     }
                     if trk.is_soloed != snap.is_soloed {
-                        eng.set_track_solo(idx, trk.is_soloed);
+                        eng.set_track_solo(trk.id, trk.is_soloed);
                         snap.is_soloed = trk.is_soloed;
                     }
                     for (s_idx, &send_val) in trk.sends.iter().enumerate() {
                         let prev_val = snap.sends.get(s_idx).copied().unwrap_or(0.0);
                         if (send_val - prev_val).abs() > 0.01 {
-                            eng.set_track_send(idx, s_idx, send_val);
+                            eng.set_track_send(trk.id, s_idx, send_val);
                             if s_idx < snap.sends.len() {
                                 snap.sends[s_idx] = send_val;
                             } else {
@@ -484,7 +489,7 @@ impl eframe::App for LiveCraftApp {
                         self.bottom_tab = 1;
                     }
 
-                    if let Some(trk) = self.project.tracks.get(self.selected_track_idx) {
+                    if let Some(trk) = self.project.track(self.selected_track) {
                         crate::widgets::live_divider(ui, 20.0);
                         let [r, g, b, _] = livecraft_formats::theme::parse_hex_color(&trk.color);
                         ui.label(
@@ -500,14 +505,14 @@ impl eframe::App for LiveCraftApp {
 
                 if self.bottom_tab == 0 {
                     // Device Chain View
-                    if let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx) {
+                    if let Some(trk) = self.project.track_mut(self.selected_track) {
                         render_device_chain(ui, trk, &self.palette);
                     }
                 } else {
                     // Clip View / Piano Roll
-                    if let Some((t_idx, s_idx)) = self.selected_clip {
+                    if let Some((t_id, s_idx)) = self.selected_clip {
                         let scale = &mut self.project.scale;
-                        if let Some(trk) = self.project.tracks.get_mut(t_idx)
+                        if let Some(trk) = self.project.tracks.iter_mut().find(|t| t.id == t_id)
                             && let Some(slot) = trk.clip_slots.get_mut(s_idx)
                         {
                             if let Some(ref mut clip) = slot.clip {
@@ -532,25 +537,28 @@ impl eframe::App for LiveCraftApp {
                 .show(ui, |ui| {
                     let action = self.browser.render(
                         ui,
-                        self.project.tracks.get_mut(self.selected_track_idx),
+                        self.project.track_mut(self.selected_track),
+                        &mut self.ids,
                         &self.palette,
                     );
 
                     if let Some(dev) = action.add_device
-                        && let Some(trk) = self.project.tracks.get_mut(self.selected_track_idx)
+                        && let Some(trk) = self.project.track_mut(self.selected_track)
                     {
                         trk.device_chain.push(dev);
                         self.status_message = "Device added to track".to_string();
                     }
 
                     if let Some(ttype) = action.add_track {
-                        let new_id = self.project.tracks.len() as u64 + 1;
+                        let number = self.project.tracks.len() + 1;
                         let name = match ttype {
-                            TrackType::Audio => format!("{}-Audio", new_id),
-                            TrackType::Midi => format!("{}-MIDI", new_id),
-                            _ => format!("Track-{}", new_id),
+                            TrackType::Audio => format!("{}-Audio", number),
+                            TrackType::Midi => format!("{}-MIDI", number),
+                            _ => format!("Track-{}", number),
                         };
-                        self.project.tracks.push(Track::new(new_id, name, ttype, 8));
+                        self.project
+                            .tracks
+                            .push(Track::new(self.ids.track(), name, ttype, 8));
                         self.status_message = "New track added".to_string();
                     }
                 });
@@ -563,11 +571,12 @@ impl eframe::App for LiveCraftApp {
                     let sess_action = render_session_view(
                         ui,
                         &mut self.project,
-                        self.selected_track_idx,
+                        self.selected_track,
                         &active_slots,
                         &track_meters,
                         &master_meter,
                         playhead_beats,
+                        &mut self.ids,
                         &self.palette,
                     );
 
@@ -594,20 +603,22 @@ impl eframe::App for LiveCraftApp {
                         eng.stop();
                     }
                     if let Some(t) = sess_action.select_track {
-                        self.selected_track_idx = t;
+                        self.selected_track = t;
                     }
                     if let Some(c) = sess_action.select_clip {
                         self.selected_clip = Some(c);
                         self.bottom_tab = 1; // Switch to clip view
                     }
                     if let Some(ttype) = sess_action.add_track {
-                        let new_id = self.project.tracks.len() as u64 + 1;
+                        let number = self.project.tracks.len() + 1;
                         let name = match ttype {
-                            TrackType::Audio => format!("{}-Audio", new_id),
-                            TrackType::Midi => format!("{}-MIDI", new_id),
-                            _ => format!("Track-{}", new_id),
+                            TrackType::Audio => format!("{}-Audio", number),
+                            TrackType::Midi => format!("{}-MIDI", number),
+                            _ => format!("Track-{}", number),
                         };
-                        self.project.tracks.push(Track::new(new_id, name, ttype, 8));
+                        self.project
+                            .tracks
+                            .push(Track::new(self.ids.track(), name, ttype, 8));
                         self.status_message = format!("Added new {:?} track", ttype);
                     }
                 }
@@ -615,7 +626,7 @@ impl eframe::App for LiveCraftApp {
                     let arr_action = render_arrangement_view(
                         ui,
                         &mut self.project,
-                        self.selected_track_idx,
+                        self.selected_track,
                         playhead_beats,
                         &self.palette,
                     );
@@ -626,10 +637,10 @@ impl eframe::App for LiveCraftApp {
                         eng.set_playhead(beats);
                     }
                     if let Some(t) = arr_action.select_track {
-                        self.selected_track_idx = t;
+                        self.selected_track = t;
                     }
                     if let Some(c) = arr_action.select_clip {
-                        self.status_message = format!("Selected arrangement clip #{}", c + 1);
+                        self.status_message = format!("Selected arrangement clip #{}", c);
                     }
                 }
             }

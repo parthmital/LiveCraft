@@ -1,3 +1,4 @@
+use crate::ids::{DeviceId, LaneId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -5,7 +6,10 @@ pub enum AutomationTarget {
     TrackVolume,
     TrackPan,
     SendLevel(usize),
-    DeviceParam { device_id: u64, param_key: String },
+    DeviceParam {
+        device_id: DeviceId,
+        param_key: String,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -23,14 +27,14 @@ impl AutomationPoint {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AutomationLane {
-    pub id: u64,
+    pub id: LaneId,
     pub target: AutomationTarget,
     pub points: Vec<AutomationPoint>,
     pub is_enabled: bool,
 }
 
 impl AutomationLane {
-    pub fn new(id: u64, target: AutomationTarget) -> Self {
+    pub fn new(id: LaneId, target: AutomationTarget) -> Self {
         Self {
             id,
             target,

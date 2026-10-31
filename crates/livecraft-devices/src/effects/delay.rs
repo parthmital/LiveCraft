@@ -1,10 +1,11 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
 use livecraft_time::seconds_per_beat;
 
 #[derive(Debug, Clone)]
 pub struct DelayEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     buffer_l: Vec<f32>,
     buffer_r: Vec<f32>,
     write_pos: usize,
@@ -26,7 +27,7 @@ impl DelayEffect {
         let filter_r = BiquadFilter::new(FilterType::LowPass, sample_rate, 4500.0, 0.0, 0.707);
 
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             buffer_l: vec![0.0; max_samples],
             buffer_r: vec![0.0; max_samples],
             write_pos: 0,

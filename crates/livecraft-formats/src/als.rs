@@ -1,6 +1,7 @@
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
+use livecraft_model::ids::{DeviceId, SceneId, TrackId};
 use livecraft_model::model::*;
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::reader::Reader;
@@ -182,7 +183,7 @@ impl AlsParser {
         let mut bpm = 120.0f32;
         let mut tracks: Vec<Track> = Vec::new();
         let mut return_tracks: Vec<Track> = Vec::new();
-        let mut master_track = Track::new(999, "Master", TrackType::Master, 0);
+        let mut master_track = Track::new(TrackId(999), "Master", TrackType::Master, 0);
         let mut scenes: Vec<Scene> = Vec::new();
         let mut scale = ScaleConfig::default();
 
@@ -218,7 +219,7 @@ impl AlsParser {
                         "MidiTrack" => {
                             let track_id = tracks.len() as u64 + 1;
                             current_track = Some(Track::new(
-                                track_id,
+                                TrackId(track_id),
                                 format!("{}-MIDI", track_id),
                                 TrackType::Midi,
                                 8,
@@ -227,7 +228,7 @@ impl AlsParser {
                         "AudioTrack" => {
                             let track_id = tracks.len() as u64 + 1;
                             current_track = Some(Track::new(
-                                track_id,
+                                TrackId(track_id),
                                 format!("{}-Audio", track_id),
                                 TrackType::Audio,
                                 8,
@@ -237,7 +238,7 @@ impl AlsParser {
                             let track_id = return_tracks.len() as u64 + 1;
                             let letter = (b'A' + return_tracks.len() as u8) as char;
                             current_track = Some(Track::new(
-                                track_id + 100,
+                                TrackId(track_id + 100),
                                 format!("{}-Return", letter),
                                 TrackType::Return,
                                 8,
@@ -310,7 +311,8 @@ impl AlsParser {
                             }
                             if let Some(dtype) = map_ableton_tag_to_device_type(&tag_name) {
                                 let dev_name = default_device_name_for_type(&dtype);
-                                current_device = Some(Device::new(dev_id, dev_name, dtype));
+                                current_device =
+                                    Some(Device::new(DeviceId(dev_id), dev_name, dtype));
                                 current_device_tag = Some(tag_name.clone());
                             }
                         }
@@ -385,7 +387,7 @@ impl AlsParser {
                                 other => DeviceType::Custom(other.to_string()),
                             };
                             current_device = Some(Device {
-                                id: dev_id,
+                                id: DeviceId(dev_id),
                                 name: dev_name,
                                 device_type: dtype,
                                 is_enabled: dev_enabled,
@@ -429,7 +431,7 @@ impl AlsParser {
                         }
                         "Scene" => {
                             let scene_id = scenes.len() as u64 + 1;
-                            scenes.push(Scene::new(scene_id, format!("{}", scene_id)));
+                            scenes.push(Scene::new(SceneId(scene_id), format!("{}", scene_id)));
                         }
                         _ => {}
                     }
@@ -468,7 +470,7 @@ impl AlsParser {
                             dev_id = (tracks.len() as u64 * 100) + 1;
                         }
                         let dev_name = default_device_name_for_type(&dtype);
-                        let dev = Device::new(dev_id, dev_name, dtype);
+                        let dev = Device::new(DeviceId(dev_id), dev_name, dtype);
                         if let Some(ref mut trk) = current_track {
                             trk.device_chain.push(dev);
                         } else {
@@ -625,7 +627,7 @@ impl AlsParser {
                                 if current_clip_slot_idx < trk.clip_slots.len() {
                                     trk.clip_slots[current_clip_slot_idx].clip = Some(clip);
                                 } else {
-                                    let slot_id = (trk.id * 1000) + trk.clip_slots.len() as u64;
+                                    let slot_id = (trk.id.0 * 1000) + trk.clip_slots.len() as u64;
                                     trk.clip_slots.push(ClipSlot::with_clip(slot_id, clip));
                                 }
                             }
@@ -656,15 +658,17 @@ impl AlsParser {
         // If no scenes were parsed, default to 8 scenes
         if scenes.is_empty() {
             scenes = (1..=8)
-                .map(|i| Scene::new(i as u64, format!("{}", i)))
+                .map(|i| Scene::new(SceneId(i as u64), format!("{}", i)))
                 .collect();
         }
 
         // Master track default devices if none parsed
         if master_track.device_chain.is_empty() {
-            master_track
-                .device_chain
-                .push(Device::new(901, "Limiter", DeviceType::Limiter));
+            master_track.device_chain.push(Device::new(
+                DeviceId(901),
+                "Limiter",
+                DeviceType::Limiter,
+            ));
         }
 
         let transport = Transport {

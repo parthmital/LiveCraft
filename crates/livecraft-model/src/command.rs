@@ -1,3 +1,4 @@
+use crate::ids::{DeviceId, LaneId, SceneId, TrackId};
 use crate::model::*;
 use serde::{Deserialize, Serialize};
 
@@ -12,62 +13,62 @@ pub enum Command {
         track_type: TrackType,
     },
     DeleteTrack {
-        track_index: usize,
+        track: TrackId,
     },
     SetVolume {
-        track_index: usize,
+        track: TrackId,
         volume_db: f32,
     },
     SetPan {
-        track_index: usize,
+        track: TrackId,
         pan: f32,
     },
     SetMute {
-        track_index: usize,
+        track: TrackId,
         muted: bool,
     },
     SetSolo {
-        track_index: usize,
+        track: TrackId,
         soloed: bool,
     },
     SetArm {
-        track_index: usize,
+        track: TrackId,
         armed: bool,
     },
     SetSendLevel {
-        track_index: usize,
+        track: TrackId,
         send_index: usize,
         level: f32,
     },
     AddMidiNote {
-        track_index: usize,
+        track: TrackId,
         slot_index: usize,
         note: MidiNote,
     },
     DeleteMidiNote {
-        track_index: usize,
+        track: TrackId,
         slot_index: usize,
         note_index: usize,
     },
     SetDeviceParam {
-        track_index: usize,
-        device_index: usize,
+        track: TrackId,
+        device: DeviceId,
         param: String,
         value: f32,
     },
     ToggleDevice {
-        track_index: usize,
-        device_index: usize,
+        track: TrackId,
+        device: DeviceId,
     },
     TriggerClip {
-        track_index: usize,
+        track: TrackId,
         slot_index: usize,
     },
     StopClip {
-        track_index: usize,
+        track: TrackId,
     },
     TriggerScene {
-        scene_index: usize,
+        scene: SceneId,
     },
     StopAllClips,
 }
@@ -163,21 +164,21 @@ impl ReversibleAction for SetTempoAction {
 
 #[derive(Debug)]
 pub struct SetTrackVolumeAction {
-    pub track_index: usize,
+    pub track: TrackId,
     pub old_vol: f32,
     pub new_vol: f32,
 }
 
 impl ReversibleAction for SetTrackVolumeAction {
     fn execute(&mut self, project: &mut Project) {
-        if let Some(trk) = project.tracks.get_mut(self.track_index) {
+        if let Some(trk) = project.track_mut(self.track) {
             self.old_vol = trk.volume_db;
             trk.volume_db = self.new_vol;
         }
     }
 
     fn undo(&mut self, project: &mut Project) {
-        if let Some(trk) = project.tracks.get_mut(self.track_index) {
+        if let Some(trk) = project.track_mut(self.track) {
             trk.volume_db = self.old_vol;
         }
     }
@@ -200,17 +201,17 @@ impl ReversibleAction for AddTrackAction {
 
 #[derive(Debug)]
 pub struct AddAutomationPointAction {
-    pub track_index: usize,
-    pub lane_index: usize,
+    pub track: TrackId,
+    pub lane: LaneId,
     pub point: AutomationPoint,
     pub inserted_index: Option<usize>,
 }
 
 impl AddAutomationPointAction {
-    pub fn new(track_index: usize, lane_index: usize, point: AutomationPoint) -> Self {
+    pub fn new(track: TrackId, lane: LaneId, point: AutomationPoint) -> Self {
         Self {
-            track_index,
-            lane_index,
+            track,
+            lane,
             point,
             inserted_index: None,
         }
@@ -219,8 +220,8 @@ impl AddAutomationPointAction {
 
 impl ReversibleAction for AddAutomationPointAction {
     fn execute(&mut self, project: &mut Project) {
-        if let Some(track) = project.tracks.get_mut(self.track_index)
-            && let Some(lane) = track.automation_lanes.get_mut(self.lane_index)
+        if let Some(track) = project.track_mut(self.track)
+            && let Some(lane) = track.lane_mut(self.lane)
         {
             let pos = lane.points.partition_point(|p| p.beat < self.point.beat);
             lane.points.insert(pos, self.point.clone());
@@ -230,8 +231,8 @@ impl ReversibleAction for AddAutomationPointAction {
 
     fn undo(&mut self, project: &mut Project) {
         if let Some(idx) = self.inserted_index.take()
-            && let Some(track) = project.tracks.get_mut(self.track_index)
-            && let Some(lane) = track.automation_lanes.get_mut(self.lane_index)
+            && let Some(track) = project.track_mut(self.track)
+            && let Some(lane) = track.lane_mut(self.lane)
             && idx < lane.points.len()
         {
             lane.points.remove(idx);
@@ -241,17 +242,17 @@ impl ReversibleAction for AddAutomationPointAction {
 
 #[derive(Debug)]
 pub struct RemoveAutomationPointAction {
-    pub track_index: usize,
-    pub lane_index: usize,
+    pub track: TrackId,
+    pub lane: LaneId,
     pub point_index: usize,
     pub removed_point: Option<AutomationPoint>,
 }
 
 impl RemoveAutomationPointAction {
-    pub fn new(track_index: usize, lane_index: usize, point_index: usize) -> Self {
+    pub fn new(track: TrackId, lane: LaneId, point_index: usize) -> Self {
         Self {
-            track_index,
-            lane_index,
+            track,
+            lane,
             point_index,
             removed_point: None,
         }
@@ -260,8 +261,8 @@ impl RemoveAutomationPointAction {
 
 impl ReversibleAction for RemoveAutomationPointAction {
     fn execute(&mut self, project: &mut Project) {
-        if let Some(track) = project.tracks.get_mut(self.track_index)
-            && let Some(lane) = track.automation_lanes.get_mut(self.lane_index)
+        if let Some(track) = project.track_mut(self.track)
+            && let Some(lane) = track.lane_mut(self.lane)
             && self.point_index < lane.points.len()
         {
             let p = lane.points.remove(self.point_index);
@@ -271,8 +272,8 @@ impl ReversibleAction for RemoveAutomationPointAction {
 
     fn undo(&mut self, project: &mut Project) {
         if let Some(p) = self.removed_point.take()
-            && let Some(track) = project.tracks.get_mut(self.track_index)
-            && let Some(lane) = track.automation_lanes.get_mut(self.lane_index)
+            && let Some(track) = project.track_mut(self.track)
+            && let Some(lane) = track.lane_mut(self.lane)
             && self.point_index <= lane.points.len()
         {
             lane.points.insert(self.point_index, p);
@@ -282,8 +283,8 @@ impl ReversibleAction for RemoveAutomationPointAction {
 
 #[derive(Debug)]
 pub struct MoveAutomationPointAction {
-    pub track_index: usize,
-    pub lane_index: usize,
+    pub track: TrackId,
+    pub lane: LaneId,
     pub point_index: usize,
     pub old_beat: f64,
     pub old_value: f32,
@@ -295,16 +296,16 @@ pub struct MoveAutomationPointAction {
 
 impl MoveAutomationPointAction {
     pub fn new(
-        track_index: usize,
-        lane_index: usize,
+        track: TrackId,
+        lane: LaneId,
         point_index: usize,
         new_beat: f64,
         new_value: f32,
         new_curve: f32,
     ) -> Self {
         Self {
-            track_index,
-            lane_index,
+            track,
+            lane,
             point_index,
             old_beat: 0.0,
             old_value: 0.0,
@@ -318,8 +319,8 @@ impl MoveAutomationPointAction {
 
 impl ReversibleAction for MoveAutomationPointAction {
     fn execute(&mut self, project: &mut Project) {
-        if let Some(track) = project.tracks.get_mut(self.track_index)
-            && let Some(lane) = track.automation_lanes.get_mut(self.lane_index)
+        if let Some(track) = project.track_mut(self.track)
+            && let Some(lane) = track.lane_mut(self.lane)
             && let Some(point) = lane.points.get_mut(self.point_index)
         {
             self.old_beat = point.beat;
@@ -332,8 +333,8 @@ impl ReversibleAction for MoveAutomationPointAction {
     }
 
     fn undo(&mut self, project: &mut Project) {
-        if let Some(track) = project.tracks.get_mut(self.track_index)
-            && let Some(lane) = track.automation_lanes.get_mut(self.lane_index)
+        if let Some(track) = project.track_mut(self.track)
+            && let Some(lane) = track.lane_mut(self.lane)
             && let Some(point) = lane.points.get_mut(self.point_index)
         {
             point.beat = self.old_beat;

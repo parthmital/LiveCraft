@@ -1,4 +1,5 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
 
 #[derive(Debug, Clone)]
@@ -13,7 +14,7 @@ pub struct EqEightBand {
 
 #[derive(Debug, Clone)]
 pub struct EqEight {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     pub bands: Vec<EqEightBand>,
     pub sample_rate: f32,
     pub is_enabled: bool,
@@ -49,7 +50,7 @@ impl EqEight {
         }
 
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             bands,
             sample_rate,
             is_enabled: true,

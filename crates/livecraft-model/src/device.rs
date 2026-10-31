@@ -1,3 +1,4 @@
+use crate::ids::DeviceId;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -24,7 +25,7 @@ pub enum DeviceType {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Device {
-    pub id: u64,
+    pub id: DeviceId,
     pub name: String,
     pub device_type: DeviceType,
     pub is_enabled: bool,
@@ -32,7 +33,7 @@ pub struct Device {
 }
 
 impl Device {
-    pub fn new(id: u64, name: impl Into<String>, device_type: DeviceType) -> Self {
+    pub fn new(id: DeviceId, name: impl Into<String>, device_type: DeviceType) -> Self {
         let mut parameters = HashMap::new();
         match &device_type {
             DeviceType::EqEight => {

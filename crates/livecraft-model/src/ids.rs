@@ -16,6 +16,13 @@ macro_rules! define_id {
                 std::fmt::Display::fmt(&self.0, f)
             }
         }
+
+        /// Wraps a number read from a file or written as a literal. New ids come from `IdAllocator`.
+        impl From<u64> for $name {
+            fn from(id: u64) -> Self {
+                Self(id)
+            }
+        }
     };
 }
 

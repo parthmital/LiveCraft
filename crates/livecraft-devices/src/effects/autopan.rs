@@ -1,9 +1,10 @@
+use livecraft_model::ids::DeviceId;
 use std::f32::consts::PI;
 
 /// Live 12 Auto Pan / Tremolo effect
 /// Uses LFO modulation to affect the stereo position or amplitude
 pub struct AutoPanEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     pub is_enabled: bool,
     pub sample_rate: f32,
     pub amount: f32,    // 0.0 to 1.0
@@ -17,7 +18,7 @@ pub struct AutoPanEffect {
 impl AutoPanEffect {
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             is_enabled: true,
             sample_rate: sample_rate.max(1000.0),
             amount: 1.0,

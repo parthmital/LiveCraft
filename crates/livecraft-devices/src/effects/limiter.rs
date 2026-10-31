@@ -1,8 +1,9 @@
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
 
 #[derive(Debug, Clone)]
 pub struct LimiterEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     pub ceiling_db: f32,
     pub gain_db: f32,
     pub release_ms: f32,
@@ -14,7 +15,7 @@ pub struct LimiterEffect {
 impl LimiterEffect {
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             ceiling_db: -0.3,
             gain_db: 0.0,
             release_ms: 100.0,
@@ -58,7 +59,7 @@ impl LimiterEffect {
 
 #[derive(Debug, Clone)]
 pub struct UtilityEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     pub gain_db: f32,
     pub pan: f32,   // -1.0 to +1.0
     pub width: f32, // 0.0 (Mono) to 1.0 (Normal) to 2.0+ (Wide)
@@ -77,7 +78,7 @@ impl Default for UtilityEffect {
 impl UtilityEffect {
     pub fn new() -> Self {
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             gain_db: 0.0,
             pan: 0.0,
             width: 1.0,

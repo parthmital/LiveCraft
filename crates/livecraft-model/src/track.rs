@@ -2,6 +2,7 @@ use crate::automation::AutomationLane;
 use crate::clip::{ArrangementClip, ClipSlot};
 use crate::color::ABLETON_PALETTE;
 use crate::device::Device;
+use crate::ids::{LaneId, TrackId};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -22,7 +23,7 @@ pub enum MonitoringMode {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
-    pub id: u64,
+    pub id: TrackId,
     pub name: String,
     pub track_type: TrackType,
     pub color: String,
@@ -43,7 +44,12 @@ pub struct Track {
 }
 
 impl Track {
-    pub fn new(id: u64, name: impl Into<String>, track_type: TrackType, num_slots: usize) -> Self {
+    pub fn new(
+        id: TrackId,
+        name: impl Into<String>,
+        track_type: TrackType,
+        num_slots: usize,
+    ) -> Self {
         let default_color = match track_type {
             TrackType::Audio => ABLETON_PALETTE[10],  // Cyan
             TrackType::Midi => ABLETON_PALETTE[2],    // Amber
@@ -52,7 +58,7 @@ impl Track {
         };
 
         let clip_slots = (0..num_slots)
-            .map(|slot_idx| ClipSlot::empty((id * 1000) + slot_idx as u64))
+            .map(|slot_idx| ClipSlot::empty((id.0 * 1000) + slot_idx as u64))
             .collect();
 
         Self {
@@ -72,5 +78,9 @@ impl Track {
             automation_lanes: Vec::new(),
             device_chain: Vec::new(),
         }
+    }
+
+    pub fn lane_mut(&mut self, id: LaneId) -> Option<&mut AutomationLane> {
+        self.automation_lanes.iter_mut().find(|lane| lane.id == id)
     }
 }

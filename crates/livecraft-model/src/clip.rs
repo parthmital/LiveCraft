@@ -1,5 +1,6 @@
 use crate::automation::AutomationLane;
 use crate::color::ABLETON_PALETTE;
+use crate::ids::ClipId;
 use crate::note::MidiClipData;
 use serde::{Deserialize, Serialize};
 
@@ -40,7 +41,7 @@ pub enum ClipPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Clip {
-    pub id: u64,
+    pub id: ClipId,
     pub name: String,
     pub color: String,
     pub length_beats: f64,
@@ -55,9 +56,9 @@ pub struct Clip {
 }
 
 impl Clip {
-    pub fn new_midi(id: u64, name: impl Into<String>, length_beats: f64) -> Self {
+    pub fn new_midi(id: impl Into<ClipId>, name: impl Into<String>, length_beats: f64) -> Self {
         Self {
-            id,
+            id: id.into(),
             name: name.into(),
             color: ABLETON_PALETTE[2].to_string(), // Amber/Orange
             length_beats,
@@ -72,13 +73,13 @@ impl Clip {
     }
 
     pub fn new_audio(
-        id: u64,
+        id: impl Into<ClipId>,
         name: impl Into<String>,
         file_path: impl Into<String>,
         length_beats: f64,
     ) -> Self {
         Self {
-            id,
+            id: id.into(),
             name: name.into(),
             color: ABLETON_PALETTE[10].to_string(), // Cyan
             length_beats,
@@ -130,14 +131,14 @@ impl ClipSlot {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArrangementClip {
-    pub id: u64,
+    pub id: ClipId,
     pub clip: Clip,
     pub start_beat: f64,
     pub length_beats: f64,
 }
 
 impl ArrangementClip {
-    pub fn new(id: u64, clip: Clip, start_beat: f64, length_beats: f64) -> Self {
+    pub fn new(id: ClipId, clip: Clip, start_beat: f64, length_beats: f64) -> Self {
         Self {
             id,
             clip,
@@ -146,7 +147,7 @@ impl ArrangementClip {
         }
     }
 
-    pub fn split_at(&self, split_beat: f64, new_id: u64) -> Option<(Self, Self)> {
+    pub fn split_at(&self, split_beat: f64, new_id: ClipId) -> Option<(Self, Self)> {
         if split_beat <= self.start_beat || split_beat >= self.start_beat + self.length_beats {
             return None;
         }
@@ -193,7 +194,7 @@ impl ArrangementClip {
         Some((first, second))
     }
 
-    pub fn duplicate(&self, new_id: u64, offset_beats: f64) -> Self {
+    pub fn duplicate(&self, new_id: ClipId, offset_beats: f64) -> Self {
         let mut dup = self.clone();
         dup.id = new_id;
         dup.clip.id = new_id;

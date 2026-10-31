@@ -1,6 +1,7 @@
 use crate::audio_clip::*;
 use crate::bouncer::*;
 use crate::graph::*;
+use livecraft_model::ids::*;
 use livecraft_model::model::*;
 
 #[test]
@@ -15,7 +16,7 @@ fn test_audio_graph_summing() {
     project.tracks[0].clip_slots[0].clip = Some(clip);
 
     let mut graph = AudioGraph::new(&project, 44100.0);
-    graph.trigger_clip(0, 0);
+    graph.trigger_clip(TrackId(1), 0);
     graph.is_playing = true;
 
     let mut buf_l = vec![0.0f32; 256];
@@ -30,7 +31,7 @@ fn test_audio_graph_summing() {
     project.tracks[0].is_armed = true;
     project.tracks[0].monitoring = MonitoringMode::Auto;
     graph.sync_project(&project);
-    graph.trigger_clip(0, 0);
+    graph.trigger_clip(TrackId(1), 0);
 
     let mut armed_buf_l = vec![0.0f32; 256];
     let mut armed_buf_r = vec![0.0f32; 256];
@@ -41,7 +42,7 @@ fn test_audio_graph_summing() {
     // Test MonitoringMode::Off when track is armed (should continue playing clip)
     project.tracks[0].monitoring = MonitoringMode::Off;
     graph.sync_project(&project);
-    graph.trigger_clip(0, 0);
+    graph.trigger_clip(TrackId(1), 0);
 
     let mut off_buf_l = vec![0.0f32; 256];
     let mut off_buf_r = vec![0.0f32; 256];
@@ -53,7 +54,7 @@ fn test_audio_graph_summing() {
     project.tracks[0].is_armed = false;
     project.tracks[0].monitoring = MonitoringMode::Auto;
     project.tracks[0].sends = vec![0.4, 0.4, 0.4];
-    let ret_c = Track::new(103, "Return C", TrackType::Return, 0);
+    let ret_c = Track::new(TrackId(103), "Return C", TrackType::Return, 0);
     project.return_tracks.push(ret_c);
     graph.sync_project(&project);
     assert_eq!(graph.return_states.len(), 3);
@@ -123,8 +124,8 @@ fn test_stem_exporter() {
 
 #[test]
 fn test_device_parameter_synchronization() {
-    let mut track = Track::new(1, "Synth", TrackType::Midi, 4);
-    let mut comp = Device::new(101, "Compressor", DeviceType::Compressor);
+    let mut track = Track::new(TrackId(1), "Synth", TrackType::Midi, 4);
+    let mut comp = Device::new(DeviceId(101), "Compressor", DeviceType::Compressor);
     comp.set_param("threshold_db", -30.0);
     comp.set_param("ratio", 8.0);
     track.device_chain.push(comp);
@@ -148,7 +149,7 @@ fn test_device_parameter_synchronization() {
 #[test]
 fn test_arrangement_timeline_playback() {
     // Test overlapping notes of identical pitch in timeline
-    let mut track = Track::new(1, "MidiTrack", TrackType::Midi, 4);
+    let mut track = Track::new(TrackId(1), "MidiTrack", TrackType::Midi, 4);
     let mut clip = Clip::new_midi(1, "Overlapping Notes", 4.0);
     if let ClipPayload::Midi(ref mut mdata) = clip.payload {
         // Note 1: pitch 60, beats 0.0 to 1.5
@@ -184,7 +185,7 @@ fn test_arrangement_timeline_playback() {
     }
 
     // Place on timeline starting at beat 4.0
-    let arr_clip = ArrangementClip::new(301, clip, 4.0, 4.0);
+    let arr_clip = ArrangementClip::new(ClipId(301), clip, 4.0, 4.0);
     project.tracks[0].arrangement_clips.push(arr_clip);
 
     let mut graph = AudioGraph::new(&project, 44100.0);
@@ -229,10 +230,10 @@ fn test_graph_dynamic_track_sync() {
     // Add 2 new tracks
     project
         .tracks
-        .push(Track::new(5, "Track 5", TrackType::Audio, 4));
+        .push(Track::new(TrackId(5), "Track 5", TrackType::Audio, 4));
     project
         .tracks
-        .push(Track::new(6, "Track 6", TrackType::Midi, 4));
+        .push(Track::new(TrackId(6), "Track 6", TrackType::Midi, 4));
     graph.sync_project(&project);
     assert_eq!(graph.track_states.len(), 6);
 
@@ -242,12 +243,12 @@ fn test_graph_dynamic_track_sync() {
     assert_eq!(graph.track_states.len(), 5);
 
     // Multi-device chain and topological ordering test
-    let mut track = Track::new(7, "ChainTrack", TrackType::Audio, 4);
-    let mut dev1 = Device::new(101, "Delay 1", DeviceType::Delay);
+    let mut track = Track::new(TrackId(7), "ChainTrack", TrackType::Audio, 4);
+    let mut dev1 = Device::new(DeviceId(101), "Delay 1", DeviceType::Delay);
     dev1.set_param("dry_wet", 0.5);
-    let mut dev2 = Device::new(102, "Delay 2", DeviceType::Delay);
+    let mut dev2 = Device::new(DeviceId(102), "Delay 2", DeviceType::Delay);
     dev2.set_param("dry_wet", 0.8);
-    let mut dev3 = Device::new(103, "Compressor 1", DeviceType::Compressor);
+    let mut dev3 = Device::new(DeviceId(103), "Compressor 1", DeviceType::Compressor);
     dev3.set_param("threshold_db", -24.0);
 
     track.device_chain.push(dev1);
@@ -256,17 +257,17 @@ fn test_graph_dynamic_track_sync() {
 
     let mut state = TrackDspState::new(&track, 44100.0);
     assert_eq!(state.processors.len(), 3);
-    assert_eq!(state.processors[0].device_id(), 101);
-    assert_eq!(state.processors[1].device_id(), 102);
-    assert_eq!(state.processors[2].device_id(), 103);
+    assert_eq!(state.processors[0].device_id(), DeviceId(101));
+    assert_eq!(state.processors[1].device_id(), DeviceId(102));
+    assert_eq!(state.processors[2].device_id(), DeviceId(103));
 
     // Reverse device chain order
     track.device_chain.reverse();
     state.sync_devices(&track, 44100.0);
     assert_eq!(state.processors.len(), 3);
-    assert_eq!(state.processors[0].device_id(), 103);
-    assert_eq!(state.processors[1].device_id(), 102);
-    assert_eq!(state.processors[2].device_id(), 101);
+    assert_eq!(state.processors[0].device_id(), DeviceId(103));
+    assert_eq!(state.processors[1].device_id(), DeviceId(102));
+    assert_eq!(state.processors[2].device_id(), DeviceId(101));
 }
 
 #[test]
@@ -284,19 +285,19 @@ fn test_lock_free_param_queue_dispatch() {
     // Apply parameter updates
     graph.apply_param_msg(crate::engine::AudioParamMsg::SetTempo(135.0));
     graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackVolume {
-        track_idx: 0,
+        track: TrackId(1),
         volume_db: -6.5,
     });
     graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackPan {
-        track_idx: 0,
+        track: TrackId(1),
         pan: -0.4,
     });
     graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackMute {
-        track_idx: 0,
+        track: TrackId(1),
         muted: true,
     });
     graph.apply_param_msg(crate::engine::AudioParamMsg::SetTrackSolo {
-        track_idx: 0,
+        track: TrackId(1),
         soloed: true,
     });
     graph.apply_param_msg(crate::engine::AudioParamMsg::SetMasterVolume { volume_db: -3.0 });

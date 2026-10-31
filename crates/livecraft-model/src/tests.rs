@@ -1,4 +1,5 @@
 use crate::command::*;
+use crate::ids::*;
 use crate::model::*;
 
 #[test]
@@ -12,25 +13,25 @@ fn test_project_creation() {
 
 #[test]
 fn test_device_defaults() {
-    let eq = Device::new(1, "EQ", DeviceType::EqEight);
+    let eq = Device::new(DeviceId(1), "EQ", DeviceType::EqEight);
     assert_eq!(eq.get_param("band_1_enabled"), 1.0);
     assert!(eq.get_param("band_8_freq") > 1000.0);
 
-    let comp = Device::new(2, "Comp", DeviceType::Compressor);
+    let comp = Device::new(DeviceId(2), "Comp", DeviceType::Compressor);
     assert_eq!(comp.get_param("threshold_db"), -18.0);
     assert_eq!(comp.get_param("ratio"), 4.0);
 
-    let delay = Device::new(3, "Delay", DeviceType::Delay);
+    let delay = Device::new(DeviceId(3), "Delay", DeviceType::Delay);
     assert_eq!(delay.get_param("ping_pong"), 1.0);
 
-    let op = Device::new(4, "Operator", DeviceType::Operator);
+    let op = Device::new(DeviceId(4), "Operator", DeviceType::Operator);
     assert_eq!(op.get_param("osc1_level"), 1.0);
     assert_eq!(op.get_param("filter_cutoff"), 2400.0);
 }
 
 #[test]
 fn test_clip_slot_and_payload_manipulation() {
-    let mut track = Track::new(1, "Synth Lead", TrackType::Midi, 4);
+    let mut track = Track::new(TrackId(1), "Synth Lead", TrackType::Midi, 4);
     assert_eq!(track.clip_slots.len(), 4);
 
     let mut clip = Clip::new_midi(10, "Melody", 4.0);
@@ -51,10 +52,15 @@ fn test_clip_slot_and_payload_manipulation() {
     }
 
     // Test ArrangementClip non-destructive editing (split, duplicate, trim)
-    let arr_clip = ArrangementClip::new(100, track.clip_slots[0].clip.clone().unwrap(), 4.0, 4.0);
+    let arr_clip = ArrangementClip::new(
+        ClipId(100),
+        track.clip_slots[0].clip.clone().unwrap(),
+        4.0,
+        4.0,
+    );
 
     // Split at beat 6.0 (2 beats into the 4-beat clip)
-    let (first, second) = arr_clip.split_at(6.0, 101).expect("Split failed");
+    let (first, second) = arr_clip.split_at(6.0, ClipId(101)).expect("Split failed");
     assert_eq!(first.start_beat, 4.0);
     assert_eq!(first.length_beats, 2.0);
     assert_eq!(second.start_beat, 6.0);
@@ -75,8 +81,8 @@ fn test_clip_slot_and_payload_manipulation() {
     }
 
     // Test duplicate
-    let dup = arr_clip.duplicate(102, 8.0);
-    assert_eq!(dup.id, 102);
+    let dup = arr_clip.duplicate(ClipId(102), 8.0);
+    assert_eq!(dup.id, ClipId(102));
     assert_eq!(dup.start_beat, 12.0);
     assert_eq!(dup.length_beats, 4.0);
 
@@ -111,8 +117,8 @@ fn test_command_undo_redo() {
     assert_eq!(proj.transport.bpm, 140.0);
 
     // Test AutomationLane and undo/redo of automation points
-    let vol_lane = AutomationLane::new(1, AutomationTarget::TrackVolume);
-    let pan_lane = AutomationLane::new(2, AutomationTarget::TrackPan);
+    let vol_lane = AutomationLane::new(LaneId(1), AutomationTarget::TrackVolume);
+    let pan_lane = AutomationLane::new(LaneId(2), AutomationTarget::TrackPan);
     proj.tracks[0].automation_lanes.push(vol_lane);
     proj.tracks[0].automation_lanes.push(pan_lane);
     assert_eq!(proj.tracks[0].automation_lanes.len(), 2);
@@ -122,7 +128,7 @@ fn test_command_undo_redo() {
 
     // Add first point at beat 0.0, val 0.0
     let p1 = AutomationPoint::new(0.0, 0.0, 0.0);
-    let add_p1 = Box::new(AddAutomationPointAction::new(0, 0, p1));
+    let add_p1 = Box::new(AddAutomationPointAction::new(TrackId(1), LaneId(1), p1));
     history.execute(add_p1, &mut proj);
     assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 1);
     assert_eq!(
@@ -132,7 +138,7 @@ fn test_command_undo_redo() {
 
     // Add second point at beat 4.0, val 1.0
     let p2 = AutomationPoint::new(4.0, 1.0, 0.0);
-    let add_p2 = Box::new(AddAutomationPointAction::new(0, 0, p2));
+    let add_p2 = Box::new(AddAutomationPointAction::new(TrackId(1), LaneId(1), p2));
     history.execute(add_p2, &mut proj);
     assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 2);
 
@@ -164,7 +170,7 @@ fn test_command_undo_redo() {
     assert!((proj.tracks[0].automation_lanes[0].evaluate_at(2.0).unwrap() - 0.5).abs() < 1e-5);
 
     // Remove point at index 0
-    let rem_p = Box::new(RemoveAutomationPointAction::new(0, 0, 0));
+    let rem_p = Box::new(RemoveAutomationPointAction::new(TrackId(1), LaneId(1), 0));
     history.execute(rem_p, &mut proj);
     assert_eq!(proj.tracks[0].automation_lanes[0].points.len(), 1);
     assert_eq!(proj.tracks[0].automation_lanes[0].points[0].beat, 4.0);
@@ -317,4 +323,31 @@ fn test_note_name_follows_live_convention() {
     assert_eq!(note_name(0), "C-2");
     assert_eq!(note_name(127), "G8");
     assert_eq!(note_name(61), "C#3");
+}
+
+#[test]
+fn test_track_lookup_covers_every_track_kind() {
+    let mut proj = Project::new_default("Lookup");
+    assert_eq!(
+        proj.track(TrackId(1)).map(|t| t.track_type),
+        Some(TrackType::Midi)
+    );
+    assert_eq!(
+        proj.track(TrackId(5)).map(|t| t.track_type),
+        Some(TrackType::Return)
+    );
+    assert!(proj.track(TrackId(7)).is_some());
+    assert!(proj.track(TrackId(99)).is_none());
+
+    proj.track_mut(TrackId(6)).expect("return track").name = "Echo".to_string();
+    assert_eq!(proj.return_tracks[1].name, "Echo");
+}
+
+#[test]
+fn test_id_allocator_starts_above_every_existing_id() {
+    // The default Set's highest id is the Limiter device (301).
+    let proj = Project::new_default("Seed");
+    let mut ids = proj.id_allocator();
+    assert_eq!(ids.track(), TrackId(302));
+    assert_eq!(ids.device(), DeviceId(303));
 }

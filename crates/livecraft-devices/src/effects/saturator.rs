@@ -1,4 +1,5 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
 use std::f32::consts::FRAC_PI_2;
 
@@ -12,7 +13,7 @@ pub enum SaturatorCurve {
 
 #[derive(Debug, Clone)]
 pub struct SaturatorEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     pub drive_db: f32,
     pub curve: SaturatorCurve,
     pub output_db: f32,
@@ -24,7 +25,7 @@ pub struct SaturatorEffect {
 impl SaturatorEffect {
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             drive_db: 6.0,
             curve: SaturatorCurve::SoftSine,
             output_db: -2.0,

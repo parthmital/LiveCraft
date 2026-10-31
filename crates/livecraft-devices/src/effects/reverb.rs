@@ -1,3 +1,4 @@
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
 
 // Freeverb Comb and All-Pass tuning constants (at 44100 Hz, scaled to sample_rate)
@@ -64,7 +65,7 @@ impl AllPassFilter {
 
 #[derive(Debug, Clone)]
 pub struct ReverbEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     combs_l: Vec<CombFilter>,
     combs_r: Vec<CombFilter>,
     allpass_l: Vec<AllPassFilter>,
@@ -98,7 +99,7 @@ impl ReverbEffect {
             .collect();
 
         let mut rev = Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             combs_l,
             combs_r,
             allpass_l,

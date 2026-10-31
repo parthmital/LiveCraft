@@ -5,16 +5,17 @@ use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use livecraft_engine::graph::TrackMeter;
 use livecraft_formats::theme::parse_hex_color;
+use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
 use livecraft_model::model::{Clip, Project, TrackType};
 
 #[derive(Default)]
 pub struct SessionAction {
-    pub trigger_clip: Option<(usize, usize)>, // (track_idx, slot_idx)
-    pub stop_clip: Option<usize>,             // track_idx
-    pub trigger_scene: Option<usize>,         // scene_idx
+    pub trigger_clip: Option<(TrackId, usize)>, // (track, slot_idx)
+    pub stop_clip: Option<TrackId>,             // track
+    pub trigger_scene: Option<SceneId>,         // scene
     pub stop_all_clips: bool,
-    pub select_track: Option<usize>,
-    pub select_clip: Option<(usize, usize)>, // (track_idx, slot_idx)
+    pub select_track: Option<TrackId>,
+    pub select_clip: Option<(TrackId, usize)>, // (track, slot_idx)
     pub add_track: Option<TrackType>,
 }
 
@@ -22,11 +23,12 @@ pub struct SessionAction {
 pub fn render_session_view(
     ui: &mut Ui,
     project: &mut Project,
-    selected_track_idx: usize,
+    selected_track: TrackId,
     active_clip_slots: &[Option<usize>],
     track_meters: &[TrackMeter],
     master_meter: &TrackMeter,
     playhead_beats: f64,
+    ids: &mut IdAllocator,
     palette: &LivePalette,
 ) -> SessionAction {
     let mut action = SessionAction::default();
@@ -47,7 +49,8 @@ pub fn render_session_view(
                 // 1. Player Tracks (Audio and MIDI)
                 // -------------------------------------------------------------
                 for (trk_idx, trk) in project.tracks.iter_mut().enumerate() {
-                    let is_selected = trk_idx == selected_track_idx;
+                    let track_id = trk.id;
+                    let is_selected = track_id == selected_track;
                     let active_slot = active_clip_slots.get(trk_idx).copied().flatten();
                     let meter = track_meters.get(trk_idx).cloned().unwrap_or_default();
 
@@ -108,7 +111,7 @@ pub fn render_session_view(
                         }
 
                         if hdr_resp.clicked() {
-                            action.select_track = Some(trk_idx);
+                            action.select_track = Some(track_id);
                         }
 
                         // B. Clip Slots Matrix (Scenes 1..num_scenes)
@@ -240,9 +243,9 @@ pub fn render_session_view(
                                 );
 
                                 if slot_resp.clicked() {
-                                    action.trigger_clip = Some((trk_idx, slot_idx));
-                                    action.select_track = Some(trk_idx);
-                                    action.select_clip = Some((trk_idx, slot_idx));
+                                    action.trigger_clip = Some((track_id, slot_idx));
+                                    action.select_track = Some(track_id);
+                                    action.select_clip = Some((track_id, slot_idx));
                                 }
                             } else {
                                 // Empty clip slot
@@ -274,13 +277,13 @@ pub fn render_session_view(
                                 if slot_resp.double_clicked() {
                                     let new_clip = if trk.track_type == TrackType::Midi {
                                         Clip::new_midi(
-                                            trk.id * 100 + slot_idx as u64,
+                                            ids.clip(),
                                             format!("Clip {}", slot_idx + 1),
                                             4.0,
                                         )
                                     } else {
                                         Clip::new_audio(
-                                            trk.id * 100 + slot_idx as u64,
+                                            ids.clip(),
                                             format!("Audio {}", slot_idx + 1),
                                             "",
                                             4.0,
@@ -321,7 +324,7 @@ pub fn render_session_view(
                             painter.rect_filled(sq, CornerRadius::ZERO, stop_sq_col);
                         }
                         if stop_resp.clicked() {
-                            action.stop_clip = Some(trk_idx);
+                            action.stop_clip = Some(track_id);
                         }
 
                         ui.add_space(2.0);
@@ -485,7 +488,8 @@ pub fn render_session_view(
                         ));
 
                         if sc_resp.clicked() {
-                            action.trigger_scene = Some(scene_idx);
+                            action.trigger_scene =
+                                project.scenes.get(scene_idx).map(|scene| scene.id);
                         }
                     }
 

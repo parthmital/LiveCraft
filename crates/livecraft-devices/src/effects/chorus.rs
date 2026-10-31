@@ -1,9 +1,10 @@
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone)]
 pub struct ChorusEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     buffer_l: Vec<f32>,
     buffer_r: Vec<f32>,
     write_pos: usize,
@@ -20,7 +21,7 @@ impl ChorusEffect {
     pub fn new(sample_rate: f32) -> Self {
         let max_samples = 2048;
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             buffer_l: vec![0.0; max_samples],
             buffer_r: vec![0.0; max_samples],
             write_pos: 0,

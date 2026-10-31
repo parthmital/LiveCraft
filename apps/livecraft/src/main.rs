@@ -487,11 +487,11 @@ fn run_terminal_player(project: &Project, max_duration: u64) -> anyhow::Result<(
     let engine = AudioEngine::new(project)?;
 
     // Trigger first available clip on each track
-    for (trk_idx, trk) in project.tracks.iter().enumerate() {
+    for trk in project.tracks.iter() {
         if let Some(slot) = trk.clip_slots.first()
             && slot.clip.is_some()
         {
-            engine.trigger_clip(trk_idx, 0);
+            engine.trigger_clip(trk.id, 0);
         }
     }
     engine.play();

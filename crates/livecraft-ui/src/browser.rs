@@ -1,5 +1,6 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Ui, Vec2};
+use livecraft_model::ids::IdAllocator;
 use livecraft_model::model::{Device, DeviceType, Track, TrackType};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,6 +43,7 @@ impl LiveBrowser {
         &mut self,
         ui: &mut Ui,
         _selected_track: Option<&mut Track>,
+        device_ids: &mut IdAllocator,
         palette: &LivePalette,
     ) -> BrowserAction {
         let mut action = BrowserAction {
@@ -286,14 +288,17 @@ impl LiveBrowser {
                                     .clicked()
                                 {
                                     action.add_device =
-                                        Some(Device::new(1001, name, dtype.clone()));
+                                        Some(Device::new(device_ids.device(), name, dtype.clone()));
                                 }
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         if ui.small_button("+ Add").clicked() {
-                                            action.add_device =
-                                                Some(Device::new(1001, name, dtype.clone()));
+                                            action.add_device = Some(Device::new(
+                                                device_ids.device(),
+                                                name,
+                                                dtype.clone(),
+                                            ));
                                         }
                                     },
                                 );
@@ -325,14 +330,17 @@ impl LiveBrowser {
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(false, name).clicked() {
                                     action.add_device =
-                                        Some(Device::new(1002, name, dtype.clone()));
+                                        Some(Device::new(device_ids.device(), name, dtype.clone()));
                                 }
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         if ui.small_button("+ Add").clicked() {
-                                            action.add_device =
-                                                Some(Device::new(1002, name, dtype.clone()));
+                                            action.add_device = Some(Device::new(
+                                                device_ids.device(),
+                                                name,
+                                                dtype.clone(),
+                                            ));
                                         }
                                     },
                                 );
@@ -350,15 +358,21 @@ impl LiveBrowser {
                         for kit in kits {
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(false, kit).clicked() {
-                                    action.add_device =
-                                        Some(Device::new(1003, kit, DeviceType::DrumRack));
+                                    action.add_device = Some(Device::new(
+                                        device_ids.device(),
+                                        kit,
+                                        DeviceType::DrumRack,
+                                    ));
                                 }
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         if ui.small_button("+ Add").clicked() {
-                                            action.add_device =
-                                                Some(Device::new(1003, kit, DeviceType::DrumRack));
+                                            action.add_device = Some(Device::new(
+                                                device_ids.device(),
+                                                kit,
+                                                DeviceType::DrumRack,
+                                            ));
                                         }
                                     },
                                 );
@@ -393,7 +407,8 @@ impl LiveBrowser {
                         for (name, dtype) in defaults {
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(false, name).clicked() {
-                                    action.add_device = Some(Device::new(1004, name, dtype));
+                                    action.add_device =
+                                        Some(Device::new(device_ids.device(), name, dtype));
                                 }
                             });
                         }

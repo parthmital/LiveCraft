@@ -2,6 +2,7 @@ use crate::graph::AudioGraph;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{SampleFormat, Stream, StreamConfig};
 use crossbeam_channel::{Receiver, Sender, bounded};
+use livecraft_model::ids::{DeviceId, SceneId, TrackId};
 use livecraft_model::model::Project;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -10,23 +11,23 @@ use std::sync::{Arc, Mutex};
 pub enum AudioParamMsg {
     SetTempo(f32),
     SetTrackVolume {
-        track_idx: usize,
+        track: TrackId,
         volume_db: f32,
     },
     SetTrackPan {
-        track_idx: usize,
+        track: TrackId,
         pan: f32,
     },
     SetTrackMute {
-        track_idx: usize,
+        track: TrackId,
         muted: bool,
     },
     SetTrackSolo {
-        track_idx: usize,
+        track: TrackId,
         soloed: bool,
     },
     SetTrackSend {
-        track_idx: usize,
+        track: TrackId,
         send_idx: usize,
         amount: f32,
     },
@@ -37,20 +38,20 @@ pub enum AudioParamMsg {
         pan: f32,
     },
     SetDeviceParam {
-        track_idx: usize,
-        device_id: u64,
+        track: TrackId,
+        device: DeviceId,
         param_key: String,
         value: f32,
     },
     TriggerClip {
-        track_idx: usize,
+        track: TrackId,
         slot_idx: usize,
     },
     StopClip {
-        track_idx: usize,
+        track: TrackId,
     },
     TriggerScene {
-        scene_idx: usize,
+        scene: SceneId,
     },
     StopAll,
     SetPlayhead(f64),
@@ -144,47 +145,41 @@ impl AudioEngine {
         self.send_param(AudioParamMsg::StopAll);
     }
 
-    pub fn trigger_clip(&self, track_idx: usize, slot_idx: usize) {
-        self.send_param(AudioParamMsg::TriggerClip {
-            track_idx,
-            slot_idx,
-        });
+    pub fn trigger_clip(&self, track: TrackId, slot_idx: usize) {
+        self.send_param(AudioParamMsg::TriggerClip { track, slot_idx });
     }
 
-    pub fn stop_clip(&self, track_idx: usize) {
-        self.send_param(AudioParamMsg::StopClip { track_idx });
+    pub fn stop_clip(&self, track: TrackId) {
+        self.send_param(AudioParamMsg::StopClip { track });
     }
 
-    pub fn trigger_scene(&self, scene_idx: usize) {
-        self.send_param(AudioParamMsg::TriggerScene { scene_idx });
+    pub fn trigger_scene(&self, scene: SceneId) {
+        self.send_param(AudioParamMsg::TriggerScene { scene });
     }
 
     pub fn set_tempo(&self, bpm: f32) {
         self.send_param(AudioParamMsg::SetTempo(bpm));
     }
 
-    pub fn set_track_volume(&self, track_idx: usize, volume_db: f32) {
-        self.send_param(AudioParamMsg::SetTrackVolume {
-            track_idx,
-            volume_db,
-        });
+    pub fn set_track_volume(&self, track: TrackId, volume_db: f32) {
+        self.send_param(AudioParamMsg::SetTrackVolume { track, volume_db });
     }
 
-    pub fn set_track_pan(&self, track_idx: usize, pan: f32) {
-        self.send_param(AudioParamMsg::SetTrackPan { track_idx, pan });
+    pub fn set_track_pan(&self, track: TrackId, pan: f32) {
+        self.send_param(AudioParamMsg::SetTrackPan { track, pan });
     }
 
-    pub fn set_track_mute(&self, track_idx: usize, muted: bool) {
-        self.send_param(AudioParamMsg::SetTrackMute { track_idx, muted });
+    pub fn set_track_mute(&self, track: TrackId, muted: bool) {
+        self.send_param(AudioParamMsg::SetTrackMute { track, muted });
     }
 
-    pub fn set_track_solo(&self, track_idx: usize, soloed: bool) {
-        self.send_param(AudioParamMsg::SetTrackSolo { track_idx, soloed });
+    pub fn set_track_solo(&self, track: TrackId, soloed: bool) {
+        self.send_param(AudioParamMsg::SetTrackSolo { track, soloed });
     }
 
-    pub fn set_track_send(&self, track_idx: usize, send_idx: usize, amount: f32) {
+    pub fn set_track_send(&self, track: TrackId, send_idx: usize, amount: f32) {
         self.send_param(AudioParamMsg::SetTrackSend {
-            track_idx,
+            track,
             send_idx,
             amount,
         });
@@ -200,14 +195,14 @@ impl AudioEngine {
 
     pub fn set_device_param(
         &self,
-        track_idx: usize,
-        device_id: u64,
+        track: TrackId,
+        device: DeviceId,
         param_key: impl Into<String>,
         value: f32,
     ) {
         self.send_param(AudioParamMsg::SetDeviceParam {
-            track_idx,
-            device_id,
+            track,
+            device,
             param_key: param_key.into(),
             value,
         });

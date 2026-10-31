@@ -1,3 +1,4 @@
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::{Device, DeviceType};
 
 use crate::autofilter::{AutoFilterEffect, AutoFilterMode};
@@ -20,7 +21,7 @@ pub trait DspProcessor: Send + Sync {
     fn reset(&mut self);
     fn is_enabled(&self) -> bool;
     fn set_enabled(&mut self, enabled: bool);
-    fn device_id(&self) -> u64;
+    fn device_id(&self) -> DeviceId;
 }
 
 impl DspProcessor for EqEight {
@@ -78,7 +79,7 @@ impl DspProcessor for EqEight {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -112,7 +113,7 @@ impl DspProcessor for CompressorEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -144,7 +145,7 @@ impl DspProcessor for DelayEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -183,7 +184,7 @@ impl DspProcessor for ReverbEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -212,7 +213,7 @@ impl DspProcessor for LimiterEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -244,7 +245,7 @@ impl DspProcessor for UtilityEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -284,7 +285,7 @@ impl DspProcessor for SaturatorEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -324,7 +325,7 @@ impl DspProcessor for AutoFilterEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -354,7 +355,7 @@ impl DspProcessor for ChorusEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -390,7 +391,7 @@ impl DspProcessor for AutoPanEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -427,7 +428,7 @@ impl DspProcessor for GateEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -472,7 +473,7 @@ impl DspProcessor for EqThreeEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }
@@ -507,7 +508,7 @@ impl DspProcessor for ReduxEffect {
         self.is_enabled = enabled;
     }
 
-    fn device_id(&self) -> u64 {
+    fn device_id(&self) -> DeviceId {
         self.device_id
     }
 }

@@ -1,4 +1,5 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
 use std::f32::consts::PI;
 
@@ -12,7 +13,7 @@ pub enum AutoFilterMode {
 
 #[derive(Debug, Clone)]
 pub struct AutoFilterEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     pub mode: AutoFilterMode,
     pub cutoff: f32,
     pub resonance: f32,
@@ -33,7 +34,7 @@ impl AutoFilterEffect {
         let filter_r = BiquadFilter::new(FilterType::LowPass, sample_rate, 1200.0, 0.0, 1.5);
 
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             mode: AutoFilterMode::LowPass,
             cutoff: 1200.0,
             resonance: 1.5,

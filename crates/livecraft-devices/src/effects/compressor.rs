@@ -1,8 +1,9 @@
+use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
 
 #[derive(Debug, Clone)]
 pub struct CompressorEffect {
-    pub device_id: u64,
+    pub device_id: DeviceId,
     pub threshold_db: f32,
     pub ratio: f32,
     pub attack_ms: f32,
@@ -18,7 +19,7 @@ pub struct CompressorEffect {
 impl CompressorEffect {
     pub fn new(sample_rate: f32) -> Self {
         Self {
-            device_id: 0,
+            device_id: DeviceId(0),
             threshold_db: -18.0,
             ratio: 4.0,
             attack_ms: 15.0,

@@ -16,6 +16,7 @@ use livecraft_devices::redux::ReduxEffect;
 use livecraft_devices::reverb::ReverbEffect;
 use livecraft_devices::saturator::SaturatorEffect;
 use livecraft_devices::simpler::SimplerInstrument;
+use livecraft_model::ids::{DeviceId, SceneId, TrackId};
 use livecraft_model::model::*;
 use livecraft_time::beats_per_sample;
 
@@ -71,7 +72,7 @@ pub struct ActiveNoteInstance {
 }
 
 pub struct TrackDspState {
-    pub track_id: u64,
+    pub track_id: TrackId,
     pub volume_db: f32,
     pub pan: f32,
     pub is_muted: bool,
@@ -251,7 +252,7 @@ impl TrackDspState {
 
     pub fn set_device_param(
         &mut self,
-        device_id: u64,
+        device_id: DeviceId,
         param_key: &str,
         value: f32,
         sample_rate: f32,
@@ -259,14 +260,14 @@ impl TrackDspState {
         if let Some(dev) = self
             .device_chain
             .iter_mut()
-            .find(|d| d.id == device_id || device_id == 0)
+            .find(|d| d.id == device_id || device_id.0 == 0)
         {
             dev.set_param(param_key, value);
             let dev_clone = dev.clone();
             self.sync_single_device(&dev_clone, sample_rate);
         }
         for proc in &mut self.processors {
-            if proc.device_id() == device_id || device_id == 0 {
+            if proc.device_id() == device_id || device_id.0 == 0 {
                 proc.update_param(param_key, value);
             }
         }
@@ -493,6 +494,7 @@ pub struct AudioGraph {
     pub scratch_l: Vec<f32>,
     pub scratch_r: Vec<f32>,
     pub tuning: Option<TuningSystem>,
+    pub scene_ids: Vec<SceneId>,
 }
 
 impl AudioGraph {
@@ -526,27 +528,37 @@ impl AudioGraph {
             scratch_l,
             scratch_r,
             tuning: project.tuning.clone(),
+            scene_ids: project.scenes.iter().map(|scene| scene.id).collect(),
         }
     }
 
-    pub fn trigger_clip(&mut self, track_idx: usize, slot_idx: usize) {
-        if let Some(state) = self.track_states.get_mut(track_idx) {
+    pub fn trigger_clip(&mut self, track: TrackId, slot_idx: usize) {
+        if let Some(state) = self.track_state_mut(track) {
             state.trigger_clip(slot_idx);
         }
     }
 
-    pub fn stop_clip(&mut self, track_idx: usize) {
-        if let Some(state) = self.track_states.get_mut(track_idx) {
+    pub fn stop_clip(&mut self, track: TrackId) {
+        if let Some(state) = self.track_state_mut(track) {
             state.stop_clip();
         }
     }
 
-    pub fn trigger_scene(&mut self, scene_idx: usize) {
+    pub fn trigger_scene(&mut self, scene: SceneId) {
+        let Some(row) = self.scene_ids.iter().position(|id| *id == scene) else {
+            return;
+        };
         for state in self.track_states.iter_mut() {
-            if scene_idx < state.clip_slots.len() && state.clip_slots[scene_idx].clip.is_some() {
-                state.trigger_clip(scene_idx);
+            if row < state.clip_slots.len() && state.clip_slots[row].clip.is_some() {
+                state.trigger_clip(row);
             }
         }
+    }
+
+    fn track_state_mut(&mut self, track: TrackId) -> Option<&mut TrackDspState> {
+        self.track_states
+            .iter_mut()
+            .find(|state| state.track_id == track)
     }
 
     pub fn apply_param_msg(&mut self, msg: AudioParamMsg) {
@@ -554,35 +566,32 @@ impl AudioGraph {
             AudioParamMsg::SetTempo(bpm) => {
                 self.bpm = bpm;
             }
-            AudioParamMsg::SetTrackVolume {
-                track_idx,
-                volume_db,
-            } => {
-                if let Some(state) = self.track_states.get_mut(track_idx) {
+            AudioParamMsg::SetTrackVolume { track, volume_db } => {
+                if let Some(state) = self.track_state_mut(track) {
                     state.volume_db = volume_db;
                 }
             }
-            AudioParamMsg::SetTrackPan { track_idx, pan } => {
-                if let Some(state) = self.track_states.get_mut(track_idx) {
+            AudioParamMsg::SetTrackPan { track, pan } => {
+                if let Some(state) = self.track_state_mut(track) {
                     state.pan = pan;
                 }
             }
-            AudioParamMsg::SetTrackMute { track_idx, muted } => {
-                if let Some(state) = self.track_states.get_mut(track_idx) {
+            AudioParamMsg::SetTrackMute { track, muted } => {
+                if let Some(state) = self.track_state_mut(track) {
                     state.is_muted = muted;
                 }
             }
-            AudioParamMsg::SetTrackSolo { track_idx, soloed } => {
-                if let Some(state) = self.track_states.get_mut(track_idx) {
+            AudioParamMsg::SetTrackSolo { track, soloed } => {
+                if let Some(state) = self.track_state_mut(track) {
                     state.is_soloed = soloed;
                 }
             }
             AudioParamMsg::SetTrackSend {
-                track_idx,
+                track,
                 send_idx,
                 amount,
             } => {
-                if let Some(state) = self.track_states.get_mut(track_idx) {
+                if let Some(state) = self.track_state_mut(track) {
                     while state.sends.len() <= send_idx {
                         state.sends.push(0.0);
                     }
@@ -596,33 +605,27 @@ impl AudioGraph {
                 self.master_state.pan = pan;
             }
             AudioParamMsg::SetDeviceParam {
-                track_idx,
-                device_id,
+                track,
+                device,
                 param_key,
                 value,
             } => {
-                if track_idx == usize::MAX {
-                    self.master_state.set_device_param(
-                        device_id,
-                        &param_key,
-                        value,
-                        self.sample_rate,
-                    );
-                } else if let Some(state) = self.track_states.get_mut(track_idx) {
-                    state.set_device_param(device_id, &param_key, value, self.sample_rate);
+                let sample_rate = self.sample_rate;
+                if track == self.master_state.track_id {
+                    self.master_state
+                        .set_device_param(device, &param_key, value, sample_rate);
+                } else if let Some(state) = self.track_state_mut(track) {
+                    state.set_device_param(device, &param_key, value, sample_rate);
                 }
             }
-            AudioParamMsg::TriggerClip {
-                track_idx,
-                slot_idx,
-            } => {
-                self.trigger_clip(track_idx, slot_idx);
+            AudioParamMsg::TriggerClip { track, slot_idx } => {
+                self.trigger_clip(track, slot_idx);
             }
-            AudioParamMsg::StopClip { track_idx } => {
-                self.stop_clip(track_idx);
+            AudioParamMsg::StopClip { track } => {
+                self.stop_clip(track);
             }
-            AudioParamMsg::TriggerScene { scene_idx } => {
-                self.trigger_scene(scene_idx);
+            AudioParamMsg::TriggerScene { scene } => {
+                self.trigger_scene(scene);
             }
             AudioParamMsg::StopAll => {
                 self.stop_all();
@@ -647,6 +650,7 @@ impl AudioGraph {
     pub fn sync_project(&mut self, project: &Project) {
         self.bpm = project.transport.bpm;
         self.tuning = project.tuning.clone();
+        self.scene_ids = project.scenes.iter().map(|scene| scene.id).collect();
 
         // Tracks
         while self.track_states.len() < project.tracks.len() {

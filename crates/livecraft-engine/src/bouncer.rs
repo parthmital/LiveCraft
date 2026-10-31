@@ -47,11 +47,11 @@ impl OfflineBouncer {
         graph.is_playing = true;
 
         // Auto-trigger slot 0 on all tracks that have clips
-        for (trk_idx, trk) in project.tracks.iter().enumerate() {
+        for trk in project.tracks.iter() {
             if let Some(slot) = trk.clip_slots.first()
                 && slot.clip.is_some()
             {
-                graph.trigger_clip(trk_idx, 0);
+                graph.trigger_clip(trk.id, 0);
             }
         }
 
@@ -114,8 +114,8 @@ impl OfflineBouncer {
 
             // Clone project with only this track unmuted/soloed
             let mut solo_proj = project.clone();
-            for (i, t) in solo_proj.tracks.iter_mut().enumerate() {
-                t.is_soloed = i == trk_idx;
+            for t in solo_proj.tracks.iter_mut() {
+                t.is_soloed = t.id == trk.id;
             }
 
             Self::render_project(&solo_proj, &stem_file, options.clone())?;
