@@ -24,7 +24,19 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 
 | Crate or path                                         | Responsibility                                                                               | Main public API                                                            | May depend on (internal)             |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
-| `crates/livecraft-model/src/model.rs`                 | Document model, MIDI transformations, scales, Scala tuning                                   | `Project`, `Track`, `Clip`, `ClipSlot`, `Device`, `TuningSystem`           | none                                 |
+| `crates/livecraft-model/src/ids.rs`                  | Typed ids (`TrackId`, `ClipId`, `SceneId`, `DeviceId`, `LaneId`) and `IdAllocator`           | `TrackId`, `ClipId`, `SceneId`, `DeviceId`, `LaneId`, `IdAllocator`        | none                                 |
+| `crates/livecraft-model/src/model.rs`                | Facade that re-exports the model modules, so imports from `model` keep working               | every model type                                                           | model modules                        |
+| `crates/livecraft-model/src/set.rs`                  | Live Set (`Project`), transport, and the default Set                                         | `Project`, `Transport`                                                     | track, device, scene, scale, tuning  |
+| `crates/livecraft-model/src/track.rs`                | Tracks, track types, and monitoring                                                          | `Track`, `TrackType`, `MonitoringMode`                                     | clip, device, automation, color      |
+| `crates/livecraft-model/src/clip.rs`                 | Clips, clip slots, arrangement clips, audio payloads, and warp markers                       | `Clip`, `ClipSlot`, `ArrangementClip`, `ClipPayload`                       | note, automation                     |
+| `crates/livecraft-model/src/note.rs`                 | MIDI notes and MIDI clip data                                                                | `MidiNote`, `MidiClipData`                                                 | none                                 |
+| `crates/livecraft-model/src/midi_tools_legacy.rs`    | MIDI transformations moved unchanged from M01; M19 replaces them                             | `MidiClipData` methods (quantize, humanize, chop, and so on)               | note, scale                          |
+| `crates/livecraft-model/src/device.rs`               | Device kinds and devices, with string-keyed parameters until M03 item 7                      | `Device`, `DeviceType`                                                     | none                                 |
+| `crates/livecraft-model/src/automation.rs`           | Automation targets, points, and lanes                                                        | `AutomationLane`, `AutomationPoint`, `AutomationTarget`                    | none                                 |
+| `crates/livecraft-model/src/scene.rs`                | Scenes with optional tempo and time signature                                                | `Scene`                                                                    | none                                 |
+| `crates/livecraft-model/src/scale.rs`                | Scales and scale snapping                                                                    | `ScaleConfig`, `ScaleType`, `note_name`                                    | none                                 |
+| `crates/livecraft-model/src/tuning.rs`               | Scala tuning systems and frequency lookup                                                    | `TuningSystem`                                                             | none                                 |
+| `crates/livecraft-model/src/color.rs`                | Live's clip and track colour palette, as hex strings until the colour index                  | `ABLETON_PALETTE`                                                          | none                                 |
 | `crates/livecraft-model/src/command.rs`               | `Command` enum and `CommandHistory` undo and redo                                            | `Command`, `CommandHistory`                                                | none                                 |
 | `crates/livecraft-formats/src/als.rs`                 | `.als` gzip XML read and write                                                               | `AlsParser::load_project`, `save_project_to_als`                           | model                                |
 | `crates/livecraft-formats/src/theme.rs`               | `.ask` theme parsing                                                                         | `AbletonTheme`                                                             | model                                |
@@ -61,7 +73,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 
 ## Where New Code Goes
 
-- New document data or edit operation: `livecraft-model/src/model.rs`, with a `Command` variant in `command.rs`.
+- New document data or edit operation: the entity's module in `livecraft-model/src/` (for example `track.rs` or `clip.rs`), re-exported from `model.rs`, with a `Command` variant in `command.rs`.
 - New DSP building block (filter, oscillator, envelope): `livecraft-dsp/src/`.
 - New effect or instrument: a file in `livecraft-devices/src/effects/` or `instruments/`, a `DspProcessor` impl in `processor.rs`, a `DeviceType` variant in `livecraft-model`.
 - New view or panel: a new file in `livecraft-ui/src/`, called from `app.rs`.
@@ -90,7 +102,7 @@ Each is scheduled in [plans/livecraft-1.0/PLAN.md](plans/livecraft-1.0/PLAN.md).
 | Entity identity is `usize` indexes in commands and messages, which break on insert or delete                         | `command.rs`, `engine.rs`                               | 1            |
 | `.als` writer regenerates XML from the model; every unknown element is lost                                          | `als.rs`                                                | 2            |
 | Session clip slots without an active clip are played back as a sequential timeline                                   | `graph.rs` `dispatch_clip_events`                       | 1            |
-| Large files mixing concerns: `model.rs` (1214 lines), `graph.rs` (1080), `als.rs` (1008), `devices.rs` (995)         | as listed                                               | 1            |
+| Large files mixing concerns: `graph.rs` (1080), `als.rs` (1008), `devices.rs` (995)         | as listed                                               | 1            |
 | GUI layout uses estimated sizes and colours, not measurements of Live                                                | `crates/livecraft-ui/src/*.rs`                          | 3            |
 
 ## Growth Signals
