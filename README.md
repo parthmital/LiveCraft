@@ -40,7 +40,7 @@ cargo run --bin livecraft -- gui
 
 | Command                  | What it does                            | Expected result                          | Common error and fix                                                                          |
 | ------------------------ | --------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 55 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 89 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
 | `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                      |
 | `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                         |
 | `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
@@ -157,7 +157,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-Baseline on 2026-10-31: `cargo xtask ci` passes with 55 tests (livecraft 6, livecraft-model 9, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 17, livecraft-engine 10, livecraft-ui 2, xtask 4). One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
+Baseline on 2026-10-31: `cargo xtask ci` passes with 89 tests (livecraft 6, livecraft-model 9, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 18, livecraft-engine 10, livecraft-time 33, livecraft-ui 2, xtask 4). One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
 
 ## Troubleshooting
 
