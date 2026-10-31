@@ -42,6 +42,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-testkit/src/lib.rs`                 | Test helpers shared across crates                                                            | `render_project_summary`, `RenderSummary`                                  | model, engine                        |
 | `crates/livecraft-time/src/units.rs`                  | Musical time units: beats and samples, with arithmetic                                       | `Beats`, `Samples`                                                         | none                                 |
 | `crates/livecraft-time/src/tempo.rs`                  | Tempo map (step and linear ramp changes) and beat, second, and sample conversion             | `TempoMap`, `MIN_BPM`, `MAX_BPM`                                           | none                                 |
+| `crates/livecraft-time/src/meter.rs`                  | Time signature map (changes at bar boundaries) and bar.beat.sixteenth conversion and display | `TimeSignatureMap`, `BarBeatSixteenth`, `TimeError`                        | none                                 |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules
