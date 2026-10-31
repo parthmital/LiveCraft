@@ -4,6 +4,7 @@ pub mod instruments;
 pub mod processor;
 
 pub mod device_processor;
+pub mod factory;
 
 #[cfg(test)]
 mod test_support;
@@ -11,6 +12,7 @@ mod test_support;
 pub use biquad::*;
 pub use device_processor::*;
 pub use effects::*;
+pub use factory::*;
 pub use instruments::*;
 pub use processor::*;
 
