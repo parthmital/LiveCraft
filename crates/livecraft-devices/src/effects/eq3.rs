@@ -1,5 +1,7 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
+use livecraft_model::param::ParamId;
 
 /// Live 12 EQ Three effect
 /// 3-band DJ style isolator equalizer with Low, Mid, High band gains and kills
@@ -89,5 +91,36 @@ impl EqThreeEffect {
             left[i] = low_l * g_low + mid_l * g_mid + high_l * g_high;
             right[i] = low_r * g_low + mid_r * g_mid + high_r * g_high;
         }
+    }
+}
+
+impl DeviceProcessor for EqThreeEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        EqThreeEffect::process(self, io.left, io.right);
+    }
+
+    /// Ids are positions in the EQ Three table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.low_gain_db = value,
+            1 => self.mid_gain_db = value,
+            2 => self.high_gain_db = value,
+            3 => self.low_freq = value,
+            4 => self.high_freq = value,
+            5 => self.low_on = value > 0.5,
+            6 => self.mid_on = value > 0.5,
+            7 => self.high_on = value > 0.5,
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {
+        EqThreeEffect::reset(self);
     }
 }

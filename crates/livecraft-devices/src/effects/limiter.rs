@@ -1,5 +1,7 @@
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 
 #[derive(Debug, Clone)]
 pub struct LimiterEffect {
@@ -121,4 +123,33 @@ impl UtilityEffect {
 
         (l * pan_l * gain_lin, r * pan_r * gain_lin)
     }
+}
+
+impl DeviceProcessor for UtilityEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        for frame in 0..io.frames() {
+            let (l, r) = self.process_stereo(io.left[frame], io.right[frame]);
+            io.left[frame] = l;
+            io.right[frame] = r;
+        }
+    }
+
+    /// Ids are positions in the Utility table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.gain_db = value,
+            1 => self.pan = value.clamp(-1.0, 1.0),
+            2 => self.width = value.clamp(0.0, 4.0),
+            3 => self.mute = value > 0.5,
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {}
 }
