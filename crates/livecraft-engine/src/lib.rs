@@ -4,6 +4,7 @@ pub mod clip;
 pub mod collector;
 pub mod compiled;
 pub mod compiler;
+pub mod delay;
 pub mod engine;
 pub mod executor;
 pub mod graph;

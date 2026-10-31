@@ -5,7 +5,7 @@
 use crate::audio_clip::{AudioSampleCache, DecodedAudio};
 use crate::clip::{ArrangedClip, ClipLane, PlayNote, PlayableClip, PlayableSource};
 use crate::compiled::{
-    CompiledGraph, DeviceSlot, MAX_NOTE_EVENTS, Mixer, Node, NodeKind, Transfer,
+    CompiledGraph, DeviceSlot, MAX_NOTE_EVENTS, Mixer, Node, NodeKind, Transfer, compensate_latency,
 };
 use basedrop::{Handle, Shared};
 use livecraft_devices::{create_device_processor, is_instrument};
@@ -55,6 +55,11 @@ impl GraphCompiler {
         }
         nodes.push(self.node(&project.main_track, NodeKind::Main, tuning));
 
+        compensate_latency(
+            &mut nodes,
+            project.tracks.len(),
+            project.return_tracks.len(),
+        );
         let transfers = self.transfers(&nodes);
         self.previous = nodes
             .iter()
@@ -105,13 +110,14 @@ impl GraphCompiler {
         let devices = chain
             .into_iter()
             .filter_map(|device| {
-                create_device_processor(device, self.sample_rate).map(|processor| DeviceSlot {
-                    id: device.id,
-                    enabled: device.is_enabled,
-                    processor,
-                    values: parameter_values(device),
-                    table: param_table(&device.device_type),
-                    ramps: Vec::with_capacity(MAX_PARAMETERS),
+                create_device_processor(device, self.sample_rate).map(|processor| {
+                    DeviceSlot::new(
+                        device.id,
+                        device.is_enabled,
+                        processor,
+                        parameter_values(device),
+                        param_table(&device.device_type),
+                    )
                 })
             })
             .collect();

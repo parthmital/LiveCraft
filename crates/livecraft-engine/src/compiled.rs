@@ -9,6 +9,7 @@
 //! their sends, and tracks and returns feed Main, so this order is a topological order.
 
 use crate::clip::ClipLane;
+use crate::delay::DelayLine;
 use crate::graph::TrackMeter;
 use livecraft_devices::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
@@ -52,6 +53,11 @@ pub struct DeviceSlot {
     pub table: &'static [ParamSpec],
     /// Continuous parameters still moving to their target value.
     pub ramps: Vec<Ramp>,
+    /// The processor's latency in frames, which the compiler compensates (manual 23.3).
+    pub latency: usize,
+    /// Delays the signal of a bypassed device by its latency, so bypassing it keeps the timing
+    /// (manual 39.2.8).
+    bypass: DelayLine,
 }
 
 /// A continuous parameter that moves from the value its processor holds toward the value the Set
@@ -64,6 +70,28 @@ pub struct Ramp {
 }
 
 impl DeviceSlot {
+    /// A slot for `processor`, with the latency the processor reports. `table` is the device kind's
+    /// parameter table, and `values` the values the Set holds for the device.
+    pub fn new(
+        id: DeviceId,
+        enabled: bool,
+        processor: Box<dyn DeviceProcessor>,
+        values: Vec<(ParamId, f32)>,
+        table: &'static [ParamSpec],
+    ) -> Self {
+        let latency = processor.latency_samples() as usize;
+        Self {
+            id,
+            enabled,
+            processor,
+            values,
+            table,
+            ramps: Vec::with_capacity(table.len()),
+            latency,
+            bypass: DelayLine::new(latency),
+        }
+    }
+
     /// Moves each ramp over `frames` frames toward its target and gives the processor the new value.
     /// A ramp that has arrived is dropped. The step is exponential, so a ramp takes the same time at
     /// any block size.
@@ -109,6 +137,10 @@ pub struct Node {
     pub meter: TrackMeter,
     left: Box<[f32]>,
     right: Box<[f32]>,
+    /// Delays a track's input so its sends and its mix start together (see `compensate_latency`).
+    input_delay: DelayLine,
+    /// Delays this node's output to Main so every path reaches Main at the same time.
+    main_delay: DelayLine,
 }
 
 impl Node {
@@ -129,7 +161,15 @@ impl Node {
             meter: TrackMeter::default(),
             left: vec![0.0; MAX_BLOCK].into_boxed_slice(),
             right: vec![0.0; MAX_BLOCK].into_boxed_slice(),
+            input_delay: DelayLine::default(),
+            main_delay: DelayLine::default(),
         }
+    }
+
+    /// Delays the track's input by its compensation, so the other tracks and its sends line up.
+    fn delay_input(&mut self, frames: usize) {
+        self.input_delay
+            .apply(&mut self.left[..frames], &mut self.right[..frames]);
     }
 
     /// Fills this block's note events and audio from the clips the track plays.
@@ -159,9 +199,13 @@ impl Node {
             right: &mut self.right[..frames],
         };
         let mut sink = EventSink::default();
-        for slot in self.devices.iter_mut().filter(|slot| slot.enabled) {
-            slot.processor
-                .process(ctx, &mut io, &self.events, &mut sink);
+        for slot in self.devices.iter_mut() {
+            if slot.enabled {
+                slot.processor
+                    .process(ctx, &mut io, &self.events, &mut sink);
+            } else {
+                slot.bypass.apply(&mut *io.left, &mut *io.right);
+            }
         }
         for frame in 0..frames {
             self.meter.update(self.left[frame], self.right[frame]);
@@ -196,6 +240,29 @@ fn volume_gain(volume_db: f32) -> f32 {
 fn pan_gains(pan: f32) -> (f32, f32) {
     let angle = (pan.clamp(-1.0, 1.0) + 1.0) * 0.5 * std::f32::consts::FRAC_PI_2;
     (angle.cos(), angle.sin())
+}
+
+/// The latency a node adds: the latencies of its devices, bypassed ones included.
+fn node_latency(node: &Node) -> usize {
+    node.devices.iter().map(|slot| slot.latency).sum()
+}
+
+/// Sets the delay lines that bring every path to Main at the same time (manual 23.3). A track delays
+/// its input until the slowest track's output would be ready, so its sends and its mix start together.
+/// Its direct output to Main then waits for the slowest return. Each return delays its output to the
+/// same time. `nodes` must be the tracks, then the returns, then Main.
+pub fn compensate_latency(nodes: &mut [Node], track_count: usize, return_count: usize) {
+    let (tracks, rest) = nodes.split_at_mut(track_count);
+    let (returns, _main) = rest.split_at_mut(return_count);
+    let track_max = tracks.iter().map(node_latency).fold(0, usize::max);
+    let return_max = returns.iter().map(node_latency).fold(0, usize::max);
+    for track in tracks.iter_mut() {
+        track.input_delay = DelayLine::new(track_max - node_latency(track));
+        track.main_delay = DelayLine::new(return_max);
+    }
+    for ret in returns.iter_mut() {
+        ret.main_delay = DelayLine::new(return_max - node_latency(ret));
+    }
 }
 
 impl CompiledGraph {
@@ -330,6 +397,16 @@ impl CompiledGraph {
         }
     }
 
+    /// Adds a device to a track and recomputes the latency compensation. A session edit compiles a
+    /// new graph instead, so this is for tests and for code that builds a graph by hand.
+    pub fn add_device(&mut self, track: TrackId, slot: DeviceSlot) {
+        let Some(node) = self.node_mut(track) else {
+            return;
+        };
+        node.devices.push(slot);
+        compensate_latency(&mut self.nodes, self.track_count, self.return_count);
+    }
+
     /// True while a continuous parameter is still ramping. The engine then renders in short steps.
     pub fn ramping(&self) -> bool {
         self.nodes
@@ -375,20 +452,25 @@ impl CompiledGraph {
             track.clear(frames);
             track.schedule_clips(&ProcessContext { frames, ..*ctx });
             track.run_devices(&ProcessContext { frames, ..*ctx });
-            if track.mixer.is_muted || (any_solo && !track.mixer.is_soloed) {
-                continue;
-            }
-            let gain = volume_gain(track.mixer.volume_db);
+            track.delay_input(frames);
+            // A muted or unsoloed track is silent, but it still runs its delay so later blocks line up.
+            let audible = !(track.mixer.is_muted || (any_solo && !track.mixer.is_soloed));
+            let gain = if audible {
+                volume_gain(track.mixer.volume_db)
+            } else {
+                0.0
+            };
             let (pan_l, pan_r) = pan_gains(track.mixer.pan);
             for frame in 0..frames {
                 let out_l = track.left[frame] * gain * pan_l;
                 let out_r = track.right[frame] * gain * pan_r;
-                main.left[frame] += out_l;
-                main.right[frame] += out_r;
                 for (ret, level) in returns.iter_mut().zip(&track.mixer.sends) {
                     ret.left[frame] += out_l * level;
                     ret.right[frame] += out_r * level;
                 }
+                let (main_l, main_r) = track.main_delay.process(out_l, out_r);
+                main.left[frame] += main_l;
+                main.right[frame] += main_r;
             }
         }
 
@@ -397,8 +479,9 @@ impl CompiledGraph {
             ret.run_devices(&ProcessContext { frames, ..*ctx });
             let gain = volume_gain(ret.mixer.volume_db);
             for frame in 0..frames {
-                main.left[frame] += ret.left[frame] * gain;
-                main.right[frame] += ret.right[frame] * gain;
+                let (ret_l, ret_r) = ret.main_delay.process(ret.left[frame], ret.right[frame]);
+                main.left[frame] += ret_l * gain;
+                main.right[frame] += ret_r * gain;
             }
         }
 

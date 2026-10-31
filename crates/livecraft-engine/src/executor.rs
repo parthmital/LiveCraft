@@ -460,10 +460,12 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::compiled::DeviceSlot;
     use crate::compiled::MAX_BLOCK;
     use crate::compiler::GraphCompiler;
+    use crate::delay::DelayLine;
     use basedrop::Collector;
-    use livecraft_devices::NoteEvent;
+    use livecraft_devices::{AudioIo, DeviceProcessor, EventList, EventSink, NoteEvent};
     use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project};
 
     const RATE: f32 = 44100.0;
@@ -642,40 +644,129 @@ mod tests {
         assert_eq!(actual.split_off(settled), expected.split_off(settled));
     }
 
-    /// Starts the Set with a constant 0.5 input on track 1: an audio clip of four beats from beat 0,
-    /// which the track's devices process, played from beat 0.
-    fn constant_input(project: &Project) -> (Engine, EngineHandle) {
+    /// Starts the Set with a constant 0.5 input on each listed track: an audio clip of four beats from
+    /// beat 0, which the track's devices process, played from beat 0. `setup` edits the graph first.
+    fn constant_on_tracks(
+        project: &Project,
+        tracks: &[TrackId],
+        setup: impl FnOnce(&mut CompiledGraph),
+    ) -> (Engine, EngineHandle) {
         use crate::audio_clip::DecodedAudio;
         use crate::clip::{ArrangedClip, PlayableClip, PlayableSource};
         use basedrop::Shared;
         let collector = Collector::new();
         let mut compiler = GraphCompiler::new(RATE, collector.handle());
         let mut graph = compiler.compile(project);
-        let samples = vec![0.5f32; 88200];
-        let data = DecodedAudio {
-            samples_l: samples.clone(),
-            samples_r: samples,
-            sample_rate: 44100,
-            channels: 2,
-        };
-        let track = graph.node_mut(TrackId(1)).expect("track 1");
-        track.clips.arranged.push(ArrangedClip {
-            start_beat: 0.0,
-            length_beats: 4.0,
-            clip: PlayableClip {
+        for track_id in tracks {
+            let samples = vec![0.5f32; 88200];
+            let data = DecodedAudio {
+                samples_l: samples.clone(),
+                samples_r: samples,
+                sample_rate: 44100,
+                channels: 2,
+            };
+            let track = graph.node_mut(*track_id).expect("track");
+            track.clips.arranged.push(ArrangedClip {
+                start_beat: 0.0,
                 length_beats: 4.0,
-                is_looping: false,
-                source: PlayableSource::Audio {
-                    data: Shared::new(&collector.handle(), data),
-                    gain: 1.0,
-                    is_warped: false,
-                    original_bpm: 120.0,
+                clip: PlayableClip {
+                    length_beats: 4.0,
+                    is_looping: false,
+                    source: PlayableSource::Audio {
+                        data: Shared::new(&collector.handle(), data),
+                        gain: 1.0,
+                        is_warped: false,
+                        original_bpm: 120.0,
+                    },
                 },
-            },
-        });
+            });
+        }
+        setup(&mut graph);
         let (engine, mut handle) = Engine::start(graph, RATE, collector).expect("start");
         handle.send(EngineCommand::SetPlaying(true)).expect("send");
         (engine, handle)
+    }
+
+    /// The Set with the constant input on track 1 only.
+    fn constant_input(project: &Project) -> (Engine, EngineHandle) {
+        constant_on_tracks(project, &[TrackId(1)], |_| {})
+    }
+
+    /// A pass-through device that delays the signal by its delay line and reports that latency.
+    struct LatencyDevice(DelayLine);
+
+    impl DeviceProcessor for LatencyDevice {
+        fn process(
+            &mut self,
+            _ctx: &ProcessContext,
+            io: &mut AudioIo<'_>,
+            _events: &EventList,
+            _out_events: &mut EventSink,
+        ) {
+            self.0.apply(&mut *io.left, &mut *io.right);
+        }
+
+        fn set_param(&mut self, _id: ParamId, _value: f32, _offset: u32) {}
+
+        fn latency_samples(&self) -> u32 {
+            self.0.len() as u32
+        }
+
+        fn reset(&mut self) {}
+    }
+
+    /// A device slot holding a `LatencyDevice` of `frames` frames.
+    fn latent(frames: usize) -> DeviceSlot {
+        DeviceSlot::new(
+            DeviceId(600),
+            true,
+            Box::new(LatencyDevice(DelayLine::new(frames))),
+            Vec::new(),
+            &[],
+        )
+    }
+
+    /// Checks that `out` is `reference` delayed by `latency` frames, with each path's copy of the
+    /// signal adding to exactly twice the reference.
+    fn assert_aligned(out: &[f32], reference: &[f32], latency: usize) {
+        assert!(reference.iter().any(|&sample| sample != 0.0));
+        assert!(out[..latency].iter().all(|&sample| sample == 0.0));
+        assert!(
+            out[latency..]
+                .iter()
+                .zip(reference)
+                .all(|(sample, source)| sample.to_bits() == (2.0 * source).to_bits())
+        );
+    }
+
+    #[test]
+    fn a_latency_device_on_one_track_leaves_the_main_output_aligned() {
+        let project = Project::new_default("Aligned");
+        let (mut single, _) = constant_input(&project);
+        let reference = render_left(&mut single, 4096);
+        let (mut pair, _) = constant_on_tracks(&project, &[TrackId(1), TrackId(2)], |graph| {
+            graph.add_device(TrackId(2), latent(128));
+        });
+        assert_aligned(&render_left(&mut pair, 4096), &reference, 128);
+    }
+
+    #[test]
+    fn a_latency_device_on_a_return_leaves_the_main_output_aligned() {
+        let project = Project::new_default("Return");
+        let (mut single, _) = constant_input(&project);
+        let reference = render_left(&mut single, 4096);
+
+        // Track 1 sends all of its level to the first return, whose reverb is cleared so that the
+        // return passes the signal through its latency device alone.
+        let mut sending = project.clone();
+        sending.return_tracks[0].device_chain.clear();
+        let return_id = sending.return_tracks[0].id;
+        sending.tracks[0].sends = vec![0.0; sending.return_tracks.len()];
+        sending.tracks[0].sends[0] = 1.0;
+        let (mut pair, _) = constant_on_tracks(&sending, &[TrackId(1)], |graph| {
+            graph.add_device(return_id, latent(128));
+        });
+        assert_aligned(&render_left(&mut pair, 4096), &reference, 128);
     }
 
     /// The Set with a Utility device after the track's devices, which the constant input runs through.
