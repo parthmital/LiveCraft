@@ -1,4 +1,6 @@
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
+use livecraft_model::param::ParamId;
 /// Live 12 Redux effect
 /// Digital downsampling (sample rate reduction) and bit reduction (quantization distortion).
 pub struct ReduxEffect {
@@ -105,5 +107,53 @@ impl ReduxEffect {
             left[i] = (1.0 - dry_wet) * in_l + dry_wet * bit_l;
             right[i] = (1.0 - dry_wet) * in_r + dry_wet * bit_r;
         }
+    }
+}
+
+impl DeviceProcessor for ReduxEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        ReduxEffect::process(self, io.left, io.right);
+    }
+
+    /// Ids are positions in the Redux table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.rate_factor = value.clamp(1.0, 32.0),
+            1 => self.bits = value.clamp(1.0, 16.0),
+            2 => self.jitter = value.clamp(0.0, 1.0),
+            3 => self.dry_wet = value.clamp(0.0, 1.0),
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {
+        ReduxEffect::reset(self);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn redux_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || ReduxEffect::new(44100.0),
+            &[(0, 4.0), (1, 6.0), (2, 0.2), (3, 0.8)],
+        );
+    }
+
+    #[test]
+    fn redux_bit_depth_changes_the_output() {
+        assert_parameter_changes_output(|| ReduxEffect::new(44100.0), 1, 4.0);
     }
 }

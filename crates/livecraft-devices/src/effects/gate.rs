@@ -1,4 +1,6 @@
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
+use livecraft_model::param::ParamId;
 /// Live 12 Noise Gate effect
 /// Passes only signals whose level exceeds a user-specified threshold,
 /// with hysteresis (Return), attack, hold, release, and floor controls.
@@ -83,5 +85,55 @@ impl GateEffect {
             left[i] *= self.current_gain;
             right[i] *= self.current_gain;
         }
+    }
+}
+
+impl DeviceProcessor for GateEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        GateEffect::process(self, io.left, io.right);
+    }
+
+    /// Ids are positions in the Gate table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.threshold_db = value,
+            1 => self.return_db = value,
+            2 => self.attack_ms = value.max(0.1),
+            3 => self.hold_ms = value.max(0.0),
+            4 => self.release_ms = value.max(1.0),
+            5 => self.floor_db = value,
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {
+        GateEffect::reset(self);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn gate_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || GateEffect::new(44100.0),
+            &[(0, -12.0), (1, 6.0), (3, 10.0)],
+        );
+    }
+
+    #[test]
+    fn gate_threshold_changes_the_output() {
+        assert_parameter_changes_output(|| GateEffect::new(44100.0), 0, -3.0);
     }
 }
