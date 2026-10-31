@@ -173,22 +173,45 @@ impl Project {
         }
     }
 
-    /// Finds a track of any kind (audio, MIDI, return, or Main) by id.
-    pub fn track(&self, id: TrackId) -> Option<&Track> {
+    /// Every track: the tracks, then the return tracks, then the Main track.
+    pub fn all_tracks(&self) -> impl Iterator<Item = &Track> {
         self.tracks
             .iter()
             .chain(&self.return_tracks)
             .chain(std::iter::once(&self.main_track))
-            .find(|track| track.id == id)
     }
 
-    /// Finds a track of any kind (audio, MIDI, return, or Main) by id, for editing.
-    pub fn track_mut(&mut self, id: TrackId) -> Option<&mut Track> {
+    /// Every track, mutably, in the same order as `all_tracks`.
+    pub fn all_tracks_mut(&mut self) -> impl Iterator<Item = &mut Track> {
         self.tracks
             .iter_mut()
             .chain(self.return_tracks.iter_mut())
             .chain(std::iter::once(&mut self.main_track))
-            .find(|track| track.id == id)
+    }
+
+    /// Finds a track of any kind (audio, MIDI, return, or Main) by id.
+    pub fn track(&self, id: TrackId) -> Option<&Track> {
+        self.all_tracks().find(|track| track.id == id)
+    }
+
+    /// Finds a track of any kind (audio, MIDI, return, or Main) by id, for editing.
+    pub fn track_mut(&mut self, id: TrackId) -> Option<&mut Track> {
+        self.all_tracks_mut().find(|track| track.id == id)
+    }
+
+    /// True when `to` is `from` or one of its group ancestors. A parent chain that never
+    /// ends is a loop, and counts as reaching `to`.
+    pub(crate) fn reaches(&self, from: TrackId, to: TrackId) -> bool {
+        let limit = self.all_tracks().count() + 1;
+        let mut current = Some(from);
+        for _ in 0..limit {
+            match current {
+                Some(id) if id == to => return true,
+                Some(id) => current = self.track(id).and_then(|track| track.parent),
+                None => return false,
+            }
+        }
+        true
     }
 
     /// Returns the row of a scene in the Session View.
