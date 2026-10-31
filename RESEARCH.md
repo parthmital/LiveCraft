@@ -85,3 +85,10 @@ Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superse
 **Findings:** Firewheel 0.12.1 (BillyDM) is a no-mutex Rust audio graph engine aimed at games; its design (graph compiled off-thread, nodes processed in blocks, parameters as events) matches what a DAW needs, but its scope and node API target games.
 **Decision:** Borrow the design, build LiveCraft's graph, because Live's routing, PDC, and per-track threading needs are specific.
 **Sources:** [Firewheel](https://github.com/BillyDM/firewheel).
+
+## Property Testing (2026-10-31)
+
+**Brief:** property tests with 10,000 cases for musical-time round trips (M02) in a workspace without a property-testing crate.
+**Findings:** `proptest` 1.12.0 is the newest release (created 2026-10-10, after 1.11.0 on 2026-03-24), MIT OR Apache-2.0, MSRV 1.88, about 229 million crates.io downloads. It shrinks failing inputs and records failing seeds in `proptest-regressions/`. `quickcheck` 1.1.0 (created 2026-02-10, Unlicense OR MIT, MSRV 1.85, about 77 million downloads) is the runner-up: its `Arbitrary` generators are per type, so bounded ranges such as 20 to 999 BPM need hand-written wrappers, while proptest strategies express ranges directly.
+**Decision:** Adopt `proptest` 1.12.0 as a dev-dependency of `livecraft-time` only. Runner-up: `quickcheck` 1.1.0.
+**Sources:** [proptest on crates.io](https://crates.io/crates/proptest), [proptest docs](https://docs.rs/proptest), [quickcheck on crates.io](https://crates.io/crates/quickcheck).

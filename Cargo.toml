@@ -38,6 +38,7 @@ crossbeam-channel = "0.5"
 eframe = { version = "0.37.0", default-features = false, features = ["default_fonts", "wgpu", "x11", "wayland"] }
 egui = "0.37.0"
 insta = { version = "1.49.0", features = ["json"] }
+proptest = "1.12.0"
 livecraft-testkit = { path = "crates/livecraft-testkit" }
 livecraft-model = { path = "crates/livecraft-model" }
 livecraft-formats = { path = "crates/livecraft-formats" }
