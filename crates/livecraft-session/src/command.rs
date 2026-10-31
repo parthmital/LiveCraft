@@ -6,7 +6,7 @@
 //! `Operation` is a `Command` through the blanket impl below.
 
 use livecraft_model::edit::EditError;
-use livecraft_model::ids::{IdAllocator, LaneId, TrackId};
+use livecraft_model::ids::{ClipId, IdAllocator, LaneId, TrackId};
 use livecraft_model::model::Project;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -39,6 +39,24 @@ pub enum CommandError {
     NotFinite { what: &'static str, value: f64 },
     #[error("{value:?} is not a color in the form #RRGGBB")]
     BadColor { value: String },
+    #[error("no clip with id {0}")]
+    NoSuchClip(ClipId),
+    #[error("clip {0} is not a MIDI clip, so it has no notes")]
+    NotMidiClip(ClipId),
+    #[error("clip {clip} has no note at index {index}")]
+    NoSuchNote { clip: ClipId, index: usize },
+    #[error("track {track} already has a clip in slot {slot}")]
+    SlotOccupied { track: TrackId, slot: usize },
+    #[error("track {track} has no clip in slot {slot}")]
+    SlotEmpty { track: TrackId, slot: usize },
+    #[error("{what} runs from {start} to {end}, which is not a valid range")]
+    InvalidRange {
+        what: &'static str,
+        start: f64,
+        end: f64,
+    },
+    #[error("{what} must be greater than zero, not {value}")]
+    NotPositive { what: &'static str, value: f64 },
 }
 
 /// One kind of edit to a Live Set.

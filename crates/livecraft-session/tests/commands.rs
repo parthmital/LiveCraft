@@ -308,6 +308,38 @@ fn every_registered_command_round_trips_its_arguments() {
             "automation.remove_point",
             json!({ "track": 1, "lane": 1, "index": 0 }),
         ),
+        (
+            "clip.create_audio",
+            json!({ "track": 3, "slot": 0, "name": "Loop", "file_path": "loop.wav", "length_beats": 8.0 }),
+        ),
+        (
+            "clip.create_midi",
+            json!({ "track": 1, "slot": 0, "name": "Intro", "length_beats": 4.0 }),
+        ),
+        ("clip.delete", json!({ "clip": 9 })),
+        (
+            "clip.duplicate",
+            json!({ "clip": 9, "track": 1, "slot": 1 }),
+        ),
+        ("clip.move", json!({ "clip": 9, "track": 1, "slot": 2 })),
+        ("clip.rename", json!({ "clip": 9, "name": "Verse" })),
+        (
+            "clip.set_loop",
+            json!({ "clip": 9, "loop_start_beat": 0.0, "loop_end_beat": 4.0, "is_looping": true }),
+        ),
+        (
+            "clip.set_markers",
+            json!({ "clip": 9, "start_marker_beat": 0.0, "end_marker_beat": 4.0 }),
+        ),
+        (
+            "note.add",
+            json!({ "clip": 9, "note": { "pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100.0, "release_velocity": 64.0, "probability": 1.0, "velocity_deviation": 0.0, "mute": false } }),
+        ),
+        (
+            "note.edit",
+            json!({ "clip": 9, "index": 0, "note": { "pitch": 64, "start_beat": 0.0, "duration_beats": 2.0, "velocity": 90.0, "release_velocity": 64.0, "probability": 1.0, "velocity_deviation": 0.0, "mute": false } }),
+        ),
+        ("note.remove", json!({ "clip": 9, "index": 0 })),
         ("track.create_audio", json!({ "name": "5-Audio" })),
         ("track.create_group", json!({ "name": "Drums" })),
         ("track.create_midi", json!({ "name": "6-MIDI" })),

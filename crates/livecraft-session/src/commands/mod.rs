@@ -2,6 +2,8 @@
 //! `Operation` in one of these modules, registered in that module's `register`.
 
 pub mod automation;
+pub mod clip;
+pub mod note;
 pub mod track;
 pub mod transport;
 
@@ -18,6 +20,8 @@ pub fn registry() -> CommandRegistry {
 /// Registers every command. Each area registers its own operations.
 pub fn register(registry: &mut CommandRegistry) {
     automation::register(registry);
+    clip::register(registry);
+    note::register(registry);
     track::register(registry);
     transport::register(registry);
 }
