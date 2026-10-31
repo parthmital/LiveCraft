@@ -1,6 +1,8 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 
 #[derive(Debug, Clone)]
 pub struct EqEightBand {
@@ -146,5 +148,69 @@ impl EqEight {
             }
         }
         (l, r)
+    }
+}
+
+impl DeviceProcessor for EqEight {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
+    }
+
+    /// Ids are positions in the EQ Eight table: four per band, in the order frequency, gain, Q,
+    /// and enabled. Band 1 is id 0 to 3.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        let band_idx = usize::from(id.0 / 4);
+        if id.0 % 4 == 3 {
+            self.set_band_enabled(band_idx, value > 0.5);
+            return;
+        }
+        let Some(band) = self.bands.get_mut(band_idx) else {
+            return;
+        };
+        match id.0 % 4 {
+            0 => band.freq = value,
+            1 => band.gain_db = value,
+            _ => band.q = value,
+        }
+        band.filter.set_params(band.freq, band.gain_db, band.q);
+    }
+
+    fn reset(&mut self) {
+        for band in &mut self.bands {
+            band.filter.reset_state();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn eq_eight_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || EqEight::new(44100.0),
+            &[(0, 200.0), (1, 3.0), (2, 1.2), (8, 1000.0), (9, -4.0)],
+        );
+    }
+
+    #[test]
+    fn eq_eight_band_gain_changes_the_output() {
+        // Id 5 is band 2's gain. Band 1 is a high-pass, which has no gain.
+        assert_parameter_changes_output(|| EqEight::new(44100.0), 5, 6.0);
+    }
+
+    #[test]
+    fn eq_eight_band_enabled_flag_bypasses_the_band() {
+        assert_parameter_changes_output(|| EqEight::new(44100.0), 3, 0.0);
     }
 }
