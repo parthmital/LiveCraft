@@ -527,7 +527,7 @@ pub fn render_session_view(
                     // Master Track Mixer Strip
                     render_master_mixer_strip(
                         ui,
-                        &mut project.master_track,
+                        &mut project.main_track,
                         master_meter,
                         master_width,
                         palette,

@@ -111,7 +111,8 @@ pub struct Project {
     pub tuning: Option<TuningSystem>,
     pub tracks: Vec<Track>,
     pub return_tracks: Vec<Track>,
-    pub master_track: Track,
+    #[serde(rename = "master_track")]
+    pub main_track: Track,
     pub scenes: Vec<Scene>,
 }
 
@@ -149,8 +150,8 @@ impl Project {
             },
         ];
 
-        let mut master_track = Track::new(TrackId(7), "Master", TrackType::Master, 0);
-        master_track
+        let mut main_track = Track::new(TrackId(7), "Master", TrackType::Main, 0);
+        main_track
             .device_chain
             .push(Device::new(301.into(), "Limiter", DeviceType::Limiter));
 
@@ -167,7 +168,7 @@ impl Project {
             tuning: None,
             tracks,
             return_tracks,
-            master_track,
+            main_track,
             scenes,
         }
     }
@@ -177,7 +178,7 @@ impl Project {
         self.tracks
             .iter()
             .chain(&self.return_tracks)
-            .chain(std::iter::once(&self.master_track))
+            .chain(std::iter::once(&self.main_track))
             .find(|track| track.id == id)
     }
 
@@ -186,7 +187,7 @@ impl Project {
         self.tracks
             .iter_mut()
             .chain(self.return_tracks.iter_mut())
-            .chain(std::iter::once(&mut self.master_track))
+            .chain(std::iter::once(&mut self.main_track))
             .find(|track| track.id == id)
     }
 
@@ -202,7 +203,7 @@ impl Project {
             .tracks
             .iter()
             .chain(&self.return_tracks)
-            .chain(std::iter::once(&self.master_track))
+            .chain(std::iter::once(&self.main_track))
         {
             highest = highest.max(track.id.0);
             for device in &track.device_chain {

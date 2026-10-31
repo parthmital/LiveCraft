@@ -80,8 +80,8 @@ impl LiveCraftApp {
         let bottom_tab = options.initial_tab.unwrap_or(0);
 
         let last_bpm = project.transport.bpm();
-        let last_master_vol = project.master_track.volume_db;
-        let last_master_pan = project.master_track.pan;
+        let last_master_vol = project.main_track.volume_db;
+        let last_master_pan = project.main_track.pan;
         let last_tracks_snapshot = project
             .tracks
             .iter()
@@ -277,8 +277,8 @@ impl LiveCraftApp {
                     })
                     .collect();
                 self.last_bpm = self.project.transport.bpm();
-                self.last_master_vol = self.project.master_track.volume_db;
-                self.last_master_pan = self.project.master_track.pan;
+                self.last_master_vol = self.project.main_track.volume_db;
+                self.last_master_pan = self.project.main_track.pan;
                 return;
             }
 
@@ -287,14 +287,14 @@ impl LiveCraftApp {
                 self.last_bpm = self.project.transport.bpm();
             }
 
-            if (self.project.master_track.volume_db - self.last_master_vol).abs() > 0.01 {
-                eng.set_master_volume(self.project.master_track.volume_db);
-                self.last_master_vol = self.project.master_track.volume_db;
+            if (self.project.main_track.volume_db - self.last_master_vol).abs() > 0.01 {
+                eng.set_master_volume(self.project.main_track.volume_db);
+                self.last_master_vol = self.project.main_track.volume_db;
             }
 
-            if (self.project.master_track.pan - self.last_master_pan).abs() > 0.01 {
-                eng.set_master_pan(self.project.master_track.pan);
-                self.last_master_pan = self.project.master_track.pan;
+            if (self.project.main_track.pan - self.last_master_pan).abs() > 0.01 {
+                eng.set_master_pan(self.project.main_track.pan);
+                self.last_master_pan = self.project.main_track.pan;
             }
 
             for (idx, trk) in self.project.tracks.iter().enumerate() {

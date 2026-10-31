@@ -516,7 +516,7 @@ impl AudioGraph {
             .iter()
             .map(|t| TrackDspState::new(t, sample_rate))
             .collect();
-        let master_state = TrackDspState::new(&project.master_track, sample_rate);
+        let master_state = TrackDspState::new(&project.main_track, sample_rate);
 
         let mut scratch_l = Vec::with_capacity(8192);
         scratch_l.resize(8192, 0.0);
@@ -695,7 +695,7 @@ impl AudioGraph {
 
         // Master track
         self.master_state
-            .sync_devices(&project.master_track, self.sample_rate);
+            .sync_devices(&project.main_track, self.sample_rate);
     }
 
     pub fn process_buffer_interleaved(&mut self, data: &mut [f32], channels: usize) {

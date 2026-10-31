@@ -419,7 +419,8 @@ fn print_project_inspection(proj: &Project, show_devices: bool, show_clips: bool
             TrackType::Audio => "Audio",
             TrackType::Midi => "MIDI",
             TrackType::Return => "Return",
-            TrackType::Master => "Master",
+            TrackType::Group => "Group",
+            TrackType::Main => "Main",
         };
         let mute_flag = if trk.is_muted { " [MUTED]" } else { "" };
         let solo_flag = if trk.is_soloed { " [SOLO]" } else { "" };

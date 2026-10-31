@@ -9,8 +9,12 @@ use serde::{Deserialize, Serialize};
 pub enum TrackType {
     Audio,
     Midi,
+    /// Sums the tracks inside it. Group tracks have mixer controls and effects, but no clips (manual 18.3, page 400).
+    Group,
     Return,
-    Master,
+    /// The Main track (manual 18.4, page 402). Serialised as `Master` until the owner decides the export name (OWNER-QUEUE Q04).
+    #[serde(rename = "Master")]
+    Main,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -26,6 +30,9 @@ pub struct Track {
     pub id: TrackId,
     pub name: String,
     pub track_type: TrackType,
+    /// The group track that contains this track. Groups nest, so a group can have a parent group.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent: Option<TrackId>,
     pub color: String,
     pub volume_db: f32, // 0.0 dB default, -inf to +6 dB
     pub pan: f32,       // -1.0 (Left) to +1.0 (Right), 0.0 = Center
@@ -54,9 +61,15 @@ impl Track {
             TrackType::Audio => ABLETON_PALETTE[10],  // Cyan
             TrackType::Midi => ABLETON_PALETTE[2],    // Amber
             TrackType::Return => ABLETON_PALETTE[14], // Purple
-            TrackType::Master => "#888888",
+            TrackType::Group | TrackType::Main => "#888888",
         };
 
+        // A group track holds no clips, so it gets no clip slots whatever the caller asks for.
+        let num_slots = if track_type == TrackType::Group {
+            0
+        } else {
+            num_slots
+        };
         let clip_slots = (0..num_slots)
             .map(|slot_idx| ClipSlot::empty((id.0 * 1000) + slot_idx as u64))
             .collect();
@@ -65,6 +78,7 @@ impl Track {
             id,
             name: name.into(),
             track_type,
+            parent: None,
             color: default_color.to_string(),
             volume_db: 0.0,
             pan: 0.0,

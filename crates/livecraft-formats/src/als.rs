@@ -75,7 +75,7 @@ fn handle_value_element(
     bpm: &mut f32,
     current_device: &mut Option<Device>,
     current_track: &mut Option<Track>,
-    master_track: &mut Track,
+    main_track: &mut Track,
 ) {
     if in_tempo {
         if let Ok(val) = val_str.parse::<f32>() {
@@ -95,7 +95,7 @@ fn handle_value_element(
             if let Some(trk) = current_track {
                 trk.volume_db = vol_db;
             } else {
-                master_track.volume_db = vol_db;
+                main_track.volume_db = vol_db;
             }
         }
     } else if parent_tag == "Pan" {
@@ -104,7 +104,7 @@ fn handle_value_element(
             if let Some(trk) = current_track {
                 trk.pan = pan;
             } else {
-                master_track.pan = pan;
+                main_track.pan = pan;
             }
         }
     } else if let Some(dev) = current_device
@@ -183,7 +183,7 @@ impl AlsParser {
         let mut bpm = 120.0f32;
         let mut tracks: Vec<Track> = Vec::new();
         let mut return_tracks: Vec<Track> = Vec::new();
-        let mut master_track = Track::new(TrackId(999), "Master", TrackType::Master, 0);
+        let mut main_track = Track::new(TrackId(999), "Master", TrackType::Main, 0);
         let mut scenes: Vec<Scene> = Vec::new();
         let mut scale = ScaleConfig::default();
 
@@ -333,7 +333,7 @@ impl AlsParser {
                                         &mut bpm,
                                         &mut current_device,
                                         &mut current_track,
-                                        &mut master_track,
+                                        &mut main_track,
                                     );
                                 }
                             }
@@ -453,7 +453,7 @@ impl AlsParser {
                                     &mut bpm,
                                     &mut current_device,
                                     &mut current_track,
-                                    &mut master_track,
+                                    &mut main_track,
                                 );
                             }
                         }
@@ -474,7 +474,7 @@ impl AlsParser {
                         if let Some(ref mut trk) = current_track {
                             trk.device_chain.push(dev);
                         } else {
-                            master_track.device_chain.push(dev);
+                            main_track.device_chain.push(dev);
                         }
                     } else if tag_name == "MidiKey" {
                         for attr in e.attributes().flatten() {
@@ -606,7 +606,7 @@ impl AlsParser {
                                 if let Some(ref mut trk) = current_track {
                                     trk.device_chain.push(dev);
                                 } else {
-                                    master_track.device_chain.push(dev);
+                                    main_track.device_chain.push(dev);
                                 }
                             }
                         }
@@ -616,7 +616,7 @@ impl AlsParser {
                                 if let Some(ref mut trk) = current_track {
                                     trk.device_chain.push(dev);
                                 } else {
-                                    master_track.device_chain.push(dev);
+                                    main_track.device_chain.push(dev);
                                 }
                             }
                         }
@@ -663,8 +663,8 @@ impl AlsParser {
         }
 
         // Master track default devices if none parsed
-        if master_track.device_chain.is_empty() {
-            master_track.device_chain.push(Device::new(
+        if main_track.device_chain.is_empty() {
+            main_track.device_chain.push(Device::new(
                 DeviceId(901),
                 "Limiter",
                 DeviceType::Limiter,
@@ -683,7 +683,7 @@ impl AlsParser {
             tuning: None,
             tracks,
             return_tracks,
-            master_track,
+            main_track,
             scenes,
         })
     }
@@ -825,7 +825,8 @@ impl AlsParser {
                 TrackType::Audio => "AudioTrack",
                 TrackType::Midi => "MidiTrack",
                 TrackType::Return => "ReturnTrack",
-                TrackType::Master => "MainTrack",
+                TrackType::Group => "GroupTrack",
+                TrackType::Main => "MainTrack",
             };
 
             let mut track_elem = BytesStart::new(tag_name);

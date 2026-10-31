@@ -382,3 +382,33 @@ fn test_transport_rejects_an_invalid_time_signature() {
     assert!(proj.transport.set_time_signature(4, 3).is_err());
     assert_eq!(proj.transport.time_signature(), (4, 4));
 }
+
+#[test]
+fn test_group_tracks_nest_and_hold_no_clips() {
+    let mut proj = Project::new_default("Groups");
+    assert_eq!(proj.main_track.track_type, TrackType::Main);
+
+    // Group tracks get no clip slots, whatever the caller asks for (manual 18.3, page 400).
+    let outer = Track::new(TrackId(20), "Drums", TrackType::Group, 8);
+    let mut inner = Track::new(TrackId(21), "Kit", TrackType::Group, 8);
+    let mut kick = Track::new(TrackId(22), "Kick", TrackType::Audio, 8);
+    assert!(outer.clip_slots.is_empty());
+    assert!(inner.clip_slots.is_empty());
+
+    // A group nested in a group (manual 18.3, page 400; soloing a nested group, page 402).
+    inner.parent = Some(outer.id);
+    kick.parent = Some(inner.id);
+    proj.tracks.push(outer);
+    proj.tracks.push(inner);
+    proj.tracks.push(kick);
+
+    assert_eq!(
+        proj.track(TrackId(21)).and_then(|t| t.parent),
+        Some(TrackId(20))
+    );
+    assert_eq!(
+        proj.track(TrackId(22)).and_then(|t| t.parent),
+        Some(TrackId(21))
+    );
+    assert_eq!(proj.track(TrackId(20)).and_then(|t| t.parent), None);
+}
