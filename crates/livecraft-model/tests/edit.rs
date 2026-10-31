@@ -133,6 +133,7 @@ fn a_route_to_the_track_itself_is_refused() {
     let routing = Routing {
         audio_from: AudioInput::None,
         audio_to: AudioOutput::Track(TrackId(1)),
+        ..Routing::default()
     };
     assert_eq!(
         proj.set_route(TrackId(1), routing),
@@ -211,6 +212,7 @@ fn random_edit(project: &mut Project, ids: &mut IdAllocator, kind: u8, pick: usi
             let routing = Routing {
                 audio_from: AudioInput::None,
                 audio_to,
+                ..Routing::default()
             };
             let _ = project.set_route(target, routing);
         }

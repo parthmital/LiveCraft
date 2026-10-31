@@ -1,5 +1,5 @@
-//! The audio path renders a block without allocating (M05 items 5 and 6, M06 items 5 and 6 for audio
-//! and MIDI input). The render runs inside the allocation check, which aborts on any allocation or free.
+//! The audio path renders a block without allocating (M05 items 5 and 6, M06 items 5 to 7 for audio
+//! and MIDI input and MIDI output). The render runs inside the allocation check, which aborts on any allocation or free.
 
 use livecraft_devices::{NoteEvent, ProcessContext};
 use livecraft_engine::compiled::MAX_BLOCK;
@@ -9,7 +9,8 @@ use livecraft_engine::midi::{HostClock, MidiMessage, period_us};
 use livecraft_engine::rt::checked;
 use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{
-    AudioInput, Device, DeviceType, MonitoringMode, Project, Track, TrackType,
+    AudioInput, Clip, ClipPayload, Device, DeviceType, MidiNote, MidiOutput, MonitoringMode,
+    Project, Track, TrackType,
 };
 
 #[cfg(debug_assertions)]
@@ -263,4 +264,72 @@ fn a_midi_note_on_plays_on_its_frame_in_an_armed_midi_track_and_not_in_an_unarme
     assert!(out[..441 * 2].iter().all(|&sample| sample == 0.0));
     assert!(out.iter().any(|&sample| sample != 0.0));
     assert_eq!(out, expected);
+}
+
+#[test]
+fn a_midi_track_routed_to_an_output_port_sends_its_clip_notes_on_their_frames() {
+    let mut project = Project::new_default("MIDI out");
+    let track = project
+        .tracks
+        .iter_mut()
+        .find(|track| track.id == TrackId(1))
+        .expect("track 1");
+    assert_eq!(track.track_type, TrackType::Midi);
+    track.routing.midi_to = MidiOutput::External {
+        port: 3,
+        channel: 5,
+    };
+    // At 120 BPM a beat is 22050 frames, so the notes start 11025 frames apart.
+    let mut clip = Clip::new_midi(500, "Out", 4.0);
+    if let ClipPayload::Midi(ref mut data) = clip.payload {
+        data.notes.push(MidiNote::new(60, 0.0, 0.25, 100));
+        data.notes.push(MidiNote::new(64, 0.5, 0.25, 90));
+    }
+    track.clip_slots[0].clip = Some(clip);
+
+    let collector = basedrop::Collector::new();
+    let mut compiler = GraphCompiler::new(44100.0, collector.handle());
+    let (mut engine, mut handle) =
+        Engine::start(compiler.compile(&project), 44100.0, collector).expect("start the engine");
+    let (producer, mut consumer) = rtrb::RingBuffer::new(64);
+    let (anchor, mut anchors) = triple_buffer::triple_buffer(&None);
+    engine.set_midi_output(producer, anchor);
+    handle.send(EngineCommand::SetTempo(120.0)).expect("send");
+    handle
+        .send(EngineCommand::TriggerClip {
+            track: TrackId(1),
+            slot: 0,
+        })
+        .expect("send");
+    handle.send(EngineCommand::SetPlaying(true)).expect("send");
+
+    let mut out = vec![0.0f32; MAX_BLOCK * 2];
+    for buffer in 0..40u64 {
+        checked(|| engine.process_at(&mut out, 2, buffer * 11_610));
+    }
+    assert_eq!(*anchors.read(), Some((39 * MAX_BLOCK as u64, 39 * 11_610)));
+
+    let mut sent = Vec::new();
+    while let Ok(event) = consumer.pop() {
+        assert_eq!(event.port, 3);
+        sent.push((event.frame, event.bytes));
+    }
+    let bytes: Vec<[u8; 3]> = sent.iter().map(|&(_, bytes)| bytes).collect();
+    assert_eq!(
+        bytes,
+        vec![
+            [0x95, 60, 100],
+            [0x85, 60, 0],
+            [0x95, 64, 90],
+            [0x85, 64, 0]
+        ]
+    );
+    let first = sent[0].0;
+    let after: Vec<i64> = sent
+        .iter()
+        .map(|&(frame, _)| frame as i64 - first as i64)
+        .collect();
+    for (got, want) in after.iter().zip([0.0, 5512.5, 11025.0, 16537.5]) {
+        assert!((*got as f64 - want).abs() <= 1.0, "{after:?}");
+    }
 }

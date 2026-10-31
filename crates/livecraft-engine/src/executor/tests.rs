@@ -475,6 +475,7 @@ fn a_graph_with_more_nodes_than_the_snapshot_holds_is_refused() {
                 Vec::new(),
                 ClipLane::new(Vec::new(), Vec::new(), false, 0),
                 InputRoute::default(),
+                None,
             )
         })
         .collect();

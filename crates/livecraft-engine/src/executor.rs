@@ -8,7 +8,9 @@
 
 use crate::collector;
 use crate::compiled::{CompiledGraph, InputBlock, MAX_BLOCK, MAX_NOTE_EVENTS, Node, RAMP_STEP};
-use crate::midi::{HostClock, MidiMessage, note_event, period_us, sample_offset};
+use crate::midi::{
+    HostClock, MidiMessage, MidiOutEvent, note_event, note_out_event, period_us, sample_offset,
+};
 use crate::snapshot::{ClipState, EngineSnapshot, MAX_NODES, Transport, cpu_load};
 use livecraft_devices::{EventList, ProcessContext};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
@@ -171,6 +173,10 @@ pub struct Engine {
     input: Option<InputCapture>,
     /// The MIDI input the driver feeds, when the session opened MIDI ports.
     midi: Option<MidiCapture>,
+    /// The MIDI output the engine feeds, when the session opened MIDI output ports.
+    midi_out: Option<MidiOutCapture>,
+    /// The clock the buffers start on. `set_midi_input` replaces it with the MIDI input's clock.
+    clock: HostClock,
 }
 
 /// The external input the driver captures: the samples its input stream pushed, and the block being
@@ -187,11 +193,17 @@ struct InputCapture {
 struct MidiCapture {
     /// One queue per open input port.
     messages: Vec<rtrb::Consumer<MidiMessage>>,
-    clock: HostClock,
     /// The note events of the buffer, at their offsets in the buffer and in offset order. It is
     /// allocated with room for `MAX_NOTE_EVENTS` in `Engine::set_midi_input`, so filling it allocates
     /// nothing.
     notes: EventList,
+}
+
+/// The MIDI output the engine feeds: the queue to the MIDI output thread, and the anchor that maps a
+/// buffer's frames to host time. The anchor is None until the first buffer.
+struct MidiOutCapture {
+    events: rtrb::Producer<MidiOutEvent>,
+    anchor: triple_buffer::Input<Option<(u64, u64)>>,
 }
 
 impl InputCapture {
@@ -250,6 +262,8 @@ impl Engine {
             snapshots: snapshot_tx,
             input: None,
             midi: None,
+            midi_out: None,
+            clock: HostClock::start(),
         };
         let handle = EngineHandle {
             commands: command_tx,
@@ -271,32 +285,46 @@ impl Engine {
         });
     }
 
-    /// Reads MIDI input from the port queues in `messages`, whose messages are stamped on `clock`. In each buffer, the note
-    /// on and note off messages that arrived during the previous buffer period play in this buffer, on
-    /// their frames, in every MIDI track that takes MIDI input (`Node::monitors_midi`). Call it before the
-    /// engine starts on a driver. The note list is allocated here.
+    /// Reads MIDI input from the port queues in `messages`, whose messages are stamped on `clock`. In each
+    /// buffer, the note on and note off messages that arrived during the previous buffer period play in this
+    /// buffer, on their frames, in every MIDI track that takes MIDI input (`Node::monitors_midi`). The engine
+    /// reads `clock` at the start of each buffer from now on, so the MIDI threads and the buffers share one
+    /// time origin. Call it before the engine starts on a driver. The note list is allocated here.
     pub fn set_midi_input(&mut self, messages: Vec<rtrb::Consumer<MidiMessage>>, clock: HostClock) {
+        self.clock = clock;
         self.midi = Some(MidiCapture {
             messages,
-            clock,
             notes: EventList::with_capacity(MAX_NOTE_EVENTS),
         });
     }
 
+    /// Sends the clip notes of the MIDI tracks routed to an external port into `events`, each stamped with
+    /// the engine frame at which it plays, and publishes the anchor the MIDI output thread maps frames to host
+    /// time with. Call it before the engine starts on a driver.
+    pub fn set_midi_output(
+        &mut self,
+        events: rtrb::Producer<MidiOutEvent>,
+        anchor: triple_buffer::Input<Option<(u64, u64)>>,
+    ) {
+        self.midi_out = Some(MidiOutCapture { events, anchor });
+    }
+
     /// Renders `out`, which holds interleaved frames of `channels` samples. It is the only call from
-    /// the driver callback. The buffer starts at the MIDI clock's time now.
+    /// the driver callback. The buffer starts at the engine clock's time now.
     pub fn process(&mut self, out: &mut [f32], channels: usize) {
-        let block_start_us = self.midi.as_ref().map_or(0, |midi| midi.clock.now_us());
+        let block_start_us = self.clock.now_us();
         self.process_at(out, channels, block_start_us);
     }
 
-    /// As `process`, for a buffer that starts at `block_start_us` on the MIDI clock. `process` reads that
+    /// As `process`, for a buffer that starts at `block_start_us` on the engine clock. `process` reads that
     /// time from the clock. Tests pass a time they chose, so the frames of MIDI input are known.
     pub fn process_at(&mut self, out: &mut [f32], channels: usize, block_start_us: u64) {
         if channels == 0 {
             return;
         }
         let started = Instant::now();
+        // The first frame of this buffer, and when it starts: the anchor for MIDI output.
+        let anchor = (self.frame, block_start_us);
         self.apply_pending();
         let frames = out.len() / channels;
         self.receive_midi(block_start_us, frames);
@@ -317,6 +345,7 @@ impl Engine {
                 .as_mut()
                 .map_or(InputBlock::SILENT, |capture| capture.fill(block));
             self.graph.render_with_input(&context, input);
+            self.push_midi_out();
             let (left, right) = self.graph.output(block);
             let samples = &mut out[start * channels..(start + block) * channels];
             for (frame, chunk) in samples.chunks_exact_mut(channels).enumerate() {
@@ -333,7 +362,7 @@ impl Engine {
             self.frame += block as u64;
             start += block;
         }
-        self.publish(frames, started.elapsed().as_secs_f32());
+        self.publish(frames, started.elapsed().as_secs_f32(), anchor);
     }
 
     /// Pops the MIDI messages that arrived and turns the note on and note off ones into note events at
@@ -377,9 +406,30 @@ impl Engine {
         }
     }
 
-    /// Writes this callback's state into the snapshot and publishes it. Only fixed-size fields are
-    /// written, so nothing allocates or locks here.
-    fn publish(&mut self, frames: usize, elapsed_seconds: f32) {
+    /// Copies the clip notes of the MIDI tracks routed to an external port into the MIDI output queue, each at
+    /// its frame in the engine. The segment just rendered starts at `self.frame`. A full queue drops the note,
+    /// because the audio thread never waits.
+    fn push_midi_out(&mut self) {
+        let Some(midi) = self.midi_out.as_mut() else {
+            return;
+        };
+        for node in self.graph.nodes() {
+            let Some(route) = node.midi_out else {
+                continue;
+            };
+            for event in node.midi_out_notes.iter() {
+                let frame = self.frame + u64::from(event.offset());
+                let _ = midi
+                    .events
+                    .push(note_out_event(frame, route.port, route.channel, event));
+            }
+        }
+    }
+
+    /// Writes this callback's state into the snapshot and publishes it, and publishes the anchor the
+    /// callback started on to the MIDI output thread. Only fixed-size values are written, so nothing
+    /// allocates or locks here.
+    fn publish(&mut self, frames: usize, elapsed_seconds: f32, anchor: (u64, u64)) {
         let playhead_beats = self.playhead_at(self.frame);
         let snapshot = self.snapshots.input_buffer_mut();
         snapshot.transport = Transport {
@@ -399,6 +449,9 @@ impl Engine {
         snapshot.output = self.graph.output_meter;
         snapshot.cpu_load = cpu_load(elapsed_seconds, frames, self.sample_rate);
         self.snapshots.publish();
+        if let Some(midi) = self.midi_out.as_mut() {
+            midi.anchor.write(Some(anchor));
+        }
     }
 
     /// Applies the queued commands, then swaps in the newest submitted graph if there is room to

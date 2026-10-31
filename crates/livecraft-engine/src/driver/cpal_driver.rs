@@ -216,6 +216,10 @@ impl AudioDriver for CpalDriver {
         }
     }
 
+    fn output_delay(&self) -> Arc<AtomicU32> {
+        Arc::clone(&self.output_frames)
+    }
+
     fn start(&mut self, mut engine: Engine) -> Result<(), DriverError> {
         if self.stream.is_some() {
             return Err(DriverError::AlreadyStarted);

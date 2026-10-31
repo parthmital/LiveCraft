@@ -14,7 +14,7 @@ use livecraft_engine::driver::{
     AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, list_devices,
 };
 use livecraft_engine::executor::EngineCommand;
-use livecraft_engine::midi_io::list_midi_ports;
+use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::{AlsError, AlsParser};
 use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
@@ -410,7 +410,10 @@ fn open_output(
     midi: &MidiPreferences,
 ) -> Result<Playback, SessionAudioError> {
     let driver = factory(config)?;
-    let ports = midi.input_ports_to_open(&list_midi_ports().inputs);
+    let ports = MidiPorts {
+        inputs: midi.input_ports_to_open(&list_midi_ports().inputs),
+        outputs: midi.output_ports_to_open(),
+    };
     Playback::open_with_driver(project, driver, &ports).map_err(SessionAudioError::Output)
 }
 

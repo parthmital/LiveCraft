@@ -73,6 +73,17 @@ impl MidiPreferences {
             .map(|port| port.name.clone())
             .collect()
     }
+
+    /// The names of the output ports that receive the notes of tracks routed to them: the ports whose
+    /// Track switch is on (manual 2.3). With no output preference, no port is opened, so no note goes to
+    /// a device nobody chose.
+    pub fn output_ports_to_open(&self) -> Vec<String> {
+        self.outputs
+            .iter()
+            .filter(|port| port.track)
+            .map(|port| port.name.clone())
+            .collect()
+    }
 }
 
 /// One MIDI port and the switches of Live's MIDI Ports table (manual 2.3).
@@ -301,5 +312,20 @@ mod tests {
             midi.input_ports_to_open(&available),
             vec!["Keyboard".to_string()]
         );
+    }
+
+    #[test]
+    fn only_the_outputs_with_track_on_receive_notes_and_none_open_by_default() {
+        assert!(MidiPreferences::default().output_ports_to_open().is_empty());
+        let port = |name: &str, track: bool| MidiPortPreference {
+            name: name.to_string(),
+            track,
+            ..MidiPortPreference::default()
+        };
+        let midi = MidiPreferences {
+            inputs: Vec::new(),
+            outputs: vec![port("Synth", true), port("Drum Machine", false)],
+        };
+        assert_eq!(midi.output_ports_to_open(), vec!["Synth".to_string()]);
     }
 }

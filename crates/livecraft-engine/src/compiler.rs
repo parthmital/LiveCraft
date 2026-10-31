@@ -5,16 +5,16 @@
 use crate::audio_clip::{DecodedAudio, load_file};
 use crate::clip::{ArrangedClip, ClipLane, PlayNote, PlayableClip, PlayableSource};
 use crate::compiled::{
-    CompiledGraph, DeviceSlot, InputRoute, MAX_NOTE_EVENTS, Mixer, Node, NodeKind, Transfer,
-    compensate_latency,
+    CompiledGraph, DeviceSlot, InputRoute, MAX_NOTE_EVENTS, MidiOutRoute, Mixer, Node, NodeKind,
+    Transfer, compensate_latency,
 };
 use basedrop::{Handle, Shared};
 use livecraft_devices::{DeviceProcessor, create_device_processor, is_instrument};
 use livecraft_model::device::param_table;
 use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{
-    AudioInput, Clip, ClipPayload, Device, MidiClipData, MonitoringMode, Project, Track, TrackType,
-    TuningSystem,
+    AudioInput, Clip, ClipPayload, Device, MidiClipData, MidiOutput, MonitoringMode, Project,
+    Track, TrackType, TuningSystem,
 };
 use livecraft_model::param::ParamId;
 use std::collections::HashMap;
@@ -175,7 +175,15 @@ impl GraphCompiler {
             is_armed: track.is_armed,
             takes_midi: kind == NodeKind::Track && track.track_type == TrackType::Midi,
         };
-        Node::new(track.id, kind, mixer, devices, clips, input)
+        let midi_out = match track.routing.midi_to {
+            MidiOutput::External { port, channel }
+                if kind == NodeKind::Track && track.track_type == TrackType::Midi =>
+            {
+                Some(MidiOutRoute { port, channel })
+            }
+            _ => None,
+        };
+        Node::new(track.id, kind, mixer, devices, clips, input, midi_out)
     }
 
     /// The clips a track can play. A track monitoring its input rather than playing clips (manual
@@ -295,7 +303,7 @@ mod tests {
     use basedrop::Collector;
     use livecraft_devices::{NoteEvent, ProcessContext};
     use livecraft_model::ids::{DeviceId, TrackId};
-    use livecraft_model::model::{Device, DeviceType, MidiNote, Track, TrackType};
+    use livecraft_model::model::{Device, DeviceType, MidiNote, MidiOutput, Track, TrackType};
 
     /// A compiler and the collector that frees its shared data. The collector must outlive the graphs.
     fn compiler(collector: &Collector) -> GraphCompiler {
@@ -534,6 +542,53 @@ mod tests {
         assert!(!takes_midi(TrackId(3)));
         assert!(!takes_midi(TrackId(5)));
         assert!(!takes_midi(TrackId(7)));
+    }
+
+    #[test]
+    fn only_a_midi_track_sends_its_notes_to_the_external_port_it_is_routed_to() {
+        let mut project = Project::new_default("MIDI out");
+        let mut route_track = |id: u64, midi_to: MidiOutput| {
+            project
+                .tracks
+                .iter_mut()
+                .find(|track| track.id == TrackId(id))
+                .expect("the track is in the Set")
+                .routing
+                .midi_to = midi_to;
+        };
+        route_track(
+            1,
+            MidiOutput::External {
+                port: 2,
+                channel: 9,
+            },
+        );
+        route_track(
+            3,
+            MidiOutput::External {
+                port: 0,
+                channel: 0,
+            },
+        );
+        let (_collector, graph) = compile(&project);
+        let route = |track: TrackId| {
+            graph
+                .nodes()
+                .iter()
+                .find(|node| node.track == track)
+                .expect("the node is in the graph")
+                .midi_out
+        };
+        assert_eq!(
+            route(TrackId(1)),
+            Some(crate::compiled::MidiOutRoute {
+                port: 2,
+                channel: 9,
+            })
+        );
+        assert_eq!(route(TrackId(2)), None);
+        // Track 3 is an audio track, which has no MIDI output.
+        assert_eq!(route(TrackId(3)), None);
     }
 
     #[test]

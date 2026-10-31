@@ -68,6 +68,15 @@ pub struct InputRoute {
     pub takes_midi: bool,
 }
 
+/// Where a MIDI track sends its clip notes: an output port and a MIDI channel (manual 17.3, page 375).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MidiOutRoute {
+    /// The index of the output port in the list the system offers (`midi_io::list_midi_ports`).
+    pub port: u8,
+    /// The MIDI channel, from 0 to 15.
+    pub channel: u8,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
     Track,
@@ -179,6 +188,11 @@ pub struct Node {
     pub clips: ClipLane,
     /// The external input the track receives, and how it monitors it. Only tracks have one.
     pub input: InputRoute,
+    /// Where the track sends its clip notes, when it is a MIDI track routed to an external port.
+    pub midi_out: Option<MidiOutRoute>,
+    /// The clip note events of the current block that go to `midi_out`. They are copied out of `events`
+    /// before the devices run, because the devices clear `events`.
+    pub midi_out_notes: EventList,
     /// The level after the device chain, before the mixer.
     pub meter: TrackMeter,
     left: Box<[f32]>,
@@ -197,6 +211,7 @@ impl Node {
         devices: Vec<DeviceSlot>,
         clips: ClipLane,
         input: InputRoute,
+        midi_out: Option<MidiOutRoute>,
     ) -> Self {
         Self {
             track,
@@ -206,6 +221,8 @@ impl Node {
             events: EventList::with_capacity(MAX_NOTE_EVENTS),
             clips,
             input,
+            midi_out,
+            midi_out_notes: EventList::with_capacity(MAX_NOTE_EVENTS),
             meter: TrackMeter::default(),
             left: vec![0.0; MAX_BLOCK].into_boxed_slice(),
             right: vec![0.0; MAX_BLOCK].into_boxed_slice(),
@@ -252,15 +269,24 @@ impl Node {
         self.input.takes_midi && self.monitors_input()
     }
 
-    /// Fills this block's note events and audio from the clips the track plays.
+    /// Fills this block's note events and audio from the clips the track plays. When the track sends its
+    /// notes to an external port, the notes its clips schedule are copied to `midi_out_notes`.
     fn schedule_clips(&mut self, ctx: &ProcessContext) {
         let frames = ctx.frames;
+        let before = self.events.len();
         self.clips.schedule(
             ctx,
             &mut self.events,
             &mut self.left[..frames],
             &mut self.right[..frames],
         );
+        if self.midi_out.is_some() {
+            self.midi_out_notes.clear();
+            for event in self.events.iter().skip(before) {
+                // A full list drops the note, as the block's own events do.
+                let _ = self.midi_out_notes.push(*event);
+            }
+        }
     }
 
     fn clear(&mut self, frames: usize) {

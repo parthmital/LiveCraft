@@ -1,11 +1,16 @@
-//! MIDI input timing (M06 item 6, manual chapter 40, MIDI Fact Sheet, page 997).
+//! MIDI timing (M06 items 6 and 7, manual chapter 40, MIDI Fact Sheet, page 997).
 //!
-//! The MIDI input threads stamp each message with the host clock. The audio callback reads the clock
-//! when its buffer starts, and maps each stamp to a frame of that buffer with `sample_offset`. A
+//! Input: the MIDI input threads stamp each message with the host clock. The audio callback reads the
+//! clock when its buffer starts, and maps each stamp to a frame of that buffer with `sample_offset`. A
 //! message that arrived during the previous buffer period plays at the same position in this buffer,
 //! so the delay is one buffer and does not jitter.
+//!
+//! Output: the audio callback stamps each note with its frame. `MidiOutScheduler` maps the frame to the
+//! host time at which its sample is heard, from the callback's anchor (a frame and the host time of
+//! that frame) and the driver's output delay, and holds the note until then.
 
 use livecraft_devices::NoteEvent;
+use std::collections::VecDeque;
 use std::time::Instant;
 
 /// A MIDI message as an input port received it, stamped with the host clock.
@@ -109,6 +114,97 @@ pub fn note_event(message: &MidiMessage, offset: u32, frequency: &[f32; 128]) ->
 /// The period of a buffer of `frames` frames at `sample_rate`, in whole microseconds.
 pub fn period_us(frames: usize, sample_rate: f32) -> u64 {
     (frames as f64 * 1_000_000.0 / f64::from(sample_rate)).round() as u64
+}
+
+/// A MIDI message the engine sends to an output port, stamped with the frame at which it is sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MidiOutEvent {
+    /// The engine frame at which the note plays. The sender waits until that frame is heard.
+    pub frame: u64,
+    /// The index of the output port in the list the system offers (`midi_io::list_midi_ports`).
+    pub port: u8,
+    /// How many of `bytes` the message uses. A note uses three.
+    pub len: u8,
+    pub bytes: [u8; 3],
+}
+
+/// The MIDI message of a note event, for the frame `frame` and output port `port`. A note on is `0x90`
+/// with its velocity, and a note off is `0x80` with velocity 0. The channel, from 0 to 15, is the low
+/// nibble of the status byte.
+pub fn note_out_event(frame: u64, port: u8, channel: u8, event: &NoteEvent) -> MidiOutEvent {
+    let channel = channel & 0x0F;
+    let bytes = match *event {
+        NoteEvent::On {
+            pitch, velocity, ..
+        } => [0x90 | channel, pitch & 0x7F, velocity & 0x7F],
+        NoteEvent::Off { pitch, .. } => [0x80 | channel, pitch & 0x7F, 0],
+    };
+    MidiOutEvent {
+        frame,
+        port,
+        len: 3,
+        bytes,
+    }
+}
+
+/// The host time in microseconds at which the sample of `frame` is heard. `anchor` is a frame and the host
+/// time of that frame, and `latency_us` is the driver's output delay. A frame before the anchor gives a time
+/// before it.
+fn send_time_us(frame: u64, anchor: (u64, u64), sample_rate: f64, latency_us: u64) -> f64 {
+    let (anchor_frame, anchor_us) = anchor;
+    let frames = frame as f64 - anchor_frame as f64;
+    anchor_us as f64 + frames * 1_000_000.0 / sample_rate + latency_us as f64
+}
+
+/// Holds MIDI output events until their send time, and gives them out in frame order (manual 40.3). The
+/// engine pushes events in order within a block, but two tracks can add events of the same block in either
+/// order, so `push` keeps the queue sorted. The scheduler reads no clock: its callers pass the time.
+#[derive(Debug, Default)]
+pub struct MidiOutScheduler {
+    queue: VecDeque<MidiOutEvent>,
+}
+
+impl MidiOutScheduler {
+    /// Adds an event after the queued events of the same or an earlier frame, so events of one frame keep
+    /// the order they were pushed in.
+    pub fn push(&mut self, event: MidiOutEvent) {
+        let index = self
+            .queue
+            .partition_point(|queued| queued.frame <= event.frame);
+        self.queue.insert(index, event);
+    }
+
+    /// Removes and returns, in frame order, the events whose send time is at or before `now_us`. `anchor` is
+    /// a frame and the host time of that frame, `sample_rate` is in hertz, and `latency_us` is the output
+    /// delay of the driver.
+    pub fn due(
+        &mut self,
+        now_us: u64,
+        anchor: (u64, u64),
+        sample_rate: f64,
+        latency_us: u64,
+    ) -> impl Iterator<Item = MidiOutEvent> + '_ {
+        std::iter::from_fn(move || {
+            let front = self.queue.front()?;
+            if send_time_us(front.frame, anchor, sample_rate, latency_us) > now_us as f64 {
+                return None;
+            }
+            self.queue.pop_front()
+        })
+    }
+
+    /// The host time in microseconds of the first queued event to send, or None when none is queued. The
+    /// time is rounded up, so a thread that sleeps until it does not wake before the event is due.
+    pub fn next_send_us(
+        &self,
+        anchor: (u64, u64),
+        sample_rate: f64,
+        latency_us: u64,
+    ) -> Option<u64> {
+        let front = self.queue.front()?;
+        let time = send_time_us(front.frame, anchor, sample_rate, latency_us).ceil();
+        Some(time.max(0.0) as u64)
+    }
 }
 
 #[cfg(test)]
@@ -243,5 +339,111 @@ mod tests {
         for message in [controller, bend, tick] {
             assert_eq!(note_event(&message, 0, &table()), None);
         }
+    }
+
+    fn on(pitch: u8) -> NoteEvent {
+        NoteEvent::On {
+            offset: 0,
+            pitch,
+            velocity: 100,
+            freq_hz: 0.0,
+        }
+    }
+
+    fn off(pitch: u8) -> NoteEvent {
+        NoteEvent::Off { offset: 0, pitch }
+    }
+
+    fn event_at(frame: u64) -> MidiOutEvent {
+        note_out_event(frame, 0, 0, &on(60))
+    }
+
+    #[test]
+    fn a_note_on_is_sent_on_its_channel() {
+        let sent = note_out_event(10, 2, 3, &on(60));
+        assert_eq!(
+            sent,
+            MidiOutEvent {
+                frame: 10,
+                port: 2,
+                len: 3,
+                bytes: [0x93, 60, 100],
+            }
+        );
+    }
+
+    #[test]
+    fn a_note_off_is_sent_on_its_channel_with_velocity_zero() {
+        assert_eq!(note_out_event(0, 0, 9, &off(64)).bytes, [0x89, 64, 0]);
+    }
+
+    #[test]
+    fn the_channel_is_kept_to_the_low_nibble_of_the_status_byte() {
+        assert_eq!(note_out_event(0, 0, 17, &on(60)).bytes[0], 0x91);
+    }
+
+    #[test]
+    fn a_scheduled_event_is_sent_when_its_frame_is_heard() {
+        // Frame 0 is heard at 1000 us. Frame 441 at 44.1 kHz is 10 ms later.
+        let mut scheduler = MidiOutScheduler::default();
+        scheduler.push(event_at(441));
+        let anchor = (0, 1_000);
+        assert_eq!(scheduler.next_send_us(anchor, 44100.0, 0), Some(11_000));
+        assert_eq!(scheduler.due(10_999, anchor, 44100.0, 0).count(), 0);
+        let sent: Vec<_> = scheduler.due(11_000, anchor, 44100.0, 0).collect();
+        assert_eq!(sent, vec![event_at(441)]);
+        assert_eq!(scheduler.next_send_us(anchor, 44100.0, 0), None);
+    }
+
+    #[test]
+    fn events_are_sent_in_frame_order_even_when_pushed_out_of_order() {
+        let mut scheduler = MidiOutScheduler::default();
+        for frame in [900, 100, 500] {
+            scheduler.push(event_at(frame));
+        }
+        let frames: Vec<u64> = scheduler
+            .due(u64::MAX, (0, 0), 44100.0, 0)
+            .map(|event| event.frame)
+            .collect();
+        assert_eq!(frames, vec![100, 500, 900]);
+    }
+
+    #[test]
+    fn the_output_delay_moves_each_send_later() {
+        // Frame 441 is heard at 10 ms, and a 5 ms output delay sends it at 15 ms.
+        let mut scheduler = MidiOutScheduler::default();
+        scheduler.push(event_at(441));
+        assert_eq!(scheduler.due(14_999, (0, 0), 44100.0, 5_000).count(), 0);
+        assert_eq!(scheduler.due(15_000, (0, 0), 44100.0, 5_000).count(), 1);
+    }
+
+    #[test]
+    fn events_of_one_frame_keep_the_order_they_were_pushed_in() {
+        let mut scheduler = MidiOutScheduler::default();
+        scheduler.push(note_out_event(50, 0, 0, &off(60)));
+        scheduler.push(note_out_event(50, 0, 0, &on(60)));
+        let kinds: Vec<u8> = scheduler
+            .due(u64::MAX, (0, 0), 44100.0, 0)
+            .map(|event| event.bytes[0])
+            .collect();
+        assert_eq!(kinds, vec![0x80, 0x90]);
+    }
+
+    #[test]
+    fn a_frame_before_the_anchor_is_due_before_the_anchor_time() {
+        // Frame 0 is 1000 frames before the anchor, which is 22.68 ms before the anchor's 50 ms.
+        let mut scheduler = MidiOutScheduler::default();
+        scheduler.push(event_at(0));
+        let anchor = (1_000, 50_000);
+        assert_eq!(scheduler.due(27_324, anchor, 44100.0, 0).count(), 0);
+        assert_eq!(scheduler.due(27_325, anchor, 44100.0, 0).count(), 1);
+    }
+
+    #[test]
+    fn the_next_send_time_is_rounded_up_to_a_whole_microsecond() {
+        // One frame at 44.1 kHz is 22.7 us, which rounds up to 23 us.
+        let mut scheduler = MidiOutScheduler::default();
+        scheduler.push(event_at(1));
+        assert_eq!(scheduler.next_send_us((0, 0), 44100.0, 0), Some(23));
     }
 }

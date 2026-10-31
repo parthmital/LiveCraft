@@ -16,6 +16,8 @@ pub use virtual_driver::VirtualDriver;
 
 use crate::executor::Engine;
 use cpal::SampleFormat;
+use std::sync::Arc;
+use std::sync::atomic::AtomicU32;
 
 /// Plays or renders the engine. A driver is created stopped and takes the engine once, in `start`.
 /// It is not `Send`: a cpal stream may not leave the thread that opened it (CoreAudio), so the
@@ -32,6 +34,11 @@ pub trait AudioDriver {
     /// The input and output delays between the engine and the devices. Drivers without a device report
     /// zero.
     fn latency(&self) -> Latency;
+    /// The output delay in frames, as a shared value that the driver keeps current. The MIDI output thread
+    /// reads it, which it cannot do through the driver. A driver without a device keeps it at zero.
+    fn output_delay(&self) -> Arc<AtomicU32> {
+        Arc::new(AtomicU32::new(0))
+    }
     /// Takes the engine and starts calling `Engine::process`.
     fn start(&mut self, engine: Engine) -> Result<(), DriverError>;
     /// Whether the driver runs, and why it does not when it has stopped on its own.
@@ -134,6 +141,13 @@ mod tests {
         };
         assert!((latency.input_ms(44100) - 10.0).abs() < 1e-4);
         assert!((latency.output_ms(44100) - 20.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn a_driver_without_a_device_has_no_output_delay() {
+        use std::sync::atomic::Ordering;
+        let driver = NullDriver::new(44100, 512, 2);
+        assert_eq!(driver.output_delay().load(Ordering::Relaxed), 0);
     }
 
     #[test]
