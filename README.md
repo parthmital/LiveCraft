@@ -40,7 +40,7 @@ cargo run --bin livecraft -- gui
 
 | Command                  | What it does                            | Expected result                          | Common error and fix                                                                          |
 | ------------------------ | --------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 206 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 265 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
 | `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                      |
 | `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                         |
 | `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
@@ -160,7 +160,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-On 2026-10-31, `cargo xtask ci` passes with 206 tests (livecraft 9, livecraft-model 47, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 18, livecraft-engine 10, livecraft-session 74, livecraft-time 34, livecraft-ui 2, xtask 5, livecraft-testkit 0). `livecraft command list` prints 42 registered commands. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
+On 2026-10-31, `cargo xtask ci` passes with 265 tests (livecraft 9, livecraft-model 47, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 56, livecraft-engine 31, livecraft-session 74, livecraft-time 34, livecraft-ui 2, xtask 5, livecraft-testkit 0). `livecraft command list` prints 42 registered commands. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
 
 ## Troubleshooting
 
