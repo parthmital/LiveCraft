@@ -357,6 +357,9 @@ fn every_registered_command_round_trips_its_arguments() {
             json!({ "clip": 9, "index": 0, "note": { "pitch": 64, "start_beat": 0.0, "duration_beats": 2.0, "velocity": 90.0, "release_velocity": 64.0, "probability": 1.0, "velocity_deviation": 0.0, "mute": false } }),
         ),
         ("note.remove", json!({ "clip": 9, "index": 0 })),
+        ("scene.create", json!({ "name": "9" })),
+        ("scene.delete", json!({ "scene": 3 })),
+        ("scene.duplicate", json!({ "scene": 3 })),
         ("track.create_audio", json!({ "name": "5-Audio" })),
         ("track.create_group", json!({ "name": "Drums" })),
         ("track.create_midi", json!({ "name": "6-MIDI" })),
@@ -381,7 +384,19 @@ fn every_registered_command_round_trips_its_arguments() {
             json!({ "track": 1, "is_soloed": false }),
         ),
         ("track.set_volume", json!({ "track": 1, "volume_db": -6.0 })),
+        (
+            "transport.set_loop",
+            json!({ "loop_enabled": true, "loop_start_beats": 4.0, "loop_length_beats": 8.0 }),
+        ),
+        (
+            "transport.set_metronome",
+            json!({ "metronome_enabled": true }),
+        ),
         ("transport.set_tempo", json!({ "bpm": 140.0 })),
+        (
+            "transport.set_time_signature",
+            json!({ "numerator": 7, "denominator": 8 }),
+        ),
     ];
     let names: Vec<&str> = registry.names().collect();
     let sampled: Vec<&str> = samples.iter().map(|(name, _)| *name).collect();

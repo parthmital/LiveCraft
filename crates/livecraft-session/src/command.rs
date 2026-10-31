@@ -8,6 +8,7 @@
 use livecraft_model::edit::EditError;
 use livecraft_model::ids::{ClipId, DeviceId, IdAllocator, LaneId, TrackId};
 use livecraft_model::model::Project;
+use livecraft_time::TimeError;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 use std::any::Any;
@@ -16,6 +17,8 @@ use std::any::Any;
 pub enum CommandError {
     #[error(transparent)]
     Edit(#[from] EditError),
+    #[error(transparent)]
+    Time(#[from] TimeError),
     #[error("no command named `{0}`")]
     UnknownCommand(String),
     #[error("the arguments of `{name}` do not decode: {message}")]

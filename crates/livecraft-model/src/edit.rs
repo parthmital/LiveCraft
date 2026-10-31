@@ -37,6 +37,8 @@ pub enum EditError {
     FixedTrackKind(TrackType),
     #[error("a track of type {0:?} is not a return track")]
     NotReturnTrack(TrackType),
+    #[error("scene row {0} is past the last scene")]
+    NoSuchSceneRow(usize),
     #[error("the track has {sends} sends for {returns} return tracks")]
     SendCount { sends: usize, returns: usize },
 }
@@ -158,6 +160,19 @@ impl Project {
             return Err(EditError::IdInUse(scene.id.0));
         }
         self.scenes.push(scene);
+        Ok(())
+    }
+
+    /// Adds a scene at a row of the Session View, which must have a new id. The row may be the one
+    /// after the last scene.
+    pub fn insert_scene(&mut self, row: usize, scene: Scene) -> Result<(), EditError> {
+        if self.scene_row(scene.id).is_some() {
+            return Err(EditError::IdInUse(scene.id.0));
+        }
+        if row > self.scenes.len() {
+            return Err(EditError::NoSuchSceneRow(row));
+        }
+        self.scenes.insert(row, scene);
         Ok(())
     }
 

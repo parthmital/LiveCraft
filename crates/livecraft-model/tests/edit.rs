@@ -2,7 +2,7 @@
 //! accepted and rejected edits never break a rule of `Project::validate` (10,000 cases).
 
 use livecraft_model::edit::EditError;
-use livecraft_model::ids::{IdAllocator, TrackId};
+use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
 use livecraft_model::model::*;
 use livecraft_model::routing::{AudioInput, AudioOutput, Routing};
 use proptest::prelude::*;
@@ -79,6 +79,19 @@ fn a_new_return_track_gets_a_send_on_every_track() {
         Some(0.0)
     );
     assert!(proj.validate().is_empty());
+}
+
+#[test]
+fn a_scene_is_inserted_at_its_row() {
+    let mut proj = Project::new_default("Scenes");
+    proj.insert_scene(1, Scene::new(SceneId(50), "Inserted"))
+        .expect("insert at row 1");
+    assert_eq!(proj.scenes[1].id, SceneId(50));
+    assert_eq!(
+        proj.insert_scene(99, Scene::new(SceneId(51), "Too far")),
+        Err(EditError::NoSuchSceneRow(99))
+    );
+    assert_eq!(proj.scenes.len(), 9);
 }
 
 #[test]
