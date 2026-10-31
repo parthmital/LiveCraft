@@ -1690,6 +1690,7 @@ dependencies = [
 name = "livecraft-testkit"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "livecraft-engine",
  "livecraft-model",
 ]

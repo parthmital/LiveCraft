@@ -8,6 +8,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 livecraft-model = { path = "../livecraft-model" }
 livecraft-engine.workspace = true
 

@@ -1,4 +1,5 @@
-use crate::graph::AudioGraph;
+use crate::executor::{Engine, EngineCommand};
+use crate::output::Playback;
 use hound::{WavSpec, WavWriter};
 use livecraft_model::model::Project;
 use livecraft_time::seconds_for_beats;
@@ -22,6 +23,27 @@ impl Default for RenderOptions {
     }
 }
 
+/// Frames the bouncer asks the engine for at a time.
+const BLOCK_FRAMES: usize = 512;
+
+/// Starts an engine on the Set for a render, with the first clip of each track that has one launched
+/// and the transport playing from the start. The caller drives the returned `Engine` with `process`.
+pub fn start_render(project: &Project, sample_rate: f32) -> anyhow::Result<(Playback, Engine)> {
+    let (mut playback, engine) = Playback::start(project, sample_rate)?;
+    for trk in project.tracks.iter() {
+        if let Some(slot) = trk.clip_slots.first()
+            && slot.clip.is_some()
+        {
+            playback.handle.send(EngineCommand::TriggerClip {
+                track: trk.id,
+                slot: 0,
+            })?;
+        }
+    }
+    playback.handle.send(EngineCommand::SetPlaying(true))?;
+    Ok((playback, engine))
+}
+
 pub struct OfflineBouncer;
 
 impl OfflineBouncer {
@@ -43,17 +65,7 @@ impl OfflineBouncer {
         };
 
         let mut writer = WavWriter::create(output_path, spec)?;
-        let mut graph = AudioGraph::new(project, options.sample_rate as f32);
-        graph.is_playing = true;
-
-        // Auto-trigger slot 0 on all tracks that have clips
-        for trk in project.tracks.iter() {
-            if let Some(slot) = trk.clip_slots.first()
-                && slot.clip.is_some()
-            {
-                graph.trigger_clip(trk.id, 0);
-            }
-        }
+        let (_playback, mut engine) = start_render(project, options.sample_rate as f32)?;
 
         // Calculate total samples from duration_bars and BPM
         let beats_total =
@@ -61,35 +73,25 @@ impl OfflineBouncer {
         let total_seconds = seconds_for_beats(beats_total, project.transport.bpm() as f64);
         let total_samples = (total_seconds * options.sample_rate as f64) as usize;
 
-        let block_size = 512;
-        let mut buf_l = vec![0.0f32; block_size];
-        let mut buf_r = vec![0.0f32; block_size];
-
+        let mut interleaved = vec![0.0f32; BLOCK_FRAMES * 2];
         let mut rendered_samples = 0;
         while rendered_samples < total_samples {
-            let to_render = block_size.min(total_samples - rendered_samples);
-            let active_l = &mut buf_l[..to_render];
-            let active_r = &mut buf_r[..to_render];
+            let frames = BLOCK_FRAMES.min(total_samples - rendered_samples);
+            let block = &mut interleaved[..frames * 2];
+            engine.process(block, 2);
 
-            graph.process_buffer(active_l, active_r);
-
-            for i in 0..to_render {
-                let s_l = crate::graph::sanitize_output_sample(active_l[i]).clamp(-1.0, 1.0);
-                let s_r = crate::graph::sanitize_output_sample(active_r[i]).clamp(-1.0, 1.0);
-
+            for sample in block.iter() {
+                let s = sample.clamp(-1.0, 1.0);
                 if options.bits_per_sample == 16 {
-                    writer.write_sample((s_l * 32767.0) as i16)?;
-                    writer.write_sample((s_r * 32767.0) as i16)?;
+                    writer.write_sample((s * 32767.0) as i16)?;
                 } else if options.bits_per_sample == 24 {
-                    writer.write_sample((s_l * 8388607.0) as i32)?;
-                    writer.write_sample((s_r * 8388607.0) as i32)?;
+                    writer.write_sample((s * 8388607.0) as i32)?;
                 } else {
-                    writer.write_sample(s_l)?;
-                    writer.write_sample(s_r)?;
+                    writer.write_sample(s)?;
                 }
             }
 
-            rendered_samples += to_render;
+            rendered_samples += frames;
         }
 
         writer.finalize()?;
