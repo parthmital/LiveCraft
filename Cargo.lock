@@ -1696,6 +1696,7 @@ dependencies = [
 name = "livecraft-session"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "directories",
  "livecraft-devices",
  "livecraft-engine",

@@ -17,4 +17,6 @@ pub use preferences::{
     AudioPreferences, MidiPortPreference, MidiPreferences, Preferences, PreferencesError,
 };
 pub use registry::CommandRegistry;
-pub use session::{EngineStatus, Session, TrackMeter, demo_set, load_set};
+pub use session::{
+    DriverFactory, EngineStatus, Session, SessionAudioError, TrackMeter, demo_set, load_set,
+};

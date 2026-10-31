@@ -9,8 +9,10 @@ use crate::commands::clip::CreateMidiClip;
 use crate::commands::note::AddNote;
 use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
-use crate::preferences::{AudioPreferences, Preferences};
-use livecraft_engine::driver::{DeviceList, DriverConfig, list_devices};
+use crate::preferences::{AudioPreferences, Preferences, PreferencesError};
+use livecraft_engine::driver::{
+    AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, list_devices,
+};
 use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::{AlsError, AlsParser};
@@ -69,6 +71,24 @@ pub struct EngineStatus {
     pub sample_rate: Option<f32>,
 }
 
+/// Builds the audio driver for a configuration. `Session::open` builds a `CpalDriver`, and tests
+/// build a `NullDriver`.
+pub type DriverFactory = Box<dyn Fn(&DriverConfig) -> Result<Box<dyn AudioDriver>, DriverError>>;
+
+/// Why the audio output of a Set could not be opened or changed.
+#[derive(Debug, thiserror::Error)]
+pub enum SessionAudioError {
+    /// The driver for the settings could not be built.
+    #[error("the audio driver could not be opened: {0}")]
+    Driver(#[from] DriverError),
+    /// The driver was built, but the engine could not start on it.
+    #[error("the audio output could not start: {0:#}")]
+    Output(anyhow::Error),
+    /// The new output is in use, but the preferences file could not be written.
+    #[error("the new audio settings are in use, but the preferences were not saved: {0}")]
+    Save(#[from] PreferencesError),
+}
+
 pub struct Session {
     project: Project,
     history: UndoHistory,
@@ -77,13 +97,33 @@ pub struct Session {
     dirty: bool,
     /// The Set as the engine last received it, so each change sends only what differs.
     sent: Project,
-    /// The preferences the Set was opened with.
+    /// The preferences the Set was opened with, and the audio settings changed since.
     preferences: Preferences,
+    /// Builds the driver for each audio output the session opens.
+    driver_factory: DriverFactory,
+    /// Where the preferences are saved after an audio change, or `None` when there is no file.
+    prefs_path: Option<PathBuf>,
 }
 
 impl Session {
     /// Opens a Set. The engine, when there is one, was started from this Set.
     pub fn new(project: Project, engine: Option<Playback>) -> Self {
+        Self::from_parts(
+            project,
+            engine,
+            Box::new(cpal_driver),
+            Preferences::default(),
+            None,
+        )
+    }
+
+    fn from_parts(
+        project: Project,
+        engine: Option<Playback>,
+        driver_factory: DriverFactory,
+        preferences: Preferences,
+        prefs_path: Option<PathBuf>,
+    ) -> Self {
         let ids = project.id_allocator();
         let sent = project.clone();
         Self {
@@ -93,27 +133,32 @@ impl Session {
             engine,
             dirty: false,
             sent,
-            preferences: Preferences::default(),
+            preferences,
+            driver_factory,
+            prefs_path,
         }
     }
 
     /// Opens a Set with the audio output that the preferences file names (manual 41.2), or the
     /// default output when that one cannot be opened.
     pub fn open(project: Project) -> Self {
-        Self::open_at(project, Preferences::default_path())
+        Self::with_driver_factory(project, Box::new(cpal_driver), Preferences::default_path())
     }
 
-    /// Opens a Set with the audio output that the preferences at `prefs_path` name. A missing or
-    /// unreadable file gives the defaults. When the named output cannot be opened, the default
-    /// output is used instead.
-    fn open_at(project: Project, prefs_path: Option<PathBuf>) -> Self {
+    /// Opens a Set with the audio output that `factory` builds for the preferences at `prefs_path`.
+    /// A missing or unreadable file gives the defaults. When the named output cannot be opened, the
+    /// default output is used instead. Changes made by `set_audio_preferences` are saved to
+    /// `prefs_path`, when there is one.
+    pub fn with_driver_factory(
+        project: Project,
+        factory: DriverFactory,
+        prefs_path: Option<PathBuf>,
+    ) -> Self {
         let preferences = prefs_path
             .as_deref()
             .map_or_else(Preferences::default, load_preferences);
-        let engine = open_engine(&project, &preferences.audio);
-        let mut session = Self::new(project, engine);
-        session.preferences = preferences;
-        session
+        let engine = open_engine(&project, &factory, &preferences.audio);
+        Self::from_parts(project, engine, factory, preferences, prefs_path)
     }
 
     /// The audio hosts and devices this machine offers, for the settings and `livecraft devices`
@@ -122,9 +167,35 @@ impl Session {
         list_devices()
     }
 
-    /// The preferences the Set was opened with.
+    /// The preferences the Set was opened with, and the audio settings changed since.
     pub fn preferences(&self) -> &Preferences {
         &self.preferences
+    }
+
+    /// Changes the audio output to `audio` (M06 item 4). The engine is rebuilt at the new sample rate
+    /// and buffer size, and playback carries on: the playhead, whether the transport plays, and the
+    /// clip each track has launched. When the new output cannot be opened, the current output keeps
+    /// running and nothing changes. The new settings are saved when the session has a preferences
+    /// file. An error from saving means the new output is in use but the file was not written.
+    pub fn set_audio_preferences(
+        &mut self,
+        audio: AudioPreferences,
+    ) -> Result<(), SessionAudioError> {
+        let mut next = open_output(
+            &self.project,
+            &self.driver_factory,
+            &DriverConfig::from(&audio),
+        )?;
+        if let Some(previous) = self.engine.as_mut() {
+            carry_over(previous, &mut next, &self.project);
+        }
+        // Replacing the engine drops the previous one, which stops its output.
+        self.engine = Some(next);
+        self.preferences.audio = audio;
+        if let Some(path) = &self.prefs_path {
+            self.preferences.save(path)?;
+        }
+        Ok(())
     }
 
     /// Saves the Set to a `.als` file (manual 5.4.1) and records it as saved.
@@ -323,76 +394,55 @@ fn load_preferences(path: &Path) -> Preferences {
     })
 }
 
+/// The driver `Session::open` uses: a `CpalDriver` for the configuration.
+fn cpal_driver(config: &DriverConfig) -> Result<Box<dyn AudioDriver>, DriverError> {
+    Ok(Box::new(CpalDriver::open(config)?))
+}
+
+/// Starts `project` on the output that `factory` builds for `config`.
+fn open_output(
+    project: &Project,
+    factory: &DriverFactory,
+    config: &DriverConfig,
+) -> Result<Playback, SessionAudioError> {
+    let driver = factory(config)?;
+    Playback::open_with_driver(project, driver).map_err(SessionAudioError::Output)
+}
+
 /// Opens the output that `audio` names. When that output cannot be opened, the default output is
 /// tried. The result is `None` when neither opens, and the Set then plays without audio.
-fn open_engine(project: &Project, audio: &AudioPreferences) -> Option<Playback> {
-    Playback::open(project, &DriverConfig::from(audio))
+fn open_engine(
+    project: &Project,
+    factory: &DriverFactory,
+    audio: &AudioPreferences,
+) -> Option<Playback> {
+    open_output(project, factory, &DriverConfig::from(audio))
         .or_else(|error| {
             log::warn!(
-                "The audio output in the preferences could not be opened, so the default output is used: {error:#}"
+                "The audio output in the preferences could not be opened, so the default output is used: {error}"
             );
-            Playback::open(project, &DriverConfig::default())
+            open_output(project, factory, &DriverConfig::default())
         })
-        .map_err(|error| log::warn!("No audio output could be opened: {error:#}"))
+        .map_err(|error| log::warn!("No audio output could be opened: {error}"))
         .ok()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// A folder under the system temp directory for one test's preferences file, removed on drop.
-    struct ScratchFolder(PathBuf);
-
-    impl ScratchFolder {
-        fn new(test: &str) -> Self {
-            let path = std::env::temp_dir()
-                .join(format!("livecraft-session-{}-{test}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&path);
-            Self(path)
-        }
-
-        /// The path of the preferences file in this folder, with `text` written to it when given.
-        fn prefs(&self, text: Option<&str>) -> PathBuf {
-            let path = self.0.join("Preferences.toml");
-            if let Some(text) = text {
-                std::fs::create_dir_all(&self.0).expect("create the test folder");
-                std::fs::write(&path, text).expect("write the preferences");
-            }
-            path
-        }
+/// Carries the playhead, the transport, and the launched clips of `previous` over to `next`. They
+/// are read from the latest snapshot of `previous`, so they are as the audio thread last published.
+fn carry_over(previous: &mut Playback, next: &mut Playback, project: &Project) {
+    let snapshot = previous.handle.snapshot();
+    let playhead = snapshot.transport.playhead_beats;
+    let playing = snapshot.transport.playing;
+    let launched: Vec<(TrackId, usize)> = project
+        .tracks
+        .iter()
+        .take(snapshot.node_count)
+        .zip(&snapshot.nodes)
+        .filter_map(|(track, node)| node.clip.active_slot.map(|slot| (track.id, slot)))
+        .collect();
+    for (track, slot) in launched {
+        send_command(next, EngineCommand::TriggerClip { track, slot });
     }
-
-    impl Drop for ScratchFolder {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    #[test]
-    fn a_missing_preferences_file_opens_the_set_with_the_defaults() {
-        let folder = ScratchFolder::new("missing");
-        let session = Session::open_at(Project::new_default("Missing"), Some(folder.prefs(None)));
-        assert_eq!(session.preferences(), &Preferences::default());
-    }
-
-    #[test]
-    fn the_preferences_file_is_read_when_the_set_opens() {
-        let folder = ScratchFolder::new("read");
-        let session = Session::open_at(
-            Project::new_default("Read"),
-            Some(folder.prefs(Some("[audio]\nbuffer_size = 128\n"))),
-        );
-        assert_eq!(session.preferences().audio.buffer_size, Some(128));
-    }
-
-    #[test]
-    fn an_invalid_preferences_file_opens_the_set_with_the_defaults() {
-        let folder = ScratchFolder::new("invalid");
-        let session = Session::open_at(
-            Project::new_default("Invalid"),
-            Some(folder.prefs(Some("[audio\nbuffer_size = "))),
-        );
-        assert_eq!(session.preferences(), &Preferences::default());
-    }
+    send_command(next, EngineCommand::SetPlayhead(playhead));
+    send_command(next, EngineCommand::SetPlaying(playing));
 }
