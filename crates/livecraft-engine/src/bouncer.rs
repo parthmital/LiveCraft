@@ -167,6 +167,34 @@ mod tests {
     }
 
     #[test]
+    fn two_offline_renders_of_one_set_are_byte_identical() {
+        let mut project = Project::new_default("RepeatBounce");
+        let mut clip = Clip::new_midi(1, "Chord", 4.0);
+        if let ClipPayload::Midi(ref mut mdata) = clip.payload {
+            mdata.notes.push(MidiNote::new(60, 0.0, 2.0, 100));
+            mdata.notes.push(MidiNote::new(67, 1.0, 2.0, 90));
+        }
+        project.tracks[0].clip_slots[0].clip = Some(clip);
+
+        let out_dir = std::env::temp_dir().join("livecraft_repeat_bounce");
+        fs::create_dir_all(&out_dir).expect("create the test folder");
+        let paths = [out_dir.join("first.wav"), out_dir.join("second.wav")];
+        for path in &paths {
+            let options = RenderOptions {
+                sample_rate: 44100,
+                duration_bars: 2,
+                bits_per_sample: 24,
+            };
+            OfflineBouncer::render_project(&project, path, options).expect("render");
+        }
+        let first = fs::read(&paths[0]).expect("read the first render");
+        let second = fs::read(&paths[1]).expect("read the second render");
+        let _ = fs::remove_dir_all(out_dir);
+        assert!(!first.is_empty());
+        assert!(first == second, "the two renders differ");
+    }
+
+    #[test]
     fn a_stem_export_writes_one_wav_per_track() {
         let project = Project::new_default("StemTest");
         let out_dir = std::env::temp_dir().join("livecraft_stem_test");
