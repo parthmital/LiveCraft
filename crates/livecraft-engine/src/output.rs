@@ -44,7 +44,7 @@ impl Playback {
             .map_or(DriverStatus::Stopped, |driver| driver.status())
     }
 
-    /// The output latency of the driver. It is zero when the Set renders without a driver.
+    /// The input and output latency of the driver. It is zero when the Set renders without a driver.
     pub fn latency(&self) -> Latency {
         self.driver
             .as_ref()

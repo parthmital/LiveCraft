@@ -5,14 +5,16 @@
 use crate::audio_clip::{DecodedAudio, load_file};
 use crate::clip::{ArrangedClip, ClipLane, PlayNote, PlayableClip, PlayableSource};
 use crate::compiled::{
-    CompiledGraph, DeviceSlot, MAX_NOTE_EVENTS, Mixer, Node, NodeKind, Transfer, compensate_latency,
+    CompiledGraph, DeviceSlot, InputRoute, MAX_NOTE_EVENTS, Mixer, Node, NodeKind, Transfer,
+    compensate_latency,
 };
 use basedrop::{Handle, Shared};
 use livecraft_devices::{DeviceProcessor, create_device_processor, is_instrument};
 use livecraft_model::device::param_table;
 use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{
-    Clip, ClipPayload, Device, MidiClipData, MonitoringMode, Project, Track, TuningSystem,
+    AudioInput, Clip, ClipPayload, Device, MidiClipData, MonitoringMode, Project, Track,
+    TuningSystem,
 };
 use livecraft_model::param::ParamId;
 use std::collections::HashMap;
@@ -162,7 +164,15 @@ impl GraphCompiler {
             NodeKind::Track => self.lane(track, tuning),
             NodeKind::Return | NodeKind::Main => ClipLane::new(Vec::new(), Vec::new(), false, 0),
         };
-        Node::new(track.id, kind, mixer, devices, clips)
+        let input = InputRoute {
+            channel: match (kind, track.routing.audio_from) {
+                (NodeKind::Track, AudioInput::ExternalIn { channel }) => Some(channel),
+                _ => None,
+            },
+            monitoring: track.monitoring,
+            is_armed: track.is_armed,
+        };
+        Node::new(track.id, kind, mixer, devices, clips, input)
     }
 
     /// The clips a track can play. A track monitoring its input rather than playing clips (manual
@@ -471,5 +481,49 @@ mod tests {
             device_ids(&reversed),
             vec![DeviceId(103), DeviceId(102), DeviceId(101)]
         );
+    }
+
+    #[test]
+    fn a_track_takes_its_input_channel_and_monitor_mode_from_the_set() {
+        let mut project = Project::new_default("Input");
+        let mut input = Track::new(TrackId(8), "Input", TrackType::Audio, 0);
+        input.routing.audio_from = AudioInput::ExternalIn { channel: 1 };
+        input.monitoring = MonitoringMode::In;
+        input.is_armed = true;
+        project.tracks.push(input);
+        let (_collector, graph) = compile(&project);
+        let route = graph
+            .nodes()
+            .iter()
+            .find(|node| node.track == TrackId(8))
+            .expect("track 8")
+            .input;
+        assert_eq!(
+            route,
+            InputRoute {
+                channel: Some(1),
+                monitoring: MonitoringMode::In,
+                is_armed: true,
+            }
+        );
+    }
+
+    #[test]
+    fn only_a_track_takes_an_external_input_channel() {
+        let mut project = Project::new_default("Routes");
+        project.return_tracks[0].routing.audio_from = AudioInput::ExternalIn { channel: 0 };
+        let (_collector, graph) = compile(&project);
+        let channel_of = |track: TrackId| {
+            graph
+                .nodes()
+                .iter()
+                .find(|node| node.track == track)
+                .expect("the node is in the graph")
+                .input
+                .channel
+        };
+        assert_eq!(channel_of(TrackId(1)), None);
+        assert_eq!(channel_of(TrackId(5)), None);
+        assert_eq!(channel_of(TrackId(7)), None);
     }
 }

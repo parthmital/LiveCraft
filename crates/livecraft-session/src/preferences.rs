@@ -45,6 +45,7 @@ impl From<&AudioPreferences> for DriverConfig {
             input_device: audio.input_device.clone(),
             sample_rate: audio.sample_rate,
             buffer_frames: audio.buffer_size,
+            ..Self::default()
         }
     }
 }

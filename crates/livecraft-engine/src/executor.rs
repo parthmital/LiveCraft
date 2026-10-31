@@ -7,7 +7,7 @@
 //! applies commands and graph swaps at the start of each driver callback and never allocates.
 
 use crate::collector;
-use crate::compiled::{CompiledGraph, MAX_BLOCK, Node, RAMP_STEP};
+use crate::compiled::{CompiledGraph, InputBlock, MAX_BLOCK, Node, RAMP_STEP};
 use crate::snapshot::{ClipState, EngineSnapshot, MAX_NODES, Transport, cpu_load};
 use livecraft_devices::ProcessContext;
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
@@ -166,6 +166,33 @@ pub struct Engine {
     pending: Vec<PendingParam>,
     /// Publishes the state after each callback. The session reads it through `EngineHandle`.
     snapshots: triple_buffer::Input<EngineSnapshot>,
+    /// The external input the driver captures, when it captures any.
+    input: Option<InputCapture>,
+}
+
+/// The external input the driver captures: the samples its input stream pushed, and the block being
+/// rendered.
+struct InputCapture {
+    samples: rtrb::Consumer<f32>,
+    channels: usize,
+    /// The samples of the current block, at most `MAX_BLOCK` frames. `Engine::set_input` allocates it,
+    /// so `fill` allocates nothing.
+    block: Box<[f32]>,
+}
+
+impl InputCapture {
+    /// Takes the next `frames` frames of input into the block and returns it. A sample the stream has
+    /// not delivered reads as silence, so an underrun is silent rather than stale.
+    fn fill(&mut self, frames: usize) -> InputBlock<'_> {
+        let len = frames * self.channels;
+        for sample in &mut self.block[..len] {
+            *sample = self.samples.pop().unwrap_or(0.0);
+        }
+        InputBlock {
+            samples: &self.block[..len],
+            channels: self.channels,
+        }
+    }
 }
 
 impl Engine {
@@ -207,6 +234,7 @@ impl Engine {
             frame: 0,
             pending: Vec::with_capacity(COMMAND_CAPACITY),
             snapshots: snapshot_tx,
+            input: None,
         };
         let handle = EngineHandle {
             commands: command_tx,
@@ -215,6 +243,17 @@ impl Engine {
             snapshots: snapshot_rx,
         };
         Ok((engine, handle))
+    }
+
+    /// Reads the external input from `samples`, which holds interleaved frames of `channels` samples
+    /// as the driver's input stream pushes them. Call it before the engine starts on a driver. The
+    /// block buffer is allocated here, not on the audio thread.
+    pub fn set_input(&mut self, samples: rtrb::Consumer<f32>, channels: usize) {
+        self.input = Some(InputCapture {
+            samples,
+            channels,
+            block: vec![0.0; MAX_BLOCK * channels].into_boxed_slice(),
+        });
     }
 
     /// Renders `out`, which holds interleaved frames of `channels` samples. It is the only call from
@@ -237,7 +276,11 @@ impl Engine {
                 playhead_beats: self.playhead_at(self.frame),
                 beats_per_frame: self.beats_per_frame(),
             };
-            self.graph.render(&context);
+            let input = self
+                .input
+                .as_mut()
+                .map_or(InputBlock::SILENT, |capture| capture.fill(block));
+            self.graph.render_with_input(&context, input);
             let (left, right) = self.graph.output(block);
             let samples = &mut out[start * channels..(start + block) * channels];
             for (frame, chunk) in samples.chunks_exact_mut(channels).enumerate() {

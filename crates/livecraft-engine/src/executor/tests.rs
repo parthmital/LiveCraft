@@ -457,7 +457,7 @@ fn the_snapshot_reports_the_launched_clip_of_a_track() {
 #[test]
 fn a_graph_with_more_nodes_than_the_snapshot_holds_is_refused() {
     use crate::clip::ClipLane;
-    use crate::compiled::{Mixer, Node, NodeKind};
+    use crate::compiled::{InputRoute, Mixer, Node, NodeKind};
     let (_engine, mut handle, _compiler) = started(&Project::new_default("Large"));
     let mixer = Mixer {
         volume_db: 0.0,
@@ -474,6 +474,7 @@ fn a_graph_with_more_nodes_than_the_snapshot_holds_is_refused() {
                 mixer.clone(),
                 Vec::new(),
                 ClipLane::new(Vec::new(), Vec::new(), false, 0),
+                InputRoute::default(),
             )
         })
         .collect();

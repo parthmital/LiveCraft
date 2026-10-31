@@ -13,6 +13,7 @@ use crate::delay::DelayLine;
 use crate::snapshot::TrackMeter;
 use livecraft_devices::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
+use livecraft_model::model::MonitoringMode;
 use livecraft_model::param::{ParamId, ParamSpec};
 
 /// Most frames one render call handles. The engine cuts a driver buffer into blocks of this size.
@@ -23,6 +24,44 @@ pub const MAX_NOTE_EVENTS: usize = 256;
 
 /// Most frames a block holds while a parameter ramps, so the ramp moves in small steps.
 pub const RAMP_STEP: usize = 32;
+
+/// The external audio input of one block: interleaved frames of `channels` samples, as the driver's
+/// input stream delivers them.
+#[derive(Debug, Clone, Copy)]
+pub struct InputBlock<'a> {
+    pub samples: &'a [f32],
+    pub channels: usize,
+}
+
+impl InputBlock<'_> {
+    /// No input. Every sample reads as silence.
+    pub const SILENT: InputBlock<'static> = InputBlock {
+        samples: &[],
+        channels: 0,
+    };
+
+    /// The sample of an input channel in a frame of the block, or silence when the input has no such
+    /// channel.
+    fn sample(&self, frame: usize, channel: u16) -> f32 {
+        let channel = usize::from(channel);
+        if channel >= self.channels {
+            return 0.0;
+        }
+        self.samples
+            .get(frame * self.channels + channel)
+            .copied()
+            .unwrap_or(0.0)
+    }
+}
+
+/// How a track takes its external input (manual 17.2, page 375, and 17.1, page 374).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InputRoute {
+    /// The zero-based input channel the track receives, or None when it has no external input.
+    pub channel: Option<u16>,
+    pub monitoring: MonitoringMode,
+    pub is_armed: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
@@ -133,6 +172,8 @@ pub struct Node {
     pub events: EventList,
     /// The clips of the track. Return and Main nodes have none.
     pub clips: ClipLane,
+    /// The external input the track receives, and how it monitors it. Only tracks have one.
+    pub input: InputRoute,
     /// The level after the device chain, before the mixer.
     pub meter: TrackMeter,
     left: Box<[f32]>,
@@ -150,6 +191,7 @@ impl Node {
         mixer: Mixer,
         devices: Vec<DeviceSlot>,
         clips: ClipLane,
+        input: InputRoute,
     ) -> Self {
         Self {
             track,
@@ -158,6 +200,7 @@ impl Node {
             devices,
             events: EventList::with_capacity(MAX_NOTE_EVENTS),
             clips,
+            input,
             meter: TrackMeter::default(),
             left: vec![0.0; MAX_BLOCK].into_boxed_slice(),
             right: vec![0.0; MAX_BLOCK].into_boxed_slice(),
@@ -170,6 +213,33 @@ impl Node {
     fn delay_input(&mut self, frames: usize) {
         self.input_delay
             .apply(&mut self.left[..frames], &mut self.right[..frames]);
+    }
+
+    /// Adds the external input channel to both sides of the track while the track monitors its input,
+    /// before the devices run, so the devices process what the track hears (manual 17.1, page 374).
+    fn monitor_input(&mut self, input: &InputBlock<'_>, frames: usize) {
+        let Some(channel) = self.input.channel else {
+            return;
+        };
+        if !self.monitors_input() {
+            return;
+        }
+        for frame in 0..frames {
+            let sample = input.sample(frame, channel);
+            self.left[frame] += sample;
+            self.right[frame] += sample;
+        }
+    }
+
+    /// Whether the track monitors its input now. In always does, Off never does, and Auto does while
+    /// the track is armed (manual 17.1, page 374). Auto does not check for clips: an armed track plays
+    /// no clips (`GraphCompiler::lane`).
+    fn monitors_input(&self) -> bool {
+        match self.input.monitoring {
+            MonitoringMode::In => true,
+            MonitoringMode::Auto => self.input.is_armed,
+            MonitoringMode::Off => false,
+        }
     }
 
     /// Fills this block's note events and audio from the clips the track plays.
@@ -427,8 +497,14 @@ impl CompiledGraph {
         (&main.left[..frames], &main.right[..frames])
     }
 
-    /// Renders one block of `ctx.frames` frames (at most `MAX_BLOCK`) into the output buffers.
+    /// Renders one block of `ctx.frames` frames (at most `MAX_BLOCK`) with no external input.
     pub fn render(&mut self, ctx: &ProcessContext) {
+        self.render_with_input(ctx, InputBlock::SILENT);
+    }
+
+    /// Renders one block of `ctx.frames` frames (at most `MAX_BLOCK`) into the output buffers. `input`
+    /// is the external input of the block, which the tracks that monitor it hear.
+    pub fn render_with_input(&mut self, ctx: &ProcessContext, input: InputBlock<'_>) {
         let frames = ctx.frames.min(MAX_BLOCK);
         let any_solo = self.nodes[..self.track_count]
             .iter()
@@ -451,6 +527,7 @@ impl CompiledGraph {
         for track in tracks.iter_mut() {
             track.clear(frames);
             track.schedule_clips(&ProcessContext { frames, ..*ctx });
+            track.monitor_input(&input, frames);
             track.run_devices(&ProcessContext { frames, ..*ctx });
             track.delay_input(frames);
             // A muted or unsoloed track is silent, but it still runs its delay so later blocks line up.

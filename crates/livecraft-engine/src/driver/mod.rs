@@ -29,7 +29,8 @@ pub trait AudioDriver {
     fn buffer_frames(&self) -> u32;
     /// Channels per frame in each buffer.
     fn channels(&self) -> usize;
-    /// The delay between the engine's output and the device. Drivers without a device report zero.
+    /// The input and output delays between the engine and the devices. Drivers without a device report
+    /// zero.
     fn latency(&self) -> Latency;
     /// Takes the engine and starts calling `Engine::process`.
     fn start(&mut self, engine: Engine) -> Result<(), DriverError>;
@@ -38,18 +39,36 @@ pub trait AudioDriver {
 }
 
 /// What the session asks of a driver. `None` means the system default.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DriverConfig {
     /// The host API by name, such as `wasapi`. The name is matched without regard to case.
     pub host: Option<String>,
     /// The output device by its name.
     pub output_device: Option<String>,
-    /// The input device by its name. Input capture uses it from M06 item 5.
+    /// The input device by its name. A named input is captured even when `input_enabled` is false.
     pub input_device: Option<String>,
+    /// Whether to capture from the default input device when no input device is named. The default
+    /// input is best effort: when it cannot run at the output's sample rate, it is skipped with a
+    /// warning.
+    pub input_enabled: bool,
     /// The sample rate in hertz.
     pub sample_rate: Option<u32>,
     /// Frames per buffer.
     pub buffer_frames: Option<u32>,
+}
+
+impl Default for DriverConfig {
+    /// The system defaults, with the default input device captured when the host has one.
+    fn default() -> Self {
+        Self {
+            host: None,
+            output_device: None,
+            input_device: None,
+            input_enabled: true,
+            sample_rate: None,
+            buffer_frames: None,
+        }
+    }
 }
 
 /// The delay of a driver's input and output, in frames.
@@ -91,7 +110,7 @@ pub enum DriverStatus {
 pub enum DriverError {
     #[error("no audio output device is available")]
     NoOutputDevice,
-    #[error("the output device {device} does not support {rate} Hz")]
+    #[error("the audio device {device} does not support {rate} Hz")]
     UnsupportedSampleRate { device: String, rate: u32 },
     #[error("the device sample format {0:?} is not supported")]
     UnsupportedSampleFormat(SampleFormat),
@@ -115,5 +134,12 @@ mod tests {
         };
         assert!((latency.input_ms(44100) - 10.0).abs() < 1e-4);
         assert!((latency.output_ms(44100) - 20.0).abs() < 1e-4);
+    }
+
+    #[test]
+    fn the_default_config_captures_the_default_input_device() {
+        let config = DriverConfig::default();
+        assert!(config.input_enabled);
+        assert_eq!(config.input_device, None);
     }
 }
