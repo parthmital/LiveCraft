@@ -1,6 +1,8 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 use livecraft_time::seconds_per_beat;
 
 #[derive(Debug, Clone)]
@@ -97,5 +99,51 @@ impl DelayEffect {
         let out_r = in_r * (1.0 - self.dry_wet) + delayed_r * self.dry_wet;
 
         (out_l, out_r)
+    }
+}
+
+impl DeviceProcessor for DelayEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
+    }
+
+    /// Ids are positions in the Delay table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.delay_time_ms = value.clamp(1.0, 1900.0),
+            1 => self.feedback = value.clamp(0.0, 0.98),
+            2 => self.dry_wet = value.clamp(0.0, 1.0),
+            3 => self.ping_pong = value > 0.5,
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn delay_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || DelayEffect::new(44100.0),
+            &[(0, 50.0), (1, 0.5), (2, 0.7)],
+        );
+    }
+
+    #[test]
+    fn delay_dry_wet_changes_the_output() {
+        assert_parameter_changes_output(|| DelayEffect::new(44100.0), 2, 0.0);
     }
 }

@@ -1,5 +1,7 @@
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 
 // Freeverb Comb and All-Pass tuning constants (at 44100 Hz, scaled to sample_rate)
 const COMB_TUNINGS_L: [usize; 8] = [1116, 1188, 1277, 1356, 1422, 1491, 1557, 1617];
@@ -177,5 +179,52 @@ impl ReverbEffect {
         let res_r = in_r * dry + out_r * wet1 + out_l * wet2;
 
         (res_l, res_r)
+    }
+}
+
+impl DeviceProcessor for ReverbEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
+    }
+
+    /// Ids are positions in the Reverb table of `livecraft_model::device`. Id 0, the decay time,
+    /// has no effect in this port, as before M05.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            1 => self.set_params(value, self.damping, self.dry_wet),
+            2 => self.set_params(self.room_size, value, self.dry_wet),
+            3 => self.set_params(self.room_size, self.damping, value),
+            4 => self.stereo_width = value.clamp(0.0, 1.0),
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn reverb_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || ReverbEffect::new(44100.0),
+            &[(1, 0.8), (2, 0.4), (3, 0.5)],
+        );
+    }
+
+    #[test]
+    fn reverb_room_size_changes_the_output() {
+        assert_parameter_changes_output(|| ReverbEffect::new(44100.0), 1, 0.1);
     }
 }
