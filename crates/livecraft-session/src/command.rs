@@ -6,7 +6,7 @@
 //! `Operation` is a `Command` through the blanket impl below.
 
 use livecraft_model::edit::EditError;
-use livecraft_model::ids::{ClipId, IdAllocator, LaneId, TrackId};
+use livecraft_model::ids::{ClipId, DeviceId, IdAllocator, LaneId, TrackId};
 use livecraft_model::model::Project;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
@@ -45,6 +45,8 @@ pub enum CommandError {
     NotMidiClip(ClipId),
     #[error("clip {clip} has no note at index {index}")]
     NoSuchNote { clip: ClipId, index: usize },
+    #[error("device {device} has no parameter named `{name}`")]
+    NoSuchParam { device: DeviceId, name: String },
     #[error("track {track} already has a clip in slot {slot}")]
     SlotOccupied { track: TrackId, slot: usize },
     #[error("track {track} has no clip in slot {slot}")]

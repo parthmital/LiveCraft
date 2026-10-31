@@ -67,6 +67,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-session/src/commands/transport.rs` | Tempo (M04 item 7 adds the time signature, loop, and metronome)                              | one `Operation` per edit                                                   | model, time                          |
 | `crates/livecraft-session/src/commands/clip.rs`      | Clip create (MIDI and audio), delete, duplicate (new clip and lane ids), move, rename, loop, and markers. A clip is named by `ClipId`; a slot by its track and row | one `Operation` per edit                                                   | model, time                          |
 | `crates/livecraft-session/src/commands/note.rs`      | MIDI note add, remove, and edit, checked against Live's note ranges. A note is named by its index until M18 | one `Operation` per edit                                                   | model                                |
+| `crates/livecraft-session/src/commands/device.rs`    | Device insert (new id), remove (with the automation that targets it, restored on undo), move, enable, and set parameter by name | one `Operation` per edit                                       | model                                |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules

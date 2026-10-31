@@ -59,6 +59,13 @@ impl ParamValues {
         }
     }
 
+    /// Removes the value of a parameter, which then reads as unset.
+    pub fn remove(&mut self, id: ParamId) {
+        if let Ok(index) = self.values.binary_search_by_key(&id, |&(key, _)| key) {
+            self.values.remove(index);
+        }
+    }
+
     pub fn iter(&self) -> impl Iterator<Item = (ParamId, f32)> + '_ {
         self.values.iter().copied()
     }
@@ -99,6 +106,15 @@ mod tests {
         values.set(ParamId(5), 0.7);
         let ids: Vec<_> = values.iter().collect();
         assert_eq!(ids, vec![(ParamId(1), 0.1), (ParamId(5), 0.7)]);
+    }
+
+    #[test]
+    fn remove_clears_one_value_and_ignores_an_unset_one() {
+        let mut values = ParamValues::from_defaults(TABLE);
+        values.remove(ParamId(0));
+        values.remove(ParamId(1));
+        assert_eq!(values.get(ParamId(0)), None);
+        assert_eq!(values.get(ParamId(2)), Some(1.0));
     }
 
     #[test]

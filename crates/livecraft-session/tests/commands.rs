@@ -332,6 +332,23 @@ fn every_registered_command_round_trips_its_arguments() {
             json!({ "clip": 9, "start_marker_beat": 0.0, "end_marker_beat": 4.0 }),
         ),
         (
+            "device.insert",
+            json!({ "track": 3, "device_type": "Compressor", "name": "Compressor" }),
+        ),
+        (
+            "device.move",
+            json!({ "track": 3, "device": 102, "index": 0 }),
+        ),
+        ("device.remove", json!({ "track": 3, "device": 102 })),
+        (
+            "device.set_enabled",
+            json!({ "track": 3, "device": 102, "enabled": false }),
+        ),
+        (
+            "device.set_param",
+            json!({ "track": 3, "device": 102, "param": "band_1_gain", "value": 3.0 }),
+        ),
+        (
             "note.add",
             json!({ "clip": 9, "note": { "pitch": 60, "start_beat": 0.0, "duration_beats": 1.0, "velocity": 100.0, "release_velocity": 64.0, "probability": 1.0, "velocity_deviation": 0.0, "mute": false } }),
         ),
