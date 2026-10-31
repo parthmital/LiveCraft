@@ -27,7 +27,7 @@ const LAYERS: &[(&str, &[&str])] = &[
         ],
     ),
     (
-        "livecraft-gui",
+        "livecraft-ui",
         &["livecraft-model", "livecraft-formats", "livecraft-engine"],
     ),
     (
@@ -37,7 +37,7 @@ const LAYERS: &[(&str, &[&str])] = &[
             "livecraft-formats",
             "livecraft-engine",
             "livecraft-devices",
-            "livecraft-gui",
+            "livecraft-ui",
         ],
     ),
     (
@@ -272,7 +272,7 @@ mod tests {
     fn layering_accepts_allowed_edges() {
         assert!(
             violations(
-                "livecraft-gui",
+                "livecraft-ui",
                 &["livecraft-model", "livecraft-formats", "livecraft-engine"]
             )
             .is_empty()
@@ -282,8 +282,8 @@ mod tests {
     #[test]
     fn layering_rejects_reverse_edge() {
         assert_eq!(
-            violations("livecraft-model", &["livecraft-gui"]),
-            vec!["`livecraft-model` must not depend on `livecraft-gui`".to_string()]
+            violations("livecraft-model", &["livecraft-ui"]),
+            vec!["`livecraft-model` must not depend on `livecraft-ui`".to_string()]
         );
     }
 

@@ -35,17 +35,17 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-engine/src/graph.rs`                | Per-track state, clip playback, voices, mixing, meters                                       | `AudioGraph`, `TrackDspState`, `TrackMeter`                                | as above                             |
 | `crates/livecraft-engine/src/audio_clip.rs`           | WAV sample cache with a 2^28-sample limit                                                    | `AudioSampleCache`                                                         | as above                             |
 | `crates/livecraft-engine/src/bouncer.rs`              | Offline render and stems                                                                     | `OfflineBouncer`, `RenderOptions`                                          | as above                             |
-| `crates/livecraft-gui/src/app.rs`                     | Frame loop, shortcuts, panel layout, engine wiring                                           | `LiveCraftApp`                                                             | model, formats, engine               |
-| `crates/livecraft-gui/src/{view}.rs`                  | One view or panel per file (transport, session, arrange, mixer, devices, pianoroll, browser) | `render_*` functions                                                       | as above                             |
-| `crates/livecraft-gui/src/widgets.rs`, `style.rs`     | Knobs, faders, meters, LCD fields; palettes                                                  | `live_knob`, `live_fader`, `LivePalette`                                   | as above                             |
-| `crates/livecraft-cli/src/main.rs`                    | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | model, formats, engine, devices, gui |
+| `crates/livecraft-ui/src/app.rs`                      | Frame loop, shortcuts, panel layout, engine wiring                                           | `LiveCraftApp`                                                             | model, formats, engine               |
+| `crates/livecraft-ui/src/{view}.rs`                   | One view or panel per file (transport, session, arrange, mixer, devices, pianoroll, browser) | `render_*` functions                                                       | as above                             |
+| `crates/livecraft-ui/src/widgets.rs`, `style.rs`      | Knobs, faders, meters, LCD fields; palettes                                                  | `live_knob`, `live_fader`, `LivePalette`                                   | as above                             |
+| `crates/livecraft-cli/src/main.rs`                    | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | model, formats, engine, devices, ui  |
 | `crates/livecraft-testkit/src/lib.rs`                 | Test helpers shared across crates                                                            | `render_project_summary`, `RenderSummary`                                  | model, engine                        |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules
 
 - `livecraft-model` and `livecraft-dsp` have no internal dependencies and no audio, UI, or OS dependencies.
-- Layers run model and dsp, then formats and devices, then engine, then gui, then cli. Never add a reverse edge.
+- Layers run model and dsp, then formats and devices, then engine, then ui, then cli. Never add a reverse edge.
 - Only `livecraft-cli` produces a binary.
 - Enforced by `cargo xtask layering` (part of `cargo xtask ci`): the `LAYERS` table in `xtask/src/main.rs` is the source of truth.
 
@@ -54,7 +54,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 - New document data or edit operation: `livecraft-model/src/model.rs`, with a `Command` variant in `command.rs`.
 - New DSP building block (filter, oscillator, envelope): `livecraft-dsp/src/`.
 - New effect or instrument: a file in `livecraft-devices/src/effects/` or `instruments/`, a `DspProcessor` impl in `processor.rs`, a `DeviceType` variant in `livecraft-model`.
-- New view or panel: a new file in `livecraft-gui/src/`, called from `app.rs`.
+- New view or panel: a new file in `livecraft-ui/src/`, called from `app.rs`.
 - New CLI subcommand: `livecraft-cli/src/main.rs` plus a test in `crates/livecraft-cli/tests/cli_tests.rs`.
 
 ## Decisions
@@ -76,12 +76,12 @@ Each is scheduled in [plans/livecraft-1.0/PLAN.md](plans/livecraft-1.0/PLAN.md).
 | Audio clips decode their WAV file from disk on the audio thread the first time they play                             | `audio_clip.rs` `render_clip_samples` via `get_or_load` | 1 (M05, M11) |
 | `process_buffer_interleaved` grows its scratch buffers on the audio thread when the driver block exceeds 8192 frames | `graph.rs`                                              | 1            |
 | `DspProcessor` processes one sample per virtual call and looks parameters up by string                               | `processor.rs`                                          | 1            |
-| GUI mutates `Project` directly; most edits bypass `CommandHistory`, so undo covers few actions                       | `crates/livecraft-gui/src/*.rs`                         | 1            |
+| GUI mutates `Project` directly; most edits bypass `CommandHistory`, so undo covers few actions                       | `crates/livecraft-ui/src/*.rs`                          | 1            |
 | Entity identity is `usize` indexes in commands and messages, which break on insert or delete                         | `command.rs`, `engine.rs`                               | 1            |
 | `.als` writer regenerates XML from the model; every unknown element is lost                                          | `als.rs`                                                | 2            |
 | Session clip slots without an active clip are played back as a sequential timeline                                   | `graph.rs` `dispatch_clip_events`                       | 1            |
 | Large files mixing concerns: `model.rs` (1214 lines), `graph.rs` (1080), `als.rs` (1008), `devices.rs` (995)         | as listed                                               | 1            |
-| GUI layout uses estimated sizes and colours, not measurements of Live                                                | `crates/livecraft-gui/src/*.rs`                         | 3            |
+| GUI layout uses estimated sizes and colours, not measurements of Live                                                | `crates/livecraft-ui/src/*.rs`                          | 3            |
 
 ## Growth Signals
 

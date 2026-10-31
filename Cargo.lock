@@ -1517,9 +1517,9 @@ dependencies = [
  "livecraft-devices",
  "livecraft-engine",
  "livecraft-formats",
- "livecraft-gui",
  "livecraft-model",
  "livecraft-testkit",
+ "livecraft-ui",
  "log",
  "serde_json",
 ]
@@ -1564,20 +1564,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "livecraft-gui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "eframe",
- "egui",
- "image",
- "livecraft-engine",
- "livecraft-formats",
- "livecraft-model",
- "log",
-]
-
-[[package]]
 name = "livecraft-model"
 version = "0.1.0"
 dependencies = [
@@ -1590,6 +1576,20 @@ version = "0.1.0"
 dependencies = [
  "livecraft-engine",
  "livecraft-model",
+]
+
+[[package]]
+name = "livecraft-ui"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "eframe",
+ "egui",
+ "image",
+ "livecraft-engine",
+ "livecraft-formats",
+ "livecraft-model",
+ "log",
 ]
 
 [[package]]

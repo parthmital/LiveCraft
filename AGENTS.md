@@ -8,7 +8,7 @@ Last verified: 2026-10-28.
 - Format check: `cargo fmt --all -- --check` (fix: `cargo fmt --all`)
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
 - Test all: `cargo test --workspace`
-- Test one crate: `cargo test -p livecraft-model` (also `livecraft-formats`, `livecraft-dsp`, `livecraft-devices`, `livecraft-engine`, `livecraft-gui`, `livecraft-cli`)
+- Test one crate: `cargo test -p livecraft-model` (also `livecraft-formats`, `livecraft-dsp`, `livecraft-devices`, `livecraft-engine`, `livecraft-ui`, `livecraft-cli`)
 - Test one test: `cargo test -p livecraft-devices test_eq8_processing`
 - Release build: `cargo build --release --workspace`
 - Toolchain: pinned to Rust 1.99.1 by `rust-toolchain.toml`; crate metadata comes from `[workspace.package]` in `Cargo.toml`.

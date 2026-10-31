@@ -6,7 +6,7 @@ members = [
     "crates/livecraft-dsp",
     "crates/livecraft-devices",
     "crates/livecraft-engine",
-    "crates/livecraft-gui",
+    "crates/livecraft-ui",
     "crates/livecraft-cli",
     "crates/livecraft-testkit",
     "xtask",
@@ -50,3 +50,4 @@ livecraft-formats = { path = "crates/livecraft-formats" }
 livecraft-devices = { path = "crates/livecraft-devices" }
 livecraft-engine = { path = "crates/livecraft-engine" }
 livecraft-dsp = { path = "crates/livecraft-dsp" }
+livecraft-ui = { path = "crates/livecraft-ui" }

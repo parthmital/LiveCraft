@@ -5,7 +5,7 @@ Last verified: 2026-10-27 (section 42.1 checked against manual page 1014).
 
 - Source: manual chapter 42, pages 1014 to 1036. The manual is authoritative; on any conflict, follow it.
 - Coverage is partial: sections 42.2, 42.6 to 42.9, 42.11, 42.13, 42.14, 42.17, 42.18, 42.21 to 42.23, and 42.25 to 42.29 are missing. The plan's shortcut registry milestone generates the complete table from the PDF and replaces this file.
-- LiveCraft today implements only `Space`, `Tab`, `Shift+Tab`, `F12`, `Ctrl+T`, `Ctrl+Shift+T`, `0`, `S`, `C`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+S` (`crates/livecraft-gui/src/app.rs`), plus `F8` for a theme toggle that Live does not have.
+- LiveCraft today implements only `Space`, `Tab`, `Shift+Tab`, `F12`, `Ctrl+T`, `Ctrl+Shift+T`, `0`, `S`, `C`, `Ctrl+Z`, `Ctrl+Y`, `Ctrl+S` (`crates/livecraft-ui/src/app.rs`), plus `F8` for a theme toggle that Live does not have.
 
 ## 1. Showing and Hiding Views (Chapter 42.1)
 

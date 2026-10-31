@@ -16,7 +16,7 @@ livecraft-model = { path = "../livecraft-model" }
 livecraft-formats = { path = "../livecraft-formats" }
 livecraft-engine.workspace = true
 livecraft-devices.workspace = true
-livecraft-gui = { path = "../livecraft-gui" }
+livecraft-ui.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 env_logger.workspace = true

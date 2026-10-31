@@ -11,13 +11,13 @@ Last verified: 2026-10-27.
 
 ## Tokens
 
-- Single home for values: `crates/livecraft-gui/src/style.rs` (`LivePalette::dark`, `LivePalette::light`). Do not copy values into docs.
+- Single home for values: `crates/livecraft-ui/src/style.rs` (`LivePalette::dark`, `LivePalette::light`). Do not copy values into docs.
 - Status on 2026-10-27: current values are estimates, not measured against Live. The plan replaces them with measured tokens per Live theme (Dark, Light, and the other built-in themes) and a zoom factor (Live's Zoom setting, 50 to 200 percent).
 - Typography: currently egui's default proportional and monospace fonts, which do not match Live. The plan selects an openly licensed font by measured metric error against reference captures (see `UI-FIDELITY.md#font`).
 
 ## Components
 
-Built on `egui` painting primitives in `crates/livecraft-gui/src/widgets.rs`.
+Built on `egui` painting primitives in `crates/livecraft-ui/src/widgets.rs`.
 
 | Component                      | Function                   | State today                                                                            |
 | ------------------------------ | -------------------------- | -------------------------------------------------------------------------------------- |

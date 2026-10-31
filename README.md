@@ -70,7 +70,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 - Undo and redo for a small set of commands (`CommandHistory`).
 - Audio engine (`livecraft-engine`): `cpal` output stream, per-track device chains, sends and returns, In, Auto, and Off monitoring, offline WAV render and stem export through `hound`.
 - Devices (`livecraft-devices`, built on filters in `livecraft-dsp`): Operator-style 4-operator FM synth, Simpler-style sampler, a 16-pad drum rack, and effects named after EQ Eight, EQ Three, Compressor, Limiter, Gate, Auto Filter, Auto Pan, Chorus, Delay, Reverb, Saturator, Redux, and Utility. These are simplified approximations, not matched to Live's sound or parameter sets.
-- GUI (`livecraft-gui`): control bar, Session View with mixer strips, Arrangement View, device and clip detail area, piano roll, and browser sidebar, in dark and light themes, plus a headless `--screenshot` mode.
+- GUI (`livecraft-ui`): control bar, Session View with mixer strips, Arrangement View, device and clip detail area, piano roll, and browser sidebar, in dark and light themes, plus a headless `--screenshot` mode.
 
 ## Tech Stack
 
@@ -79,7 +79,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 | Rust                  | 2024 edition            | Whole workspace                                                      |
 | `cpal`                | 0.18                    | Audio output stream in `crates/livecraft-engine/src/engine.rs`       |
 | `hound`               | 3.5                     | WAV read and write for render, stems, and samples                    |
-| `egui`, `eframe`      | 0.37 (wgpu renderer)    | Immediate-mode desktop GUI in `crates/livecraft-gui`                 |
+| `egui`, `eframe`      | 0.37 (wgpu renderer)    | Immediate-mode desktop GUI in `crates/livecraft-ui`                  |
 | `image`               | 0.25 (PNG only)         | Saves `--screenshot` captures                                        |
 | `quick-xml`, `flate2` | 0.42, 1.0               | `.als` XML parsing and gzip in `crates/livecraft-formats/src/als.rs` |
 | `crossbeam-channel`   | 0.5                     | Bounded parameter queue from GUI or CLI to the audio callback        |
@@ -100,9 +100,9 @@ LiveCraft/
 |   |-- livecraft-dsp/
 |   |-- livecraft-engine/
 |   |-- livecraft-formats/
-|   |-- livecraft-gui/
 |   |-- livecraft-model/
-|   `-- livecraft-testkit/
+|   |-- livecraft-testkit/
+|   `-- livecraft-ui/
 |-- docs/
 |-- plans/
 |   `-- livecraft-1.0/

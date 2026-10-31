@@ -193,11 +193,11 @@ fn main() -> anyhow::Result<()> {
     match args.command {
         None => {
             // Default action if no subcommand is given: launch GUI
-            let options = livecraft_gui::GuiOptions {
+            let options = livecraft_ui::GuiOptions {
                 project_path: args.project,
                 ..Default::default()
             };
-            if let Err(e) = livecraft_gui::run_gui_with_options(options) {
+            if let Err(e) = livecraft_ui::run_gui_with_options(options) {
                 eprintln!("Error starting GUI: {:?}", e);
                 return Err(e);
             }
@@ -209,14 +209,14 @@ fn main() -> anyhow::Result<()> {
             tab,
             theme,
         }) => {
-            let options = livecraft_gui::GuiOptions {
+            let options = livecraft_ui::GuiOptions {
                 project_path: project,
                 screenshot_path: screenshot,
                 initial_view: view,
                 initial_tab: tab,
                 theme,
             };
-            if let Err(e) = livecraft_gui::run_gui_with_options(options) {
+            if let Err(e) = livecraft_ui::run_gui_with_options(options) {
                 eprintln!("Error starting GUI: {:?}", e);
                 return Err(e);
             }

@@ -82,3 +82,5 @@ Rename `crates/livecraft-gui` to `crates/livecraft-ui` using `git mv`, update cr
 ## If Something Fails
 
 - Read the whole error and find the root cause. If this file is wrong (an anchor, API, or expected value changed), correct it and add `Revision <date>: <what and why>` at its end. If the line still cannot be finished, log it under Blockers in `CHECKLIST.md`.
+
+Revision 2026-10-31: Steps 3 and 4 assumed `livecraft-gui` was a `[workspace.dependencies]` entry used as `livecraft-gui.workspace = true`. The repository had neither: `crates/livecraft-cli/Cargo.toml` used the path form `livecraft-gui = { path = "../livecraft-gui" }`, and the root table had no GUI entry. The `livecraft-ui` entry is added to the root table as step 3 says, and the CLI uses `livecraft-ui.workspace = true`. Step 2 also missed the root `members` list, which now names `crates/livecraft-ui`. The `xtask` unit tests that named `livecraft-gui` now name `livecraft-ui`, because the LAYERS rename would otherwise fail them. The commit also updates the docs that name the crate (README, ARCHITECTURE, DESIGN, AGENTS, `docs/keyboard-shortcuts.md`), since docs must match the code in the same commit.
