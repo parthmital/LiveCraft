@@ -337,6 +337,20 @@ mod tests {
     }
 
     #[test]
+    fn note_events_belong_to_the_block_that_rendered_them() {
+        let (_collector, mut graph) = compile(&Project::new_default("Events"));
+        let track = graph.node_mut(TrackId(1)).expect("track 1");
+        assert!(track.events.push(NoteEvent::On {
+            offset: 0,
+            pitch: 60,
+            velocity: 100,
+            freq_hz: 261.6,
+        }));
+        graph.render(&context(MAX_BLOCK));
+        assert!(graph.nodes()[0].events.is_empty());
+    }
+
+    #[test]
     fn rendering_the_same_graph_twice_gives_the_same_bits() {
         let render = || {
             let (_collector, mut graph) = compile(&Project::new_default("Repeat"));

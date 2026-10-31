@@ -175,7 +175,7 @@ impl Engine {
         let frames = out.len() / channels;
         let mut start = 0;
         while start < frames {
-            let block = (frames - start).min(MAX_BLOCK);
+            let block = self.segment_len(frames - start);
             let context = ProcessContext {
                 sample_rate: self.sample_rate,
                 frames: block,
@@ -290,6 +290,34 @@ impl Engine {
         self.origin_frame = self.frame;
     }
 
+    /// Frames to render from the current frame, at most `remaining` and `MAX_BLOCK`. A segment ends on
+    /// the frame where the playhead reaches the next arrangement clip boundary, so the clip starts or
+    /// stops on its exact sample.
+    fn segment_len(&self, remaining: usize) -> usize {
+        let limit = remaining.min(MAX_BLOCK);
+        if !self.playing {
+            return limit;
+        }
+        let position = self.playhead_at(self.frame);
+        let Some(boundary) = self.graph.next_boundary(position) else {
+            return limit;
+        };
+        let estimate = ((boundary - position) / self.beats_per_frame()).ceil();
+        if !estimate.is_finite() || estimate >= limit as f64 {
+            return limit;
+        }
+        // The estimate can be one frame off through rounding, so step to the first frame whose
+        // playhead has reached the boundary.
+        let mut frames = estimate.max(1.0) as u64;
+        while frames > 1 && self.playhead_at(self.frame + frames - 1) >= boundary {
+            frames -= 1;
+        }
+        while self.playhead_at(self.frame + frames) < boundary {
+            frames += 1;
+        }
+        (frames as usize).min(limit)
+    }
+
     fn beats_per_frame(&self) -> f64 {
         if self.playing {
             beats_per_sample(f64::from(self.bpm), f64::from(self.sample_rate))
@@ -311,12 +339,12 @@ mod tests {
     use crate::compiler::GraphCompiler;
     use basedrop::Collector;
     use livecraft_devices::NoteEvent;
-    use livecraft_model::model::Project;
+    use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project};
 
     const RATE: f32 = 44100.0;
 
-    /// The graph of the Set with a note held on track 1. The note is in the block's event list on
-    /// every block, which keeps the track sounding.
+    /// The graph of the Set with a note queued on track 1 for the first block. The instrument sustains
+    /// it after that.
     fn sounding(compiler: &mut GraphCompiler, project: &Project) -> CompiledGraph {
         let mut graph = compiler.compile(project);
         let track = graph.node_mut(TrackId(1)).expect("track 1");
@@ -373,7 +401,7 @@ mod tests {
         let (mut engine, mut handle, mut compiler) = started(&project);
         let mut swapped = render_blocks(&mut engine, 2);
         handle
-            .submit_graph(sounding(&mut compiler, &project))
+            .submit_graph(compiler.compile(&project))
             .expect("submit");
         swapped.extend(render_blocks(&mut engine, 2));
         assert_eq!(swapped, expected);
@@ -391,6 +419,77 @@ mod tests {
             handle.send(command).expect("room in the queue");
         }
         assert_eq!(handle.send(command), Err(QueueFull));
+    }
+
+    /// Renders `frames` frames of the left channel, in blocks of at most `MAX_BLOCK` frames.
+    fn render_left(engine: &mut Engine, frames: usize) -> Vec<f32> {
+        let mut out = vec![0.0f32; MAX_BLOCK * 2];
+        let mut left = Vec::with_capacity(frames + MAX_BLOCK);
+        while left.len() < frames {
+            engine.process(&mut out, 2);
+            left.extend(out.as_chunks::<2>().0.iter().map(|frame| frame[0]));
+        }
+        left
+    }
+
+    #[test]
+    fn an_arrangement_clip_starts_and_stops_on_its_exact_sample() {
+        use crate::audio_clip::DecodedAudio;
+        use crate::clip::{ArrangedClip, PlayableClip, PlayableSource};
+        use basedrop::Shared;
+
+        // At 120 BPM and 44.1 kHz a beat is 22050 samples, so the clip covers samples 22050 to 44099.
+        let collector = Collector::new();
+        let mut compiler = GraphCompiler::new(RATE, collector.handle());
+        let mut graph = compiler.compile(&Project::new_default("Arranged"));
+        let data = DecodedAudio {
+            samples_l: vec![0.5; 22050],
+            samples_r: vec![0.5; 22050],
+            sample_rate: 44100,
+            channels: 2,
+        };
+        let track = graph.node_mut(TrackId(1)).expect("track 1");
+        track.clips.arranged.push(ArrangedClip {
+            start_beat: 1.0,
+            length_beats: 1.0,
+            clip: PlayableClip {
+                length_beats: 1.0,
+                is_looping: false,
+                source: PlayableSource::Audio {
+                    data: Shared::new(&collector.handle(), data),
+                    gain: 1.0,
+                    is_warped: false,
+                    original_bpm: 120.0,
+                },
+            },
+        });
+        let (mut engine, mut handle) = Engine::start(graph, RATE, collector).expect("start");
+        handle.send(EngineCommand::SetPlaying(true)).expect("send");
+        let left = render_left(&mut engine, 44200);
+        assert!(left[..22050].iter().all(|&sample| sample == 0.0));
+        assert_ne!(left[22050], 0.0);
+        assert_ne!(left[44099], 0.0);
+        assert!(left[44100..].iter().all(|&sample| sample == 0.0));
+    }
+
+    #[test]
+    fn a_session_clip_that_was_not_launched_stays_silent() {
+        let mut project = Project::new_default("Timeline");
+        let mut clip = Clip::new_midi(900, "Chord", 4.0);
+        if let ClipPayload::Midi(ref mut data) = clip.payload {
+            data.notes.push(MidiNote::new(60, 0.0, 4.0, 100));
+        }
+        project.tracks[0].clip_slots[0].clip = Some(clip);
+        let collector = Collector::new();
+        let mut compiler = GraphCompiler::new(RATE, collector.handle());
+        let graph = compiler.compile(&project);
+        let (mut engine, mut handle) = Engine::start(graph, RATE, collector).expect("start");
+        handle.send(EngineCommand::SetPlaying(true)).expect("send");
+        assert!(
+            render_left(&mut engine, 4 * MAX_BLOCK)
+                .iter()
+                .all(|&s| s == 0.0)
+        );
     }
 
     #[test]

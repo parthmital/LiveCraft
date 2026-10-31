@@ -125,6 +125,8 @@ impl Node {
         for frame in 0..frames {
             self.meter.update(self.left[frame], self.right[frame]);
         }
+        // The events belong to this block only. The next block schedules its own, so none carry over.
+        self.events.clear();
     }
 }
 
@@ -221,6 +223,14 @@ impl CompiledGraph {
         if let Some(node) = self.node_mut(track) {
             node.clips.stop();
         }
+    }
+
+    /// The first beat after `position` at which a track starts or stops an arrangement clip.
+    pub fn next_boundary(&self, position: f64) -> Option<f64> {
+        self.nodes[..self.track_count]
+            .iter()
+            .filter_map(|node| node.clips.next_boundary(position))
+            .reduce(f64::min)
     }
 
     /// Launches the slot in the scene's row on every track that has a clip there.

@@ -45,8 +45,9 @@ pub struct ArrangedClip {
     pub clip: PlayableClip,
 }
 
-/// The clips of one track and the notes they have started. A track plays its active session slot,
-/// else the arrangement clip under the playhead, else the session slots in order (see `schedule`).
+/// The clips of one track and the notes they have started. A track plays its launched session slot,
+/// else the arrangement clip under the playhead. A session clip that was not launched stays silent
+/// (see `schedule`).
 pub struct ClipLane {
     /// One entry per clip slot row; `None` for an empty slot.
     pub slots: Vec<Option<PlayableClip>>,
@@ -152,30 +153,27 @@ impl ClipLane {
                 );
                 return;
             }
-        } else {
-            // Session slots without an active clip play in order along the timeline.
-            let mut start = 0.0;
-            for clip in self.slots.iter().flatten() {
-                let end = start + clip.length_beats;
-                if position >= start && position < end {
-                    play(
-                        PlayPass {
-                            clip,
-                            loop_length: None,
-                            position: position - start,
-                        },
-                        ctx,
-                        events,
-                        &mut self.sounding,
-                        left,
-                        right,
-                    );
-                    return;
-                }
-                start = end;
-            }
         }
         self.end_sounding(events);
+    }
+
+    /// The first beat after `position` at which the arrangement clip under the playhead starts or
+    /// ends, or None when no arrangement clip starts or ends after it. A launched clip loops, so it
+    /// has no boundary.
+    pub fn next_boundary(&self, position: f64) -> Option<f64> {
+        if self.active_slot.is_some() || !self.plays_clips {
+            return None;
+        }
+        self.arranged
+            .iter()
+            .flat_map(|arranged| {
+                [
+                    arranged.start_beat,
+                    arranged.start_beat + arranged.length_beats,
+                ]
+            })
+            .filter(|beat| *beat > position)
+            .reduce(f64::min)
     }
 
     /// Sends a note-off for every note that is sounding, and forgets them.
