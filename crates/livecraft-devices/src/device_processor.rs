@@ -133,6 +133,20 @@ impl EventList {
         }
     }
 
+    /// Sorts the events by offset, keeping the order of events that share an offset. It sorts in
+    /// place with an insertion sort, so it never allocates.
+    pub fn sort_by_offset(&mut self) {
+        for index in 1..self.events.len() {
+            let mut position = index;
+            while position > 0
+                && self.events[position - 1].offset() > self.events[position].offset()
+            {
+                self.events.swap(position - 1, position);
+                position -= 1;
+            }
+        }
+    }
+
     pub fn len(&self) -> usize {
         self.events.len()
     }

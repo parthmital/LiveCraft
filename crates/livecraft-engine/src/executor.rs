@@ -10,7 +10,7 @@ use crate::collector;
 use crate::compiled::{CompiledGraph, MAX_BLOCK, Node};
 use crate::graph::sanitize_output_sample;
 use livecraft_devices::ProcessContext;
-use livecraft_model::ids::TrackId;
+use livecraft_model::ids::{SceneId, TrackId};
 use livecraft_time::beats_per_sample;
 
 /// Capacity of the command queue, in commands.
@@ -48,6 +48,19 @@ pub enum EngineCommand {
         send: usize,
         amount: f32,
     },
+    /// Launches a session slot on a track.
+    TriggerClip {
+        track: TrackId,
+        slot: usize,
+    },
+    StopClip {
+        track: TrackId,
+    },
+    /// Launches the slots in a scene's row.
+    TriggerScene {
+        scene: SceneId,
+    },
+    StopAll,
 }
 
 /// A discrete event from the audio thread, read by the session.
@@ -111,15 +124,18 @@ pub struct Engine {
 impl Engine {
     /// Creates the audio side and the session handle around the first graph, and starts the
     /// collector thread.
+    /// `shared` is the collector behind the handle the compiler shares clip data with. It moves to
+    /// the collector thread.
     pub fn start(
         graph: CompiledGraph,
         sample_rate: f32,
+        shared: basedrop::Collector,
     ) -> std::io::Result<(Engine, EngineHandle)> {
         let (command_tx, command_rx) = rtrb::RingBuffer::new(COMMAND_CAPACITY);
         let (graph_tx, graph_rx) = rtrb::RingBuffer::new(GRAPH_CAPACITY);
         let (retired_tx, retired_rx) = rtrb::RingBuffer::new(GRAPH_CAPACITY);
         let (event_tx, event_rx) = rtrb::RingBuffer::new(EVENT_CAPACITY);
-        collector::spawn(retired_rx)?;
+        collector::spawn(retired_rx, shared)?;
         let engine = Engine {
             graph: Box::new(graph),
             sample_rate,
@@ -243,6 +259,10 @@ impl Engine {
                     *level = amount;
                 }
             }
+            EngineCommand::TriggerClip { track, slot } => self.graph.launch_clip(track, slot),
+            EngineCommand::StopClip { track } => self.graph.stop_clip(track),
+            EngineCommand::TriggerScene { scene } => self.graph.launch_scene(scene),
+            EngineCommand::StopAll => self.graph.stop_all(),
         }
     }
 
@@ -275,13 +295,14 @@ mod tests {
     use super::*;
     use crate::compiled::MAX_BLOCK;
     use crate::compiler::GraphCompiler;
+    use basedrop::Collector;
     use livecraft_devices::NoteEvent;
     use livecraft_model::model::Project;
 
     const RATE: f32 = 44100.0;
 
     /// The graph of the Set with a note held on track 1. The note is in the block's event list on
-    /// every block, which keeps the track sounding until clip playback sends events (M05 item 7).
+    /// every block, which keeps the track sounding.
     fn sounding(compiler: &mut GraphCompiler, project: &Project) -> CompiledGraph {
         let mut graph = compiler.compile(project);
         let track = graph.node_mut(TrackId(1)).expect("track 1");
@@ -292,6 +313,15 @@ mod tests {
             freq_hz: 261.6,
         }));
         graph
+    }
+
+    /// Starts an engine on the Set, with the compiler that built its graph and shares its collector.
+    fn started(project: &Project) -> (Engine, EngineHandle, GraphCompiler) {
+        let collector = Collector::new();
+        let mut compiler = GraphCompiler::new(RATE, collector.handle());
+        let graph = sounding(&mut compiler, project);
+        let (engine, handle) = Engine::start(graph, RATE, collector).expect("start");
+        (engine, handle, compiler)
     }
 
     /// Renders `blocks` stereo blocks and returns the output as bit patterns.
@@ -307,10 +337,7 @@ mod tests {
 
     #[test]
     fn a_mute_command_silences_the_track_from_the_next_block() {
-        let project = Project::new_default("Mute");
-        let mut compiler = GraphCompiler::new(RATE);
-        let (mut engine, mut handle) =
-            Engine::start(sounding(&mut compiler, &project), RATE).expect("start");
+        let (mut engine, mut handle, _compiler) = started(&Project::new_default("Mute"));
         let before = render_blocks(&mut engine, 1);
         assert!(before.iter().any(|&bits| f32::from_bits(bits) != 0.0));
         handle
@@ -326,14 +353,10 @@ mod tests {
     #[test]
     fn a_graph_swap_with_the_same_set_leaves_the_output_bit_identical() {
         let project = Project::new_default("Swap");
-        let mut reference_compiler = GraphCompiler::new(RATE);
-        let (mut reference, _reference_handle) =
-            Engine::start(sounding(&mut reference_compiler, &project), RATE).expect("start");
+        let (mut reference, _reference_handle, _reference_compiler) = started(&project);
         let expected = render_blocks(&mut reference, 4);
 
-        let mut compiler = GraphCompiler::new(RATE);
-        let (mut engine, mut handle) =
-            Engine::start(sounding(&mut compiler, &project), RATE).expect("start");
+        let (mut engine, mut handle, mut compiler) = started(&project);
         let mut swapped = render_blocks(&mut engine, 2);
         handle
             .submit_graph(sounding(&mut compiler, &project))
@@ -348,10 +371,7 @@ mod tests {
 
     #[test]
     fn a_full_command_queue_refuses_the_next_command() {
-        let project = Project::new_default("Full");
-        let mut compiler = GraphCompiler::new(RATE);
-        let (_engine, mut handle) =
-            Engine::start(sounding(&mut compiler, &project), RATE).expect("start");
+        let (_engine, mut handle, _compiler) = started(&Project::new_default("Full"));
         let command = EngineCommand::SetTempo(100.0);
         for _ in 0..COMMAND_CAPACITY {
             handle.send(command).expect("room in the queue");

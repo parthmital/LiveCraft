@@ -8,6 +8,7 @@
 //! Nodes are the tracks, then the return tracks, then the Main track. Tracks feed returns through
 //! their sends, and tracks and returns feed Main, so this order is a topological order.
 
+use crate::clip::ClipLane;
 use crate::graph::TrackMeter;
 use livecraft_devices::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
@@ -64,6 +65,8 @@ pub struct Node {
     pub devices: Vec<DeviceSlot>,
     /// The note events of the current block. Instruments play them.
     pub events: EventList,
+    /// The clips of the track. Return and Main nodes have none.
+    pub clips: ClipLane,
     /// The level after the device chain, before the mixer.
     pub meter: TrackMeter,
     left: Box<[f32]>,
@@ -71,17 +74,35 @@ pub struct Node {
 }
 
 impl Node {
-    pub fn new(track: TrackId, kind: NodeKind, mixer: Mixer, devices: Vec<DeviceSlot>) -> Self {
+    pub fn new(
+        track: TrackId,
+        kind: NodeKind,
+        mixer: Mixer,
+        devices: Vec<DeviceSlot>,
+        clips: ClipLane,
+    ) -> Self {
         Self {
             track,
             kind,
             mixer,
             devices,
             events: EventList::with_capacity(MAX_NOTE_EVENTS),
+            clips,
             meter: TrackMeter::default(),
             left: vec![0.0; MAX_BLOCK].into_boxed_slice(),
             right: vec![0.0; MAX_BLOCK].into_boxed_slice(),
         }
+    }
+
+    /// Fills this block's note events and audio from the clips the track plays.
+    fn schedule_clips(&mut self, ctx: &ProcessContext) {
+        let frames = ctx.frames;
+        self.clips.schedule(
+            ctx,
+            &mut self.events,
+            &mut self.left[..frames],
+            &mut self.right[..frames],
+        );
     }
 
     fn clear(&mut self, frames: usize) {
@@ -188,6 +209,39 @@ impl CompiledGraph {
         self.nodes.iter_mut().find(|node| node.track == track)
     }
 
+    /// Launches a session slot on a track (its clip replaces the one playing).
+    pub fn launch_clip(&mut self, track: TrackId, slot: usize) {
+        if let Some(node) = self.node_mut(track) {
+            node.clips.launch(slot);
+        }
+    }
+
+    /// Stops the clip a track is playing.
+    pub fn stop_clip(&mut self, track: TrackId) {
+        if let Some(node) = self.node_mut(track) {
+            node.clips.stop();
+        }
+    }
+
+    /// Launches the slot in the scene's row on every track that has a clip there.
+    pub fn launch_scene(&mut self, scene: SceneId) {
+        let Some(row) = self.scenes.iter().position(|id| *id == scene) else {
+            return;
+        };
+        for node in &mut self.nodes[..self.track_count] {
+            if matches!(node.clips.slots.get(row), Some(Some(_))) {
+                node.clips.launch(row);
+            }
+        }
+    }
+
+    /// Stops the clips on every track.
+    pub fn stop_all(&mut self) {
+        for node in &mut self.nodes[..self.track_count] {
+            node.clips.stop();
+        }
+    }
+
     /// The left and right output of the last rendered block.
     pub fn output(&self, frames: usize) -> (&[f32], &[f32]) {
         let main = &self.nodes[self.nodes.len() - 1];
@@ -217,6 +271,7 @@ impl CompiledGraph {
 
         for track in tracks.iter_mut() {
             track.clear(frames);
+            track.schedule_clips(&ProcessContext { frames, ..*ctx });
             track.run_devices(&ProcessContext { frames, ..*ctx });
             if track.mixer.is_muted || (any_solo && !track.mixer.is_soloed) {
                 continue;

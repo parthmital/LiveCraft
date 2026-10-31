@@ -1,5 +1,6 @@
 pub mod audio_clip;
 pub mod bouncer;
+pub mod clip;
 pub mod collector;
 pub mod compiled;
 pub mod compiler;
