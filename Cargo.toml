@@ -39,6 +39,10 @@ eframe = { version = "0.37.0", default-features = false, features = ["default_fo
 egui = "0.37.0"
 insta = { version = "1.49.0", features = ["json"] }
 proptest = "1.12.0"
+rtrb = "=0.4.1"
+basedrop = "=0.1.3"
+triple_buffer = "=9.0.0"
+assert_no_alloc = "=1.1.2"
 livecraft-testkit = { path = "crates/livecraft-testkit" }
 livecraft-model = { path = "crates/livecraft-model" }
 livecraft-formats = { path = "crates/livecraft-formats" }

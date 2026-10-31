@@ -17,6 +17,19 @@ hound.workspace = true
 crossbeam-channel.workspace = true
 anyhow.workspace = true
 log.workspace = true
+rtrb.workspace = true
+basedrop.workspace = true
+triple_buffer.workspace = true
+assert_no_alloc = { workspace = true, optional = true }
+
+[dev-dependencies]
+assert_no_alloc.workspace = true
+
+[features]
+default = ["rt-checks"]
+# Runs audio code inside `assert_no_alloc`, which aborts on allocation. The check is disabled in
+# release builds by the crate's default `disable_release` feature.
+rt-checks = ["dep:assert_no_alloc"]
 
 [lints]
 workspace = true
