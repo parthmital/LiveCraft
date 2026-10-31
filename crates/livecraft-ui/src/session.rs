@@ -1,12 +1,16 @@
+use crate::Edits;
 use crate::mixer::{
     render_master_mixer_strip, render_return_mixer_strip, render_track_mixer_strip,
 };
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
-use livecraft_engine::graph::TrackMeter;
-use livecraft_formats::theme::parse_hex_color;
-use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
-use livecraft_model::model::{Clip, Project, TrackType};
+use livecraft_model::color::parse_hex_color;
+use livecraft_model::ids::{SceneId, TrackId};
+use livecraft_model::model::{Project, TrackType};
+use livecraft_session::Command;
+use livecraft_session::TrackMeter;
+use livecraft_session::commands::clip::{CreateAudioClip, CreateMidiClip};
+use livecraft_session::commands::track::{CreateAudioTrack, CreateMidiTrack};
 
 #[derive(Default)]
 pub struct SessionAction {
@@ -16,19 +20,19 @@ pub struct SessionAction {
     pub stop_all_clips: bool,
     pub select_track: Option<TrackId>,
     pub select_clip: Option<(TrackId, usize)>, // (track, slot_idx)
-    pub add_track: Option<TrackType>,
+    /// Changes to the Set that the app applies through the session.
+    pub edits: Edits,
 }
 
 #[allow(clippy::too_many_arguments)]
 pub fn render_session_view(
     ui: &mut Ui,
-    project: &mut Project,
+    project: &Project,
     selected_track: TrackId,
     active_clip_slots: &[Option<usize>],
     track_meters: &[TrackMeter],
     master_meter: &TrackMeter,
     playhead_beats: f64,
-    ids: &mut IdAllocator,
     palette: &LivePalette,
 ) -> SessionAction {
     let mut action = SessionAction::default();
@@ -43,12 +47,14 @@ pub fn render_session_view(
                 let return_width = 86.0;
                 let master_width = 84.0;
                 let num_scenes = project.scenes.len().max(8);
+                let return_ids: Vec<TrackId> =
+                    project.return_tracks.iter().map(|track| track.id).collect();
                 let is_dark = palette.is_dark();
 
                 // -------------------------------------------------------------
                 // 1. Player Tracks (Audio and MIDI)
                 // -------------------------------------------------------------
-                for (trk_idx, trk) in project.tracks.iter_mut().enumerate() {
+                for (trk_idx, trk) in project.tracks.iter().enumerate() {
                     let track_id = trk.id;
                     let is_selected = track_id == selected_track;
                     let active_slot = active_clip_slots.get(trk_idx).copied().flatten();
@@ -275,23 +281,24 @@ pub fn render_session_view(
                                 painter.rect_filled(sq_rect, CornerRadius::same(1), sq_color);
 
                                 if slot_resp.double_clicked() {
-                                    let new_clip = if trk.track_type == TrackType::Midi {
-                                        Clip::new_midi(
-                                            ids.clip(),
-                                            format!("Clip {}", slot_idx + 1),
-                                            4.0,
-                                        )
-                                    } else {
-                                        Clip::new_audio(
-                                            ids.clip(),
-                                            format!("Audio {}", slot_idx + 1),
-                                            "",
-                                            4.0,
-                                        )
-                                    };
-                                    if slot_idx < trk.clip_slots.len() {
-                                        trk.clip_slots[slot_idx].clip = Some(new_clip);
-                                    }
+                                    let command: Box<dyn Command> =
+                                        if trk.track_type == TrackType::Midi {
+                                            Box::new(CreateMidiClip::new(
+                                                track_id,
+                                                slot_idx,
+                                                format!("Clip {}", slot_idx + 1),
+                                                4.0,
+                                            ))
+                                        } else {
+                                            Box::new(CreateAudioClip::new(
+                                                track_id,
+                                                slot_idx,
+                                                format!("Audio {}", slot_idx + 1),
+                                                "",
+                                                4.0,
+                                            ))
+                                        };
+                                    action.edits.push(command);
                                 }
                             }
                         }
@@ -330,14 +337,23 @@ pub fn render_session_view(
                         ui.add_space(2.0);
 
                         // D. Track Mixer Strip (unified directly underneath!)
-                        render_track_mixer_strip(ui, trk, trk_idx, &meter, track_width, palette);
+                        render_track_mixer_strip(
+                            ui,
+                            trk,
+                            &return_ids,
+                            trk_idx,
+                            &meter,
+                            track_width,
+                            palette,
+                            &mut action.edits,
+                        );
                     });
                 }
 
                 // -------------------------------------------------------------
                 // 2. Return Tracks (A-Reverb, B-Delay)
                 // -------------------------------------------------------------
-                for (ret_idx, ret) in project.return_tracks.iter_mut().enumerate() {
+                for (ret_idx, ret) in project.return_tracks.iter().enumerate() {
                     ui.vertical(|ui| {
                         ui.set_width(return_width);
                         ui.spacing_mut().item_spacing = Vec2::new(0.0, 2.0);
@@ -405,7 +421,14 @@ pub fn render_session_view(
                         ui.add_space(2.0);
 
                         // Return Mixer Strip
-                        render_return_mixer_strip(ui, ret, ret_idx, return_width, palette);
+                        render_return_mixer_strip(
+                            ui,
+                            ret,
+                            ret_idx,
+                            return_width,
+                            palette,
+                            &mut action.edits,
+                        );
                     });
                 }
 
@@ -527,10 +550,11 @@ pub fn render_session_view(
                     // Master Track Mixer Strip
                     render_master_mixer_strip(
                         ui,
-                        &mut project.main_track,
+                        &project.main_track,
                         master_meter,
                         master_width,
                         palette,
+                        &mut action.edits,
                     );
                 });
 
@@ -561,7 +585,8 @@ pub fn render_session_view(
                         Vec2::new(76.0, 22.0),
                     );
                     if midi_btn.clicked() {
-                        action.add_track = Some(TrackType::Midi);
+                        let name = format!("{}-MIDI", project.tracks.len() + 1);
+                        action.edits.push(Box::new(CreateMidiTrack::new(name)));
                     }
 
                     let audio_btn = crate::widgets::live_toggle_button(
@@ -572,7 +597,8 @@ pub fn render_session_view(
                         Vec2::new(76.0, 22.0),
                     );
                     if audio_btn.clicked() {
-                        action.add_track = Some(TrackType::Audio);
+                        let name = format!("{}-Audio", project.tracks.len() + 1);
+                        action.edits.push(Box::new(CreateAudioTrack::new(name)));
                     }
                 });
             });

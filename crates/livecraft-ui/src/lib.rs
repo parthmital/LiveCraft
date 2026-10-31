@@ -10,6 +10,10 @@ pub mod transport;
 pub mod widgets;
 
 pub use app::LiveCraftApp;
+
+/// Changes a view asks for. A view reads the Set and returns these; the app applies them through
+/// the session, so no view changes the Set itself.
+pub type Edits = Vec<Box<dyn livecraft_session::Command>>;
 use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Default)]

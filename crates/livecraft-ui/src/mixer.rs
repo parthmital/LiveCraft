@@ -1,20 +1,29 @@
+use crate::Edits;
 use crate::style::LivePalette;
 use crate::widgets::{
     db_to_norm, live_fader, live_knob, live_stereo_meter, live_toggle_button, norm_to_db,
 };
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Stroke, Ui, Vec2};
-use livecraft_engine::graph::TrackMeter;
-use livecraft_formats::theme::parse_hex_color;
+use livecraft_model::color::parse_hex_color;
+use livecraft_model::ids::TrackId;
 use livecraft_model::model::{MonitoringMode, Track};
+use livecraft_session::TrackMeter;
+use livecraft_session::commands::track::{
+    SetTrackArmed, SetTrackMonitoring, SetTrackMuted, SetTrackPan, SetTrackSend, SetTrackSoloed,
+    SetTrackVolume,
+};
 
 /// Renders the mixer channel strip for a standard Audio or MIDI track.
+#[allow(clippy::too_many_arguments)]
 pub fn render_track_mixer_strip(
     ui: &mut Ui,
-    trk: &mut Track,
+    trk: &Track,
+    returns: &[TrackId],
     trk_idx: usize,
     meter: &TrackMeter,
     track_width: f32,
     palette: &LivePalette,
+    edits: &mut Edits,
 ) {
     ui.vertical(|ui| {
         ui.set_width(track_width);
@@ -32,7 +41,10 @@ pub fn render_track_mixer_strip(
             let in_btn =
                 live_toggle_button(ui, in_active, palette.amber, "In", Vec2::new(btn_w, 16.0));
             if in_btn.clicked() {
-                trk.monitoring = MonitoringMode::In;
+                edits.push(Box::new(SetTrackMonitoring::new(
+                    trk.id,
+                    MonitoringMode::In,
+                )));
             }
 
             let auto_btn = live_toggle_button(
@@ -43,13 +55,19 @@ pub fn render_track_mixer_strip(
                 Vec2::new(btn_w, 16.0),
             );
             if auto_btn.clicked() {
-                trk.monitoring = MonitoringMode::Auto;
+                edits.push(Box::new(SetTrackMonitoring::new(
+                    trk.id,
+                    MonitoringMode::Auto,
+                )));
             }
 
             let off_btn =
                 live_toggle_button(ui, off_active, palette.amber, "Off", Vec2::new(btn_w, 16.0));
             if off_btn.clicked() {
-                trk.monitoring = MonitoringMode::Off;
+                edits.push(Box::new(SetTrackMonitoring::new(
+                    trk.id,
+                    MonitoringMode::Off,
+                )));
             }
         });
 
@@ -57,11 +75,15 @@ pub fn render_track_mixer_strip(
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
             let knob_size = 24.0;
-            if let Some(send_a) = trk.sends.first_mut() {
-                live_knob(ui, send_a, 0.0, 1.0, knob_size, "A", palette.amber);
-            }
-            if let Some(send_b) = trk.sends.get_mut(1) {
-                live_knob(ui, send_b, 0.0, 1.0, knob_size, "B", palette.cyan);
+            // Sends are positional: send A goes to the first return track, send B to the second.
+            for (send, label, color) in [(0, "A", palette.amber), (1, "B", palette.cyan)] {
+                if let (Some(&return_id), Some(&sent)) = (returns.get(send), trk.sends.get(send)) {
+                    let mut level = sent;
+                    live_knob(ui, &mut level, 0.0, 1.0, knob_size, label, color);
+                    if level != sent {
+                        edits.push(Box::new(SetTrackSend::new(trk.id, return_id, level)));
+                    }
+                }
             }
         });
 
@@ -73,7 +95,11 @@ pub fn render_track_mixer_strip(
         } else {
             format!("{}R", (trk.pan * 50.0).round() as i32)
         };
-        live_knob(ui, &mut trk.pan, -1.0, 1.0, 24.0, &pan_label, palette.amber);
+        let mut pan = trk.pan;
+        live_knob(ui, &mut pan, -1.0, 1.0, 24.0, &pan_label, palette.amber);
+        if pan != trk.pan {
+            edits.push(Box::new(SetTrackPan::new(trk.id, pan)));
+        }
 
         // 4. Volume Fader & Stereo VU meter side by side with dB markings
         let fader_h = 100.0;
@@ -81,14 +107,18 @@ pub fn render_track_mixer_strip(
             ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
 
             // Fader
+            let mut volume_db = trk.volume_db;
             live_fader(
                 ui,
-                &mut trk.volume_db,
+                &mut volume_db,
                 -60.0,
                 6.0,
                 Vec2::new(28.0, fader_h),
                 palette.amber,
             );
+            if volume_db != trk.volume_db {
+                edits.push(Box::new(SetTrackVolume::new(trk.id, volume_db)));
+            }
 
             // Stereo VU Meter
             live_stereo_meter(
@@ -135,10 +165,13 @@ pub fn render_track_mixer_strip(
         if val_resp.dragged() {
             let current_norm = db_to_norm(trk.volume_db);
             let delta_norm = -val_resp.drag_delta().y / 100.0;
-            trk.volume_db = norm_to_db((current_norm + delta_norm).clamp(0.0, 1.0));
+            edits.push(Box::new(SetTrackVolume::new(
+                trk.id,
+                norm_to_db((current_norm + delta_norm).clamp(0.0, 1.0)),
+            )));
         }
         if val_resp.double_clicked() {
-            trk.volume_db = 0.0;
+            edits.push(Box::new(SetTrackVolume::new(trk.id, 0.0)));
         }
 
         if ui.is_rect_visible(val_rect) {
@@ -216,7 +249,7 @@ pub fn render_track_mixer_strip(
                 );
             }
             if act_resp.clicked() {
-                trk.is_muted = !trk.is_muted;
+                edits.push(Box::new(SetTrackMuted::new(trk.id, !trk.is_muted)));
             }
 
             // Solo button (S)
@@ -260,7 +293,7 @@ pub fn render_track_mixer_strip(
                 );
             }
             if solo_resp.clicked() {
-                trk.is_soloed = !trk.is_soloed;
+                edits.push(Box::new(SetTrackSoloed::new(trk.id, !trk.is_soloed)));
             }
 
             // Arm button (●)
@@ -298,7 +331,7 @@ pub fn render_track_mixer_strip(
                 painter.circle_filled(arm_rect.center(), 4.5, arm_color);
             }
             if arm_resp.clicked() {
-                trk.is_armed = !trk.is_armed;
+                edits.push(Box::new(SetTrackArmed::new(trk.id, !trk.is_armed)));
             }
         });
 
@@ -319,10 +352,11 @@ pub fn render_track_mixer_strip(
 /// Renders the mixer channel strip for a Return Track (A-Reverb, B-Delay).
 pub fn render_return_mixer_strip(
     ui: &mut Ui,
-    ret: &mut Track,
+    ret: &Track,
     ret_idx: usize,
     track_width: f32,
     palette: &LivePalette,
+    edits: &mut Edits,
 ) {
     ui.vertical(|ui| {
         ui.set_width(track_width);
@@ -343,20 +377,29 @@ pub fn render_return_mixer_strip(
         } else {
             format!("{}R", (ret.pan * 50.0).round() as i32)
         };
-        live_knob(ui, &mut ret.pan, -1.0, 1.0, 24.0, &pan_label, palette.amber);
+        let mut pan = ret.pan;
+        live_knob(ui, &mut pan, -1.0, 1.0, 24.0, &pan_label, palette.amber);
+        if pan != ret.pan {
+            edits.push(Box::new(SetTrackPan::new(ret.id, pan)));
+        }
 
         // Volume fader & dB scale ticks
         let fader_h = 100.0;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
+            let mut volume_db = ret.volume_db;
             live_fader(
                 ui,
-                &mut ret.volume_db,
+                &mut volume_db,
                 -60.0,
                 6.0,
                 Vec2::new(28.0, fader_h),
                 palette.amber,
             );
+
+            if volume_db != ret.volume_db {
+                edits.push(Box::new(SetTrackVolume::new(ret.id, volume_db)));
+            }
 
             // Meter quiet
             live_stereo_meter(ui, -60.0, -60.0, Vec2::new(14.0, fader_h));
@@ -392,10 +435,13 @@ pub fn render_return_mixer_strip(
         if val_resp.dragged() {
             let current_norm = db_to_norm(ret.volume_db);
             let delta_norm = -val_resp.drag_delta().y / 100.0;
-            ret.volume_db = norm_to_db((current_norm + delta_norm).clamp(0.0, 1.0));
+            edits.push(Box::new(SetTrackVolume::new(
+                ret.id,
+                norm_to_db((current_norm + delta_norm).clamp(0.0, 1.0)),
+            )));
         }
         if val_resp.double_clicked() {
-            ret.volume_db = 0.0;
+            edits.push(Box::new(SetTrackVolume::new(ret.id, 0.0)));
         }
 
         if ui.is_rect_visible(val_rect) {
@@ -437,7 +483,7 @@ pub fn render_return_mixer_strip(
             let act_btn =
                 live_toggle_button(ui, active, palette.amber, letter, Vec2::new(btn_w, 20.0));
             if act_btn.clicked() {
-                ret.is_muted = !ret.is_muted;
+                edits.push(Box::new(SetTrackMuted::new(ret.id, !ret.is_muted)));
             }
 
             let solo_btn = live_toggle_button(
@@ -448,7 +494,7 @@ pub fn render_return_mixer_strip(
                 Vec2::new(btn_w, 20.0),
             );
             if solo_btn.clicked() {
-                ret.is_soloed = !ret.is_soloed;
+                edits.push(Box::new(SetTrackSoloed::new(ret.id, !ret.is_soloed)));
             }
         });
 
@@ -469,10 +515,11 @@ pub fn render_return_mixer_strip(
 /// Renders the Master / Main track mixer strip.
 pub fn render_master_mixer_strip(
     ui: &mut Ui,
-    master: &mut Track,
+    master: &Track,
     master_meter: &TrackMeter,
     track_width: f32,
     palette: &LivePalette,
+    edits: &mut Edits,
 ) {
     ui.vertical(|ui| {
         ui.set_width(track_width);
@@ -494,28 +541,28 @@ pub fn render_master_mixer_strip(
         } else {
             format!("{}R", (master.pan * 50.0).round() as i32)
         };
-        live_knob(
-            ui,
-            &mut master.pan,
-            -1.0,
-            1.0,
-            24.0,
-            &pan_label,
-            palette.amber,
-        );
+        let mut pan = master.pan;
+        live_knob(ui, &mut pan, -1.0, 1.0, 24.0, &pan_label, palette.amber);
+        if pan != master.pan {
+            edits.push(Box::new(SetTrackPan::new(master.id, pan)));
+        }
 
         // Master Volume Fader & Stereo Master Meters
         let fader_h = 100.0;
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(3.0, 0.0);
+            let mut volume_db = master.volume_db;
             live_fader(
                 ui,
-                &mut master.volume_db,
+                &mut volume_db,
                 -60.0,
                 6.0,
                 Vec2::new(28.0, fader_h),
                 palette.amber,
             );
+            if volume_db != master.volume_db {
+                edits.push(Box::new(SetTrackVolume::new(master.id, volume_db)));
+            }
             live_stereo_meter(
                 ui,
                 master_meter.peak_db_l(),
@@ -560,10 +607,13 @@ pub fn render_master_mixer_strip(
         if val_resp.dragged() {
             let current_norm = db_to_norm(master.volume_db);
             let delta_norm = -val_resp.drag_delta().y / 100.0;
-            master.volume_db = norm_to_db((current_norm + delta_norm).clamp(0.0, 1.0));
+            edits.push(Box::new(SetTrackVolume::new(
+                master.id,
+                norm_to_db((current_norm + delta_norm).clamp(0.0, 1.0)),
+            )));
         }
         if val_resp.double_clicked() {
-            master.volume_db = 0.0;
+            edits.push(Box::new(SetTrackVolume::new(master.id, 0.0)));
         }
 
         if ui.is_rect_visible(val_rect) {

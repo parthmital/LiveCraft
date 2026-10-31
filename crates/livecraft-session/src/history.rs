@@ -228,7 +228,11 @@ pub struct Transaction<'a> {
 impl Transaction<'_> {
     /// Applies an operation as part of the transaction.
     pub fn run<O: Operation>(&mut self, operation: O) -> Result<(), CommandError> {
-        let mut command: Box<dyn Command> = Box::new(operation);
+        self.run_command(Box::new(operation))
+    }
+
+    /// Applies a command that was built elsewhere, as part of the transaction.
+    pub fn run_command(&mut self, mut command: Box<dyn Command>) -> Result<(), CommandError> {
         command.apply(self.project, self.ids)?;
         self.commands.push(command);
         Ok(())

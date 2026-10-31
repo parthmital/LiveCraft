@@ -32,7 +32,30 @@ struct Cli {
 }
 
 #[derive(Subcommand, Debug)]
+enum CommandAction {
+    /// Print the name of every registered command
+    List,
+    /// Run one command on a Live Set and save the result to a .als file
+    Run {
+        /// Input .als or .json Live Set
+        path: PathBuf,
+        /// Command name, as `command list` prints it (for example track.set_volume)
+        name: String,
+        /// Arguments as a JSON object (for example '{"track": 1, "volume_db": -6.0}')
+        args: String,
+        /// Output .als file
+        #[arg(short, long)]
+        out: PathBuf,
+    },
+}
+
+#[derive(Subcommand, Debug)]
 enum Commands {
+    /// List or run the registered commands that edit a Live Set
+    Command {
+        #[command(subcommand)]
+        action: CommandAction,
+    },
     /// Create a new Ableton Live .als or .json project
     New {
         /// Target file path (e.g. project.als or project.json)
@@ -221,6 +244,27 @@ fn main() -> anyhow::Result<()> {
                 return Err(e);
             }
         }
+        Some(Commands::Command { action }) => match action {
+            CommandAction::List => {
+                for name in livecraft_session::commands::registry().names() {
+                    println!("{name}");
+                }
+            }
+            CommandAction::Run {
+                path,
+                name,
+                args,
+                out,
+            } => {
+                let project = load_project_from_path(&path)?;
+                let arguments: serde_json::Value = serde_json::from_str(&args)?;
+                let command = livecraft_session::commands::registry().build(&name, arguments)?;
+                let mut session = livecraft_session::Session::new(project, None);
+                session.apply(vec![command])?;
+                session.save(&out)?;
+                println!("Ran {name} and saved {}", out.display());
+            }
+        },
         Some(Commands::New { path, bpm }) => {
             let name = path
                 .file_stem()

@@ -10,6 +10,8 @@ publish.workspace = true
 [dependencies]
 livecraft-model.workspace = true
 livecraft-time.workspace = true
+livecraft-engine.workspace = true
+livecraft-formats.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

@@ -1,7 +1,10 @@
+use crate::Edits;
 use crate::style::LivePalette;
 use crate::widgets::{live_divider, live_lcd_box, live_toggle_button};
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
-use livecraft_model::model::{NOTE_NAMES, Project, ScaleType};
+use livecraft_model::model::{NOTE_NAMES, Project, ScaleConfig, ScaleType};
+use livecraft_session::commands::scale::SetScale;
+use livecraft_session::commands::transport::{SetLoop, SetMetronome, SetTempo};
 use livecraft_time::{MAX_BPM, MIN_BPM};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -16,11 +19,15 @@ pub struct TransportBarResponse {
     pub record_toggled: bool,
     pub view_mode_changed: Option<ViewMode>,
     pub browser_toggled: bool,
+    /// Changes to the Set that the app applies through the session.
+    pub edits: Edits,
+    /// A new playhead position, when the position display was dragged.
+    pub playhead_set: Option<f64>,
 }
 
 pub fn render_transport_bar(
     ui: &mut Ui,
-    project: &mut Project,
+    project: &Project,
     current_view: ViewMode,
     palette: &LivePalette,
     cpu_percent: f32,
@@ -32,6 +39,8 @@ pub fn render_transport_bar(
         record_toggled: false,
         view_mode_changed: None,
         browser_toggled: false,
+        edits: Vec::new(),
+        playhead_set: None,
     };
 
     ui.horizontal(|ui| {
@@ -130,21 +139,19 @@ pub fn render_transport_bar(
         let bpm_lcd = live_lcd_box(ui, &bpm_str, Vec2::new(56.0, 24.0), palette.amber, false);
         if bpm_lcd.dragged() {
             bpm = (bpm - bpm_lcd.drag_delta().y * 0.2).clamp(MIN_BPM as f32, MAX_BPM as f32);
-            project.transport.set_bpm(bpm);
+            resp.edits.push(Box::new(SetTempo::new(bpm)));
         }
 
         // Nudge buttons
         let nudge_down = live_toggle_button(ui, false, palette.amber, "<", Vec2::new(16.0, 24.0));
         if nudge_down.clicked() {
-            project
-                .transport
-                .set_bpm((project.transport.bpm() - 0.5).max(MIN_BPM as f32));
+            let tempo = (project.transport.bpm() - 0.5).max(MIN_BPM as f32);
+            resp.edits.push(Box::new(SetTempo::new(tempo)));
         }
         let nudge_up = live_toggle_button(ui, false, palette.amber, ">", Vec2::new(16.0, 24.0));
         if nudge_up.clicked() {
-            project
-                .transport
-                .set_bpm((project.transport.bpm() + 0.5).min(MAX_BPM as f32));
+            let tempo = (project.transport.bpm() + 0.5).min(MAX_BPM as f32);
+            resp.edits.push(Box::new(SetTempo::new(tempo)));
         }
 
         // Time Signature LCD well
@@ -200,7 +207,7 @@ pub fn render_transport_bar(
             painter.circle_filled(c2, 3.0, icon_color);
         }
         if metro_resp.clicked() {
-            project.transport.metronome_enabled = !project.transport.metronome_enabled;
+            resp.edits.push(Box::new(SetMetronome::new(!metro_active)));
         }
 
         // Quantization Menu
@@ -250,27 +257,47 @@ pub fn render_transport_bar(
             );
         }
         if badge_resp.clicked() {
-            project.scale.is_active = !project.scale.is_active;
+            let scale = ScaleConfig {
+                is_active: !project.scale.is_active,
+                ..project.scale
+            };
+            resp.edits.push(Box::new(SetScale::new(scale)));
         }
 
         let root_idx = (project.scale.root_note % 12) as usize;
+        let mut root_note = project.scale.root_note;
         egui::ComboBox::from_id_salt("transport_scale_root")
             .selected_text(NOTE_NAMES[root_idx])
             .width(36.0)
             .show_ui(ui, |ui| {
                 for (idx, &name) in NOTE_NAMES.iter().enumerate() {
-                    ui.selectable_value(&mut project.scale.root_note, idx as u8, name);
+                    ui.selectable_value(&mut root_note, idx as u8, name);
                 }
             });
+        if root_note != project.scale.root_note {
+            let scale = ScaleConfig {
+                root_note,
+                ..project.scale
+            };
+            resp.edits.push(Box::new(SetScale::new(scale)));
+        }
 
+        let mut scale_type = project.scale.scale_type;
         egui::ComboBox::from_id_salt("transport_scale_type")
             .selected_text(project.scale.scale_type.name())
             .width(72.0)
             .show_ui(ui, |ui| {
                 for &st in ScaleType::ALL {
-                    ui.selectable_value(&mut project.scale.scale_type, st, st.name());
+                    ui.selectable_value(&mut scale_type, st, st.name());
                 }
             });
+        if scale_type != project.scale.scale_type {
+            let scale = ScaleConfig {
+                scale_type,
+                ..project.scale
+            };
+            resp.edits.push(Box::new(SetScale::new(scale)));
+        }
 
         live_divider(ui, 24.0);
 
@@ -291,8 +318,7 @@ pub fn render_transport_bar(
         );
         if pos_lcd.dragged() {
             let delta = -pos_lcd.drag_delta().y * 0.25;
-            project.transport.playhead_beats =
-                (project.transport.playhead_beats + delta as f64).max(0.0);
+            resp.playhead_set = Some((beats + delta as f64).max(0.0));
         }
 
         // -------------------------------------------------------------
@@ -340,7 +366,6 @@ pub fn render_transport_bar(
             ));
         }
         if play_resp.clicked() {
-            project.transport.is_playing = !project.transport.is_playing;
             resp.play_toggled = true;
         }
 
@@ -365,8 +390,6 @@ pub fn render_transport_bar(
             painter.rect_filled(sq, CornerRadius::ZERO, Color32::from_rgb(0xbb, 0xbb, 0xbb));
         }
         if stop_resp.clicked() {
-            project.transport.is_playing = false;
-            project.transport.playhead_beats = 0.0;
             resp.stop_clicked = true;
         }
 
@@ -405,7 +428,6 @@ pub fn render_transport_bar(
             painter.circle_filled(c, 5.0, dot_color);
         }
         if rec_resp.clicked() {
-            project.transport.is_recording = !project.transport.is_recording;
             resp.record_toggled = true;
         }
 
@@ -544,7 +566,11 @@ pub fn render_transport_bar(
             );
         }
         if loop_resp.clicked() {
-            project.transport.loop_enabled = !project.transport.loop_enabled;
+            resp.edits.push(Box::new(SetLoop::new(
+                !project.transport.loop_enabled,
+                project.transport.loop_start_beats,
+                project.transport.loop_length_beats,
+            )));
         }
 
         let loop_len_str = format!(

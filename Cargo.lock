@@ -1594,6 +1594,7 @@ dependencies = [
  "livecraft-engine",
  "livecraft-formats",
  "livecraft-model",
+ "livecraft-session",
  "livecraft-testkit",
  "livecraft-ui",
  "log",
@@ -1656,6 +1657,8 @@ dependencies = [
 name = "livecraft-session"
 version = "0.1.0"
 dependencies = [
+ "livecraft-engine",
+ "livecraft-formats",
  "livecraft-model",
  "livecraft-time",
  "proptest",
@@ -1688,8 +1691,6 @@ dependencies = [
  "eframe",
  "egui",
  "image",
- "livecraft-engine",
- "livecraft-formats",
  "livecraft-model",
  "livecraft-session",
  "livecraft-time",

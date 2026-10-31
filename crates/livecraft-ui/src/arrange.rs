@@ -1,6 +1,6 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
-use livecraft_formats::theme::parse_hex_color;
+use livecraft_model::color::parse_hex_color;
 use livecraft_model::ids::{ClipId, TrackId};
 use livecraft_model::model::{ClipPayload, Project};
 
@@ -12,7 +12,7 @@ pub struct ArrangementAction {
 
 pub fn render_arrangement_view(
     ui: &mut Ui,
-    project: &mut Project,
+    project: &Project,
     selected_track: TrackId,
     playhead_beats: f64,
     palette: &LivePalette,
@@ -210,7 +210,7 @@ pub fn render_arrangement_view(
                 // -------------------------------------------------------------
                 // 2. Track Lanes (Manual p. 165-175): Timeline on Left, Track Strips on Right
                 // -------------------------------------------------------------
-                for (trk_idx, trk) in project.tracks.iter_mut().enumerate() {
+                for (trk_idx, trk) in project.tracks.iter().enumerate() {
                     let track_id = trk.id;
                     let is_selected = track_id == selected_track;
 

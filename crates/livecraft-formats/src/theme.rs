@@ -89,20 +89,5 @@ impl AbletonTheme {
     }
 }
 
-pub fn parse_hex_color(hex: &str) -> [u8; 4] {
-    let clean = hex.trim_start_matches('#');
-    if clean.len() == 6 {
-        let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(255);
-        let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(255);
-        let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(255);
-        [r, g, b, 255]
-    } else if clean.len() == 8 {
-        let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(255);
-        let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(255);
-        let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(255);
-        let a = u8::from_str_radix(&clean[6..8], 16).unwrap_or(255);
-        [r, g, b, a]
-    } else {
-        [255, 255, 255, 255]
-    }
-}
+/// The colour parser lives in the model, so the UI can use it without depending on this crate.
+pub use livecraft_model::color::parse_hex_color;

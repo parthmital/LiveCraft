@@ -1,7 +1,11 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Ui, Vec2};
-use livecraft_model::ids::IdAllocator;
-use livecraft_model::model::{Device, DeviceType, Track, TrackType};
+use livecraft_model::model::DeviceType;
+
+/// A device the browser asks the app to insert: its type and its name.
+fn device_request(name: impl Into<String>, device_type: DeviceType) -> (DeviceType, String) {
+    (device_type, name.into())
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BrowserCategory {
@@ -20,8 +24,7 @@ pub enum BrowserCategory {
 }
 
 pub struct BrowserAction {
-    pub add_device: Option<Device>,
-    pub add_track: Option<TrackType>,
+    pub add_device: Option<(DeviceType, String)>,
 }
 
 pub struct LiveBrowser {
@@ -39,17 +42,8 @@ impl Default for LiveBrowser {
 }
 
 impl LiveBrowser {
-    pub fn render(
-        &mut self,
-        ui: &mut Ui,
-        _selected_track: Option<&mut Track>,
-        device_ids: &mut IdAllocator,
-        palette: &LivePalette,
-    ) -> BrowserAction {
-        let mut action = BrowserAction {
-            add_device: None,
-            add_track: None,
-        };
+    pub fn render(&mut self, ui: &mut Ui, palette: &LivePalette) -> BrowserAction {
+        let mut action = BrowserAction { add_device: None };
 
         ui.vertical(|ui| {
             ui.set_width(ui.available_width());
@@ -287,18 +281,14 @@ impl LiveBrowser {
                                     .on_hover_text(desc)
                                     .clicked()
                                 {
-                                    action.add_device =
-                                        Some(Device::new(device_ids.device(), name, dtype.clone()));
+                                    action.add_device = Some(device_request(name, dtype.clone()));
                                 }
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         if ui.small_button("+ Add").clicked() {
-                                            action.add_device = Some(Device::new(
-                                                device_ids.device(),
-                                                name,
-                                                dtype.clone(),
-                                            ));
+                                            action.add_device =
+                                                Some(device_request(name, dtype.clone()));
                                         }
                                     },
                                 );
@@ -329,18 +319,14 @@ impl LiveBrowser {
                             }
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(false, name).clicked() {
-                                    action.add_device =
-                                        Some(Device::new(device_ids.device(), name, dtype.clone()));
+                                    action.add_device = Some(device_request(name, dtype.clone()));
                                 }
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         if ui.small_button("+ Add").clicked() {
-                                            action.add_device = Some(Device::new(
-                                                device_ids.device(),
-                                                name,
-                                                dtype.clone(),
-                                            ));
+                                            action.add_device =
+                                                Some(device_request(name, dtype.clone()));
                                         }
                                     },
                                 );
@@ -358,21 +344,15 @@ impl LiveBrowser {
                         for kit in kits {
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(false, kit).clicked() {
-                                    action.add_device = Some(Device::new(
-                                        device_ids.device(),
-                                        kit,
-                                        DeviceType::DrumRack,
-                                    ));
+                                    action.add_device =
+                                        Some(device_request(kit, DeviceType::DrumRack));
                                 }
                                 ui.with_layout(
                                     egui::Layout::right_to_left(egui::Align::Center),
                                     |ui| {
                                         if ui.small_button("+ Add").clicked() {
-                                            action.add_device = Some(Device::new(
-                                                device_ids.device(),
-                                                kit,
-                                                DeviceType::DrumRack,
-                                            ));
+                                            action.add_device =
+                                                Some(device_request(kit, DeviceType::DrumRack));
                                         }
                                     },
                                 );
@@ -407,8 +387,7 @@ impl LiveBrowser {
                         for (name, dtype) in defaults {
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(false, name).clicked() {
-                                    action.add_device =
-                                        Some(Device::new(device_ids.device(), name, dtype));
+                                    action.add_device = Some(device_request(name, dtype));
                                 }
                             });
                         }

@@ -7,7 +7,9 @@ pub mod command;
 pub mod commands;
 pub mod history;
 pub mod registry;
+pub mod session;
 
 pub use command::{Command, CommandError, Operation};
 pub use history::{HistoryEntry, MERGE_GAP, OPENING_LABEL, Transaction, UndoHistory};
 pub use registry::CommandRegistry;
+pub use session::{EngineStatus, Session, TrackMeter, demo_set, load_set};

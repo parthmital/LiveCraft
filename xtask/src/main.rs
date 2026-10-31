@@ -41,13 +41,7 @@ const LAYERS: &[(&str, &[&str])] = &[
     ),
     (
         "livecraft-ui",
-        &[
-            "livecraft-model",
-            "livecraft-session",
-            "livecraft-formats",
-            "livecraft-engine",
-            "livecraft-time",
-        ],
+        &["livecraft-model", "livecraft-session", "livecraft-time"],
     ),
     (
         "livecraft",
@@ -56,6 +50,7 @@ const LAYERS: &[(&str, &[&str])] = &[
             "livecraft-formats",
             "livecraft-engine",
             "livecraft-devices",
+            "livecraft-session",
             "livecraft-ui",
         ],
     ),
@@ -293,10 +288,15 @@ mod tests {
         assert!(
             violations(
                 "livecraft-ui",
-                &["livecraft-model", "livecraft-formats", "livecraft-engine"]
+                &["livecraft-model", "livecraft-session", "livecraft-time"]
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn layering_rejects_the_ui_reaching_the_engine() {
+        assert!(!violations("livecraft-ui", &["livecraft-engine"]).is_empty());
     }
 
     #[test]

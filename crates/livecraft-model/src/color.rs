@@ -10,3 +10,22 @@ pub const ABLETON_PALETTE: &[&str] = &[
     "#4f7618", "#337618", "#187629", "#18764c", "#18766c", "#185c76", "#183b76", "#1e1876",
     "#361876", "#4f1876", "#761864", "#76183f", "#ffffff", "#000000",
 ];
+
+/// Parses a `#RRGGBB` or `#RRGGBBAA` color into RGBA bytes. Anything else is white.
+pub fn parse_hex_color(hex: &str) -> [u8; 4] {
+    let clean = hex.trim_start_matches('#');
+    if clean.len() == 6 {
+        let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(255);
+        let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(255);
+        let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(255);
+        [r, g, b, 255]
+    } else if clean.len() == 8 {
+        let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(255);
+        let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(255);
+        let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(255);
+        let a = u8::from_str_radix(&clean[6..8], 16).unwrap_or(255);
+        [r, g, b, a]
+    } else {
+        [255, 255, 255, 255]
+    }
+}

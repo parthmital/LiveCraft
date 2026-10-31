@@ -357,6 +357,10 @@ fn every_registered_command_round_trips_its_arguments() {
             json!({ "clip": 9, "index": 0, "note": { "pitch": 64, "start_beat": 0.0, "duration_beats": 2.0, "velocity": 90.0, "release_velocity": 64.0, "probability": 1.0, "velocity_deviation": 0.0, "mute": false } }),
         ),
         ("note.remove", json!({ "clip": 9, "index": 0 })),
+        (
+            "scale.set",
+            json!({ "scale": { "root_note": 0, "scale_type": "Major", "is_active": true } }),
+        ),
         ("scene.create", json!({ "name": "9" })),
         ("scene.delete", json!({ "scene": 3 })),
         ("scene.duplicate", json!({ "scene": 3 })),

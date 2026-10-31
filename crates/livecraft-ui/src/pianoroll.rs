@@ -1,16 +1,41 @@
+use crate::Edits;
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
-use livecraft_formats::theme::parse_hex_color;
-use livecraft_model::model::{Clip, ClipPayload, MidiNote, NOTE_NAMES, ScaleConfig, ScaleType};
+use livecraft_model::color::parse_hex_color;
+use livecraft_model::model::{
+    Clip, ClipPayload, MidiClipData, MidiNote, NOTE_NAMES, ScaleConfig, ScaleType,
+};
+use livecraft_session::commands::clip::SetClipLoop;
+use livecraft_session::commands::note::{AddNote, RemoveNote};
+use livecraft_session::commands::scale::SetScale;
+
+/// Replaces a clip's notes with the result of a tool, as one undo step: the old notes are removed,
+/// then the new notes are added.
+fn apply_tool(
+    edits: &mut Edits,
+    clip: &Clip,
+    midi: &MidiClipData,
+    tool: impl FnOnce(&mut MidiClipData),
+) {
+    let mut result = midi.clone();
+    tool(&mut result);
+    for index in (0..midi.notes.len()).rev() {
+        edits.push(Box::new(RemoveNote::new(clip.id, index)));
+    }
+    for note in result.notes {
+        edits.push(Box::new(AddNote::new(clip.id, note)));
+    }
+}
 
 pub fn render_piano_roll(
     ui: &mut Ui,
-    clip: &mut Clip,
-    scale: &mut ScaleConfig,
+    clip: &Clip,
+    scale: &ScaleConfig,
     playhead_beats: f64,
     palette: &LivePalette,
+    edits: &mut Edits,
 ) {
-    let ClipPayload::Midi(ref mut midi_data) = clip.payload else {
+    let ClipPayload::Midi(midi_data) = &clip.payload else {
         ui.label("Audio Clip Waveform Editor");
         return;
     };
@@ -73,7 +98,12 @@ pub fn render_piano_roll(
                 Vec2::new(40.0, 22.0),
             );
             if loop_btn.clicked() {
-                clip.is_looping = !clip.is_looping;
+                edits.push(Box::new(SetClipLoop::new(
+                    clip.id,
+                    clip.loop_start_beat,
+                    clip.loop_end_beat,
+                    !clip.is_looping,
+                )));
             }
 
             crate::widgets::live_divider(ui, 22.0);
@@ -87,28 +117,48 @@ pub fn render_piano_roll(
                 Vec2::new(42.0, 22.0),
             );
             if scale_btn.clicked() {
-                scale.is_active = !scale.is_active;
+                edits.push(Box::new(SetScale::new(ScaleConfig {
+                    is_active: !scale.is_active,
+                    ..*scale
+                })));
             }
 
             if scale.is_active {
                 let current_root = NOTE_NAMES[scale.root_note as usize % 12];
+                let mut root_note = scale.root_note;
                 egui::ComboBox::from_id_salt("scale_root_select")
                     .selected_text(current_root)
                     .width(36.0)
                     .show_ui(ui, |ui| {
                         for (idx, &name) in NOTE_NAMES.iter().enumerate() {
-                            ui.selectable_value(&mut scale.root_note, idx as u8, name);
+                            ui.selectable_value(&mut root_note, idx as u8, name);
                         }
                     });
+                if root_note != scale.root_note {
+                    let changed = ScaleConfig {
+                        root_note,
+                        ..*scale
+                    };
+                    edits.push(Box::new(SetScale::new(changed)));
+                }
 
+                let mut scale_type = scale.scale_type;
                 egui::ComboBox::from_id_salt("scale_type_select")
                     .selected_text(scale.scale_type.name())
                     .width(90.0)
                     .show_ui(ui, |ui| {
                         for &st in ScaleType::ALL {
-                            ui.selectable_value(&mut scale.scale_type, st, st.name());
+                            ui.selectable_value(&mut scale_type, st, st.name());
                         }
                     });
+
+                if scale_type != scale.scale_type {
+                    let changed = ScaleConfig {
+                        scale_type,
+                        ..*scale
+                    };
+                    edits.push(Box::new(SetScale::new(changed)));
+                }
 
                 let fold_btn = crate::widgets::live_toggle_button(
                     ui,
@@ -137,59 +187,65 @@ pub fn render_piano_roll(
                 .button(egui::RichText::new("Quantize 1/16").size(10.0))
                 .clicked()
             {
-                midi_data.quantize(0.25);
+                apply_tool(edits, clip, midi_data, |d| d.quantize(0.25));
             }
 
             if ui.button(egui::RichText::new("+1st").size(10.0)).clicked() {
-                midi_data.transpose(1, if scale.is_active { Some(scale) } else { None });
+                apply_tool(edits, clip, midi_data, |d| {
+                    d.transpose(1, if scale.is_active { Some(scale) } else { None })
+                });
             }
             if ui.button(egui::RichText::new("-1st").size(10.0)).clicked() {
-                midi_data.transpose(-1, if scale.is_active { Some(scale) } else { None });
+                apply_tool(edits, clip, midi_data, |d| {
+                    d.transpose(-1, if scale.is_active { Some(scale) } else { None })
+                });
             }
             if ui.button(egui::RichText::new("+12st").size(10.0)).clicked() {
-                midi_data.transpose(12, None);
+                apply_tool(edits, clip, midi_data, |d| d.transpose(12, None));
             }
             if ui.button(egui::RichText::new("-12st").size(10.0)).clicked() {
-                midi_data.transpose(-12, None);
+                apply_tool(edits, clip, midi_data, |d| d.transpose(-12, None));
             }
             if ui.button(egui::RichText::new("Strum").size(10.0)).clicked() {
-                midi_data.strum(0.10, true);
+                apply_tool(edits, clip, midi_data, |d| d.strum(0.10, true));
             }
             if ui
                 .button(egui::RichText::new("Humanize").size(10.0))
                 .clicked()
             {
-                midi_data.humanize(0.04, 12, 12345);
+                apply_tool(edits, clip, midi_data, |d| d.humanize(0.04, 12, 12345));
             }
             if ui
                 .button(egui::RichText::new("Invert").size(10.0))
                 .clicked()
             {
-                midi_data.invert_pitches();
+                apply_tool(edits, clip, midi_data, |d| d.invert_pitches());
             }
             if ui
                 .button(egui::RichText::new("Reverse").size(10.0))
                 .clicked()
             {
-                midi_data.reverse_time(clip.length_beats);
+                apply_tool(edits, clip, midi_data, |d| {
+                    d.reverse_time(clip.length_beats)
+                });
             }
             if ui
                 .button(egui::RichText::new("Ramp Vel").size(10.0))
                 .clicked()
             {
-                midi_data.velocity_ramp(50, 115);
+                apply_tool(edits, clip, midi_data, |d| d.velocity_ramp(50, 115));
             }
             if ui.button(egui::RichText::new("Chop").size(10.0)).clicked() {
-                midi_data.chop(2);
+                apply_tool(edits, clip, midi_data, |d| d.chop(2));
             }
             if ui
                 .button(egui::RichText::new("Ornament").size(10.0))
                 .clicked()
             {
-                midi_data.ornament(0.0625, 0.7);
+                apply_tool(edits, clip, midi_data, |d| d.ornament(0.0625, 0.7));
             }
             if ui.button(egui::RichText::new("Span").size(10.0)).clicked() {
-                midi_data.span();
+                apply_tool(edits, clip, midi_data, |d| d.span());
             }
             if ui
                 .button(egui::RichText::new("Euclid").size(10.0))
@@ -200,19 +256,23 @@ pub fn render_piano_roll(
                 } else {
                     60
                 };
-                midi_data.generate_euclidean(3, 8, p, 4.0, 100);
+                apply_tool(edits, clip, midi_data, |d| {
+                    d.generate_euclidean(3, 8, p, 4.0, 100)
+                });
             }
             if ui
                 .button(egui::RichText::new("Stacks").size(10.0))
                 .clicked()
             {
-                midi_data.generate_stacks(
-                    &[0, 4, 7],
-                    60,
-                    2.0,
-                    100,
-                    if scale.is_active { Some(scale) } else { None },
-                );
+                apply_tool(edits, clip, midi_data, |d| {
+                    d.generate_stacks(
+                        &[0, 4, 7],
+                        60,
+                        2.0,
+                        100,
+                        if scale.is_active { Some(scale) } else { None },
+                    );
+                });
             }
         });
 
@@ -442,14 +502,15 @@ pub fn render_piano_roll(
 
                         if row_clicked < visible_pitches.len() {
                             let pitch = visible_pitches[row_clicked];
-                            midi_data
-                                .notes
-                                .push(MidiNote::new(pitch, beat_clicked, 1.0, 100));
+                            edits.push(Box::new(AddNote::new(
+                                clip.id,
+                                MidiNote::new(pitch, beat_clicked, 1.0, 100),
+                            )));
                         }
                     }
 
                     if let Some(idx) = note_to_remove {
-                        midi_data.notes.remove(idx);
+                        edits.push(Box::new(RemoveNote::new(clip.id, idx)));
                     }
 
                     // Playhead indicator

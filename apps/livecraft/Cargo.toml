@@ -17,6 +17,7 @@ livecraft-formats.workspace = true
 livecraft-engine.workspace = true
 livecraft-devices.workspace = true
 livecraft-ui.workspace = true
+livecraft-session.workspace = true
 clap.workspace = true
 anyhow.workspace = true
 env_logger.workspace = true

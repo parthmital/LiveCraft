@@ -186,6 +186,16 @@ impl Operation for EditNote {
     const NAME: &'static str = "note.edit";
     const LABEL: &'static str = "Edit Note";
 
+    /// A note drag edits the same note again and again, so the drag is one undo step.
+    fn absorb(&mut self, next: &Self) -> bool {
+        if self.clip == next.clip && self.index == next.index {
+            self.note = next.note.clone();
+            true
+        } else {
+            false
+        }
+    }
+
     fn perform(
         &mut self,
         project: &mut Project,
