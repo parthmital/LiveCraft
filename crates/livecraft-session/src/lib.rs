@@ -9,5 +9,5 @@ pub mod history;
 pub mod registry;
 
 pub use command::{Command, CommandError, Operation};
-pub use history::{MERGE_GAP, UndoHistory};
+pub use history::{HistoryEntry, MERGE_GAP, OPENING_LABEL, Transaction, UndoHistory};
 pub use registry::CommandRegistry;

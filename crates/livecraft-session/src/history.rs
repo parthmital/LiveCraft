@@ -3,7 +3,7 @@
 //! The history holds steps, newest last. A step is one command, or later a transaction of several
 //! (item 8). Continuous gestures merge into the step they continue, so one drag is one undo step.
 
-use crate::command::{Command, CommandError};
+use crate::command::{Command, CommandError, Operation};
 use livecraft_model::ids::IdAllocator;
 use livecraft_model::model::Project;
 use std::collections::VecDeque;
@@ -15,10 +15,22 @@ pub const MERGE_GAP: Duration = Duration::from_millis(500);
 /// The default number of steps kept for undo (M04 decision: 1000).
 pub const DEFAULT_LIMIT: usize = 1000;
 
+/// The label of the first entry of every Undo History: the opening of the Set. It cannot be undone
+/// (manual 5.4.2).
+pub const OPENING_LABEL: &str = "Open Set";
+
 struct Step {
+    label: String,
     commands: Vec<Box<dyn Command>>,
     /// When the step last changed, which a gesture compares against `MERGE_GAP`.
     last: Instant,
+}
+
+/// One line of the Undo History, shown newest first. An undone line is greyed out (manual 5.4.2).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HistoryEntry {
+    pub label: String,
+    pub undone: bool,
 }
 
 pub struct UndoHistory {
@@ -64,14 +76,101 @@ impl UndoHistory {
             step.last = at;
             return Ok(());
         }
-        self.done.push_back(Step {
+        let label = command.label().to_string();
+        self.push(Step {
+            label,
             commands: vec![command],
             last: at,
         });
+        Ok(())
+    }
+
+    /// Runs `f`, and records the commands it applies as one step labelled `label`, which undo
+    /// reverts together. If `f` fails, the commands it applied are undone and nothing is recorded.
+    pub fn transaction<F>(
+        &mut self,
+        label: &str,
+        project: &mut Project,
+        ids: &mut IdAllocator,
+        at: Instant,
+        f: F,
+    ) -> Result<(), CommandError>
+    where
+        F: FnOnce(&mut Transaction<'_>) -> Result<(), CommandError>,
+    {
+        let mut transaction = Transaction {
+            project,
+            ids,
+            commands: Vec::new(),
+        };
+        let outcome = f(&mut transaction);
+        let Transaction {
+            project,
+            mut commands,
+            ..
+        } = transaction;
+        if let Err(error) = outcome {
+            for command in commands.iter_mut().rev() {
+                command.undo(project);
+            }
+            return Err(error);
+        }
+        if commands.is_empty() {
+            return Ok(());
+        }
+        self.undone.clear();
+        self.push(Step {
+            label: label.to_string(),
+            commands,
+            last: at,
+        });
+        Ok(())
+    }
+
+    fn push(&mut self, step: Step) {
+        self.done.push_back(step);
         if self.done.len() > self.limit {
             self.done.pop_front();
         }
-        Ok(())
+    }
+
+    /// The Undo History, newest first: the undone steps, greyed out, then the active steps, then
+    /// the opening of the Set (manual 5.4.2). `go_to` takes an index into this list.
+    pub fn entries(&self) -> Vec<HistoryEntry> {
+        let undone = self.undone.iter().map(|step| HistoryEntry {
+            label: step.label.clone(),
+            undone: true,
+        });
+        let active = self.done.iter().rev().map(|step| HistoryEntry {
+            label: step.label.clone(),
+            undone: false,
+        });
+        let opening = std::iter::once(HistoryEntry {
+            label: OPENING_LABEL.to_string(),
+            undone: false,
+        });
+        undone.chain(active).chain(opening).collect()
+    }
+
+    /// Makes the Set the state after the entry at `index` in `entries`, as selecting an entry does
+    /// in Live: the steps newer than it are undone, and the undone steps up to it are redone
+    /// (manual 5.4.2). Returns false when `index` is not an entry.
+    pub fn go_to(
+        &mut self,
+        index: usize,
+        project: &mut Project,
+        ids: &mut IdAllocator,
+    ) -> Result<bool, CommandError> {
+        let steps = self.done.len() + self.undone.len();
+        if index > steps {
+            return Ok(false);
+        }
+        let wanted = steps - index;
+        while self.done.len() > wanted {
+            self.undo(project);
+        }
+        while self.done.len() < wanted && self.redo(project, ids)? {}
+        Ok(true)
     }
 
     /// Undoes the newest step. Returns false when there is nothing to undo.
@@ -118,10 +217,32 @@ impl UndoHistory {
     }
 }
 
+/// The commands a transaction has applied so far. `UndoHistory::transaction` passes one to its
+/// closure, and everything applied through it becomes one undo step.
+pub struct Transaction<'a> {
+    project: &'a mut Project,
+    ids: &'a mut IdAllocator,
+    commands: Vec<Box<dyn Command>>,
+}
+
+impl Transaction<'_> {
+    /// Applies an operation as part of the transaction.
+    pub fn run<O: Operation>(&mut self, operation: O) -> Result<(), CommandError> {
+        let mut command: Box<dyn Command> = Box::new(operation);
+        command.apply(self.project, self.ids)?;
+        self.commands.push(command);
+        Ok(())
+    }
+
+    /// The Set as the transaction has left it so far.
+    pub fn project(&self) -> &Project {
+        self.project
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::command::Operation;
     use livecraft_model::edit::EditError;
     use livecraft_model::ids::TrackId;
     use serde::{Deserialize, Serialize};
