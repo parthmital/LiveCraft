@@ -2,7 +2,8 @@
 //!
 //! `Project::validate` checks that every id the Set refers to exists, that ids are unique, and
 //! the structural rules of the manual: group parents are group tracks, groups nest without
-//! cycles, group tracks hold no clips (manual 18.3, page 400), and every track has one send per
+//! cycles, group tracks hold no clips (manual 18.3, page 400), return and Main tracks hold no
+//! clips because they cannot play them (manual 18.4, page 402), and every track has one send per
 //! return track.
 
 use crate::ids::{ClipId, DeviceId, LaneId, SceneId, TrackId};
@@ -31,6 +32,10 @@ pub enum ValidationError {
     ParentCycle(TrackId),
     #[error("group track {0} holds clips, but group tracks hold no clips")]
     GroupHasClips(TrackId),
+    #[error(
+        "track {0} is a return or Main track, which cannot play clips, but it has clip slots or arrangement clips"
+    )]
+    ReturnOrMainHoldsClips(TrackId),
     #[error("track {track} has {sends} sends, but the Set has {returns} return tracks")]
     SendCount {
         track: TrackId,
@@ -122,6 +127,13 @@ impl Project {
                 || !track.arrangement_clips.is_empty();
             if track.track_type == TrackType::Group && holds_clips {
                 errors.push(ValidationError::GroupHasClips(track.id));
+            }
+            let has_slots_or_arranged =
+                !track.clip_slots.is_empty() || !track.arrangement_clips.is_empty();
+            if matches!(track.track_type, TrackType::Return | TrackType::Main)
+                && has_slots_or_arranged
+            {
+                errors.push(ValidationError::ReturnOrMainHoldsClips(track.id));
             }
             if track.sends.len() != returns {
                 errors.push(ValidationError::SendCount {

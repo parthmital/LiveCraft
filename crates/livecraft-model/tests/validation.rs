@@ -16,6 +16,27 @@ fn the_default_set_is_valid() {
 }
 
 #[test]
+fn the_default_return_and_main_tracks_hold_no_clip_slots() {
+    let proj = Project::new_default("Slots");
+    assert!(
+        proj.return_tracks
+            .iter()
+            .all(|track| track.clip_slots.is_empty())
+    );
+    assert!(proj.main_track.clip_slots.is_empty());
+}
+
+#[test]
+fn a_return_or_main_track_that_holds_clip_slots_is_reported() {
+    let mut proj = Project::new_default("Return slots");
+    proj.return_tracks[0].clip_slots.push(ClipSlot::empty(5000));
+    proj.main_track.clip_slots.push(ClipSlot::empty(7000));
+    let errors = proj.validate();
+    assert!(errors.contains(&ValidationError::ReturnOrMainHoldsClips(TrackId(5))));
+    assert!(errors.contains(&ValidationError::ReturnOrMainHoldsClips(TrackId(7))));
+}
+
+#[test]
 fn a_group_track_that_holds_a_clip_is_reported() {
     let mut proj = Project::new_default("Clips");
     let mut group = group(20, None);

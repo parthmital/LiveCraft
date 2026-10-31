@@ -68,8 +68,12 @@ impl Track {
             TrackType::Group | TrackType::Main => "#888888",
         };
 
-        // A group track holds no clips, so it gets no clip slots whatever the caller asks for.
-        let num_slots = if track_type == TrackType::Group {
+        // Group tracks hold no clips (manual 18.3, page 400). Return and Main tracks cannot play
+        // clips (manual 18.4, page 402). None of them gets clip slots, whatever the caller asks for.
+        let num_slots = if matches!(
+            track_type,
+            TrackType::Group | TrackType::Return | TrackType::Main
+        ) {
             0
         } else {
             num_slots

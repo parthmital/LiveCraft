@@ -1,6 +1,5 @@
 ---
 source: apps/livecraft/tests/characterisation.rs
-assertion_line: 101
 expression: json
 ---
 {
@@ -42,48 +41,7 @@ expression: json
     {
       "arrangement_clips": [],
       "automation_lanes": [],
-      "clip_slots": [
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 5000
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 5001
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 5002
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 5003
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 5004
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 5005
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 5006
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 5007
-        }
-      ],
+      "clip_slots": [],
       "color": "#b94cff",
       "device_chain": [
         {
@@ -117,48 +75,7 @@ expression: json
     {
       "arrangement_clips": [],
       "automation_lanes": [],
-      "clip_slots": [
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 6000
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 6001
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 6002
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 6003
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 6004
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 6005
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 6006
-        },
-        {
-          "clip": null,
-          "has_stop_button": true,
-          "id": 6007
-        }
-      ],
+      "clip_slots": [],
       "color": "#b94cff",
       "device_chain": [
         {

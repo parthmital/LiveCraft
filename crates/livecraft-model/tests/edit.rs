@@ -105,6 +105,18 @@ fn only_a_return_track_can_be_added_as_a_return() {
 }
 
 #[test]
+fn a_return_track_that_holds_clip_slots_is_refused() {
+    let mut proj = Project::new_default("Return slots");
+    let mut track = Track::new(TrackId(30), "C-Echo", TrackType::Return, 0);
+    track.clip_slots.push(ClipSlot::empty(30_000));
+    assert_eq!(
+        proj.add_return_track(track),
+        Err(EditError::ReturnHoldsClips)
+    );
+    assert_eq!(proj.return_tracks.len(), 2);
+}
+
+#[test]
 fn group_tracks_hold_no_clips() {
     let mut proj = Project::new_default("Clips");
     proj.add_track(group(20)).expect("add group");

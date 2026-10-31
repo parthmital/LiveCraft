@@ -120,7 +120,7 @@ From `docs/ableton-live-12-reference-manual.pdf`, read with `plans/livecraft-1.0
 - No sound was heard, and no audio output was checked against the old engine path.
 - The Undo History labels and the opening label are not checked against Live (Q08).
 - The 10,000-case property test runs under the debug profile, as `cargo test` does by default.
-- Known issue, not fixed: the two default return tracks have 8 clip slots each, from M01. The manual (page 402) says return tracks cannot play clips. Changing it would change the characterisation snapshot, so it is left for a decision.
+- Fixed before M05: the two default return tracks had 8 clip slots each, from M01. The manual (page 402) says return tracks cannot play clips, so they now hold no slots and `Project::validate` rejects slots on return and Main tracks. The characterisation snapshot changed by the 16 removed slots only.
 - Known issue, not fixed: `track.set_parent` has no command (deviation 10).
 - Clipboard commands are not implemented (deviation 3).
 - The engine sync is still a whole-Set `sync_project` plus per-value messages, until M05 replaces it.

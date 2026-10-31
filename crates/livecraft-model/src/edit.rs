@@ -29,6 +29,8 @@ pub enum EditError {
     Cycle(TrackId),
     #[error("group tracks hold no clips")]
     GroupHoldsClips,
+    #[error("return tracks cannot play clips, so they hold no clip slots")]
+    ReturnHoldsClips,
     #[error("the Main track cannot be removed")]
     MainTrackFixed,
     #[error("the track cannot route to track {0}, which is not another track in the Set")]
@@ -52,6 +54,9 @@ impl Project {
         }
         if track.track_type != TrackType::Return {
             return Err(EditError::NotReturnTrack(track.track_type));
+        }
+        if !track.clip_slots.is_empty() || !track.arrangement_clips.is_empty() {
+            return Err(EditError::ReturnHoldsClips);
         }
         self.return_tracks.push(track);
         let returns = self.return_tracks.len();

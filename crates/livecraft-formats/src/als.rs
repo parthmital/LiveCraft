@@ -241,7 +241,7 @@ impl AlsParser {
                                 TrackId(track_id + 100),
                                 format!("{}-Return", letter),
                                 TrackType::Return,
-                                8,
+                                0,
                             ));
                         }
                         "Tempo" => {
