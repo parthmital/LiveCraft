@@ -5,6 +5,7 @@ pub use crate::clip::*;
 pub use crate::color::*;
 pub use crate::device::*;
 pub use crate::note::*;
+pub use crate::routing::*;
 pub use crate::scale::*;
 pub use crate::scene::*;
 pub use crate::set::*;

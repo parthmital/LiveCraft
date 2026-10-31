@@ -3,6 +3,7 @@ use crate::clip::{ArrangementClip, ClipSlot};
 use crate::color::ABLETON_PALETTE;
 use crate::device::Device;
 use crate::ids::{LaneId, TrackId};
+use crate::routing::Routing;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,6 +34,9 @@ pub struct Track {
     /// The group track that contains this track. Groups nest, so a group can have a parent group.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub parent: Option<TrackId>,
+    /// Where the audio comes from and goes to (manual 17). Left out of the JSON export while default.
+    #[serde(default, skip_serializing_if = "Routing::is_default")]
+    pub routing: Routing,
     pub color: String,
     pub volume_db: f32, // 0.0 dB default, -inf to +6 dB
     pub pan: f32,       // -1.0 (Left) to +1.0 (Right), 0.0 = Center
@@ -79,6 +83,7 @@ impl Track {
             name: name.into(),
             track_type,
             parent: None,
+            routing: Routing::default(),
             color: default_color.to_string(),
             volume_db: 0.0,
             pan: 0.0,

@@ -412,3 +412,22 @@ fn test_group_tracks_nest_and_hold_no_clips() {
     );
     assert_eq!(proj.track(TrackId(20)).and_then(|t| t.parent), None);
 }
+
+#[test]
+fn test_routing_defaults_to_main_and_round_trips_track_targets() {
+    let plain = Track::new(TrackId(31), "Plain", TrackType::Audio, 0);
+    assert!(plain.routing.is_default());
+    assert_eq!(plain.routing.audio_to, AudioOutput::Main);
+    let json = serde_json::to_string(&plain).expect("serialise track");
+    assert!(!json.contains("routing"), "default routing is not exported");
+
+    let mut synth = Track::new(TrackId(30), "Synth", TrackType::Midi, 0);
+    synth.routing.audio_to = AudioOutput::Track(TrackId(20));
+    synth.routing.audio_from = AudioInput::Track {
+        track: TrackId(5),
+        tap: TapPoint::PostFx,
+    };
+    let json = serde_json::to_string(&synth).expect("serialise track");
+    let back: Track = serde_json::from_str(&json).expect("deserialise track");
+    assert_eq!(back.routing, synth.routing);
+}
