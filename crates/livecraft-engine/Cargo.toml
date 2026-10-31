@@ -25,10 +25,18 @@ triple_buffer.workspace = true
 assert_no_alloc = { workspace = true, optional = true, default-features = false }
 thiserror.workspace = true
 
+# JACK on Linux (M06): the jack crate loads libjack when the JACK host is first used, so the app runs
+# without JACK installed. Building needs the JACK headers (libjack-jackd2-dev), which CI installs.
+[target.'cfg(target_os = "linux")'.dependencies]
+cpal = { workspace = true, features = ["jack"] }
+
 [dev-dependencies]
 assert_no_alloc = { workspace = true, default-features = false }
 
 [features]
+# The ASIO host on Windows (DECISIONS D31, D-OWN-2). Building it needs the Steinberg ASIO SDK, named by
+# the CPAL_ASIO_DIR environment variable, so it is off by default and on in release builds.
+asio = ["cpal/asio"]
 default = ["rt-checks", "disable-release-checks"]
 # Runs audio code inside `assert_no_alloc`, which aborts on allocation.
 rt-checks = ["dep:assert_no_alloc"]

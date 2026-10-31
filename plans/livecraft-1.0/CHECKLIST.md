@@ -40,7 +40,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 - [~] M03 Document model v2 ([milestone](milestones/M03-document-model-v2.md))
 - [~] M04 Session, command registry, undo ([milestone](milestones/M04-session-and-commands.md)). Owner input queued: Q08 (Undo History labels in Live 12.4)
 - [x] M05 Real-time engine core ([milestone](milestones/M05-realtime-engine-core.md))
-- [ ] M06 Audio and MIDI I/O and device settings ([milestone](milestones/M06-audio-midi-io.md))
+- [~] M06 Audio and MIDI I/O and device settings ([milestone](milestones/M06-audio-midi-io.md)). Owner input queued: Q09 (device list, sound, MIDI), Q10 (ASIO SDK build)
 - [ ] M07 Transport, tempo, metronome, launch scheduler ([milestone](milestones/M07-transport-and-launch.md))
 - [ ] M08 Offline render and export ([milestone](milestones/M08-offline-render-export.md))
 

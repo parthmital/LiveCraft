@@ -13,6 +13,9 @@ confidence-threshold = 0.9
 # The workspace crates are unpublished (`publish = false`) and carry the project licence,
 # GPL-3.0-or-later (D31). They are not dependencies, so their licence is not checked here.
 private = { ignore = true }
+# The allow list is the licence policy of DECISIONS D13, not a list of what the graph uses today, so a
+# licence on it that no dependency carries is expected and not reported.
+unused-allowed-license = "allow"
 allow = [
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",

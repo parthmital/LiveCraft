@@ -51,7 +51,7 @@ cargo run --bin livecraft -- gui
 ### Prerequisites
 
 - Rust stable with `rustfmt` and `clippy`. Baseline verified with Rust 1.99.1 on 2026-10-27.
-- Linux only: `sudo apt-get install -y libasound2-dev libudev-dev libxkbcommon-dev libwayland-dev libx11-dev` (the same list CI installs).
+- Linux only: `sudo apt-get install -y libasound2-dev libjack-jackd2-dev libudev-dev libxkbcommon-dev libwayland-dev libx11-dev` (the same list CI installs). JACK itself is optional at run time.
 - Optional, for agents and contributors who read the reference manual: Python 3.11 and the packages in [plans/livecraft-1.0/tools/requirements.txt](plans/livecraft-1.0/tools/requirements.txt), installed into a repo-local environment (never globally). See [docs/live-manual.md](docs/live-manual.md).
 
   ```bash
@@ -179,7 +179,7 @@ On 2026-11-01, `cargo xtask ci` passes with 398 tests (livecraft 12, livecraft-m
 - A WAV clip is decoded in full into memory when its Set is compiled. Disk streaming for long files is planned for M11.
 - Instrument-less MIDI tracks are silent, as in Live (manual pages 55 and 127). Main pan is not applied yet.
 - `.als` round trips are lossy, and only Live 12 sets were tested.
-- Most of Live 12 is missing: warping, recording, routing, racks, automation editing, most devices, plug-in hosting, MIDI input, and preferences. The [parity matrix](plans/livecraft-1.0/reference/PARITY-MATRIX.md) has the full list.
+- Most of Live 12 is missing: warping, recording, routing, racks, automation editing, most devices, plug-in hosting, and MIDI routing choosers per track. The [parity matrix](plans/livecraft-1.0/reference/PARITY-MATRIX.md) has the full list.
 
 ## Contributing
 

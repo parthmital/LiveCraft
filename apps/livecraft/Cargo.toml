@@ -29,6 +29,10 @@ hound.workspace = true
 insta.workspace = true
 livecraft-testkit.workspace = true
 
+[features]
+# The ASIO host on Windows (DECISIONS D31). Needs the Steinberg ASIO SDK at build time (CPAL_ASIO_DIR).
+asio = ["livecraft-engine/asio"]
+
 [lints]
 workspace = true
 

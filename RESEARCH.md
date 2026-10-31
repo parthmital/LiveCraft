@@ -29,7 +29,7 @@ Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superse
 ## Audio I/O (2026-10-27)
 
 **Brief:** low-latency output and input on Windows, macOS, Linux.
-**Findings:** `cpal` 0.18.2 is current (repo pins 0.15). Its `asio` feature needs the Steinberg ASIO SDK, which is GPLv3 or proprietary since October 2025. WASAPI, CoreAudio, ALSA, and JACK need no extra SDK.
+**Findings:** `cpal` 0.18.2 is current (repo pins 0.15). Its `asio` feature needs the Steinberg ASIO SDK, which is GPLv3 or proprietary since October 2025. WASAPI, CoreAudio, and ALSA need no extra SDK. JACK (cpal `jack` feature, on for Linux since M06) needs the JACK headers to build (`libjack-jackd2-dev`), but loads libjack only when the JACK host is used, so the app runs without JACK.
 **Decision:** Adopt `cpal` 0.18. ASIO only behind an opt-in Cargo feature `asio`, off by default, because enabling it makes distributed binaries GPLv3. Owner decided on 2026-10-28 that release builds enable it (DECISIONS D31).
 **Sources:** [cpal docs](https://docs.rs/cpal), [VST 3 and ASIO licensing press release](https://sonicstate.com/news/2025/10/30/vst-3-now-available-under-mit-license).
 
