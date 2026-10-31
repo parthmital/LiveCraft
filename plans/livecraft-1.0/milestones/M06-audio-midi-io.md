@@ -47,7 +47,7 @@ Every Outline item has its own commit. Item 10 is this commit. Each commit passe
 | 3    | `848654b`   | `list_devices`, `Session::audio_devices`, `livecraft devices [--json]`, preferences read at open                         |
 | 4    | `d18ee0b`   | `Session::set_audio_preferences` rebuilds the engine at the new rate and buffer and carries the transport and clips over |
 | 5    | `2acd090`   | Input stream into an `rtrb` ring, per-track Ext. In monitoring (In, Auto armed, Off), input and output latency           |
-| 6    | `3eb656a`   | `midir` inputs, one ring per port, host-clock stamps mapped to sample offsets, notes to armed or monitoring MIDI tracks   |
+| 6    | `3eb656a`   | `midir` inputs, one ring per port, host-clock stamps mapped to sample offsets, notes to armed or monitoring MIDI tracks  |
 | 7    | `2b78683`   | `Routing::midi_to`, clip notes to an output queue with frames, `MidiOutScheduler`, the `MidiOutputs` thread              |
 | 8    | `bd48ff4`   | A lost device moves the Set to a `NullDriver`, the status bar names it, and the device is retried every 2 s              |
 | 9    | `bf872c8`   | Settings window (`Ctrl + ,`, `gui --settings`): Audio tab and MIDI Ports table                                           |
@@ -81,12 +81,12 @@ Every Outline item has its own commit. Item 10 is this commit. Each commit passe
 
 ### Criteria
 
-| Criterion                                                                       | Met                | Evidence                                                                                                                                                                  |
-| ------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Criterion                                                                        | Met                | Evidence                                                                                                                                                                  |
+| -------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `livecraft devices` lists inputs and outputs; the owner confirms against Windows | Partly (owner Q09) | The list is in Evidence. The HUMAN check is Q09                                                                                                                           |
 | A buffer size change during playback causes no crash; audio resumes in 500 ms    | Yes                | `tests/audio.rs` `a_playing_set_resumes_within_500_ms_of_a_buffer_size_and_sample_rate_change` (512 to 128 frames and 44.1 to 48 kHz while playing, on the silent driver) |
-| 1000 MIDI events with random host timestamps land within 1 sample               | Yes                | `midi.rs` `a_thousand_random_timestamps_land_within_one_sample_of_their_offset`                                                                                           |
-| Unplugging the audio device (simulated) leaves the app running                  | Yes                | `tests/audio.rs` `an_unplugged_device_leaves_the_set_playing_silently_and_reports_the_error`, `a_device_plugged_back_in_is_used_again_at_the_next_retry`                  |
+| 1000 MIDI events with random host timestamps land within 1 sample                | Yes                | `midi.rs` `a_thousand_random_timestamps_land_within_one_sample_of_their_offset`                                                                                           |
+| Unplugging the audio device (simulated) leaves the app running                   | Yes                | `tests/audio.rs` `an_unplugged_device_leaves_the_set_playing_silently_and_reports_the_error`, `a_device_plugged_back_in_is_used_again_at_the_next_retry`                  |
 
 ### Owner checks
 

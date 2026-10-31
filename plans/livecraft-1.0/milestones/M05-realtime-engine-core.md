@@ -60,21 +60,21 @@ impl Engine {
 
 Every Outline item has at least one commit. Items 3, 4, 8, 12, and 13 took several. Each commit passed `cargo xtask ci`.
 
-| Item | Commits                                                         | Summary                                                                                                                   |
-| ---- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| 1    | `1177f71`                                                       | `rtrb`, `basedrop`, `triple_buffer`, `assert_no_alloc` at the D16 versions, and the `process_checked` scope               |
-| 2    | `a00e4ca`                                                       | `DeviceProcessor`, `ProcessContext`, `AudioIo`, `EventList`; Utility and EQ Three ported                                  |
+| Item | Commits                                                          | Summary                                                                                                                   |
+| ---- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| 1    | `1177f71`                                                        | `rtrb`, `basedrop`, `triple_buffer`, `assert_no_alloc` at the D16 versions, and the `process_checked` scope               |
+| 2    | `a00e4ca`                                                        | `DeviceProcessor`, `ProcessContext`, `AudioIo`, `EventList`; Utility and EQ Three ported                                  |
 | 3    | `9884b00`, `660c87e`, `6ce1239`, `5508797`, `4a9ca1d`, `223766e` | Every remaining effect ported with its tests                                                                              |
-| 4    | `cbe62b0`, `250ce9f`                                            | Operator, Simpler, and Drum Rack take note events at sample offsets                                                       |
-| 5    | `0004e0e`                                                       | `GraphCompiler` and `CompiledGraph` in topological order with preallocated buffers                                       |
-| 6    | `a5ab43b`                                                       | Command, event, graph, and retired-graph queues, the transfer list, and the collector thread                              |
-| 7    | `2ac11ff`, `b7b65f0`                                            | Clip players on `basedrop::Shared` data, decoding off the audio thread, clip boundaries on their sample                   |
-| 8    | `66cba72`, `129d0a3`                                            | Parameter events by `ParamId` at their sample offset, and ramps from `ParamSpec::smoothing_ms`                            |
-| 9    | `038d8ff`                                                       | `EngineSnapshot` through a triple buffer                                                                                  |
-| 10   | `520bbf7`                                                       | PDC delay lines on tracks, returns, and Main                                                                              |
-| 11   | `11ed800`                                                       | Neutral operation tests and the 16-track playback test                                                                    |
-| 12   | `4ad9bef`, `89835f5`                                            | The session, the CLI, the bouncer, and the testkit drive the engine through `EngineHandle`                                |
-| 13   | `3cc4855`, `c62155c`, this commit                               | Note release at loop ends, old graph deleted, byte-identical bounce test, executor tests split out, verification and docs |
+| 4    | `cbe62b0`, `250ce9f`                                             | Operator, Simpler, and Drum Rack take note events at sample offsets                                                       |
+| 5    | `0004e0e`                                                        | `GraphCompiler` and `CompiledGraph` in topological order with preallocated buffers                                        |
+| 6    | `a5ab43b`                                                        | Command, event, graph, and retired-graph queues, the transfer list, and the collector thread                              |
+| 7    | `2ac11ff`, `b7b65f0`                                             | Clip players on `basedrop::Shared` data, decoding off the audio thread, clip boundaries on their sample                   |
+| 8    | `66cba72`, `129d0a3`                                             | Parameter events by `ParamId` at their sample offset, and ramps from `ParamSpec::smoothing_ms`                            |
+| 9    | `038d8ff`                                                        | `EngineSnapshot` through a triple buffer                                                                                  |
+| 10   | `520bbf7`                                                        | PDC delay lines on tracks, returns, and Main                                                                              |
+| 11   | `11ed800`                                                        | Neutral operation tests and the 16-track playback test                                                                    |
+| 12   | `4ad9bef`, `89835f5`                                             | The session, the CLI, the bouncer, and the testkit drive the engine through `EngineHandle`                                |
+| 13   | `3cc4855`, `c62155c`, this commit                                | Note release at loop ends, old graph deleted, byte-identical bounce test, executor tests split out, verification and docs |
 
 ### Decisions and deviations
 
@@ -93,12 +93,12 @@ Every Outline item has at least one commit. Items 3, 4, 8, 12, and 13 took sever
 
 ### Criteria
 
-| Criterion                                                               | Met | Evidence                                                                                                                                                                                                                                  |
-| ----------------------------------------------------------------------- | --- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 10 minutes of a 16-track Set, device change every 100 ms, no violations | Yes | `crates/livecraft-engine/tests/long_playback.rs` `ten_minutes_of_playback_allocate_nothing`, release build with `assert_no_alloc` on, 51,680 driver callbacks in `.agent-local/logs/2026-10-31_m05-13-ten-minutes-release-rerun2.log`                                                                            |
-| No `Mutex`, `lock()`, or `try_lock` in `crates/livecraft-engine/src`    | Yes | The grep finds no line                                                                                                                                                                                                                    |
-| Neutral operations bit-exact, two offline renders byte-identical, M01   | Yes | `tests/neutral.rs` (unity gain sum, empty chain, disabled device, send at -inf, repeat render); `bouncer.rs` `two_offline_renders_of_one_set_are_byte_identical` compares WAV bytes; M01 characterisation passes with deviation 5 |
-| PDC: 128-sample latency device on one of two tracks, Main aligned       | Yes | `executor/tests.rs` `a_latency_device_on_one_track_leaves_the_main_output_aligned`, and the same on a return                                                                                                                              |
+| Criterion                                                               | Met | Evidence                                                                                                                                                                                                                              |
+| ----------------------------------------------------------------------- | --- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 10 minutes of a 16-track Set, device change every 100 ms, no violations | Yes | `crates/livecraft-engine/tests/long_playback.rs` `ten_minutes_of_playback_allocate_nothing`, release build with `assert_no_alloc` on, 51,680 driver callbacks in `.agent-local/logs/2026-10-31_m05-13-ten-minutes-release-rerun2.log` |
+| No `Mutex`, `lock()`, or `try_lock` in `crates/livecraft-engine/src`    | Yes | The grep finds no line                                                                                                                                                                                                                |
+| Neutral operations bit-exact, two offline renders byte-identical, M01   | Yes | `tests/neutral.rs` (unity gain sum, empty chain, disabled device, send at -inf, repeat render); `bouncer.rs` `two_offline_renders_of_one_set_are_byte_identical` compares WAV bytes; M01 characterisation passes with deviation 5     |
+| PDC: 128-sample latency device on one of two tracks, Main aligned       | Yes | `executor/tests.rs` `a_latency_device_on_one_track_leaves_the_main_output_aligned`, and the same on a return                                                                                                                          |
 
 ### Not verified
 
