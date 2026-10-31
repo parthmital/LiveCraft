@@ -1,7 +1,7 @@
 # Parity Matrix
 
 Purpose: every Live 12.4 manual section and device, the milestone that delivers it, and its status. Read when: expanding a milestone, finishing a feature, or reporting progress.
-Last verified: 2026-10-27.
+Last verified: 2026-10-31.
 
 - Rows are generated from the manual's table of contents (level 2 sections; level 3 for chapter 33 devices). Pages are manual page numbers.
 - Status values: Missing, Prototype (some code exists, not at parity), In Progress, Done (meets `QUALITY-GATES.md#definition-of-done-every-live-feature`, with evidence), Out of Scope (see `DECISIONS.md`).
@@ -19,8 +19,8 @@ Last verified: 2026-10-27.
 | 3.4     | Sound Similarity                                              | 38-39     | M24       | Missing   |          |
 | 3.5     | Live Sets                                                     | 40        | M09       | Prototype |          |
 | 3.6     | Arrangement and Session                                       | 40-41     | M15       | Prototype |          |
-| 3.7     | Tracks                                                        | 42-44     | M03       | Missing   |          |
-| 3.8     | Audio and MIDI                                                | 45        | M03       | Missing   |          |
+| 3.7     | Tracks                                                        | 42-44     | M03       | In Progress | milestones/M03-document-model-v2.md Review |
+| 3.8     | Audio and MIDI                                                | 45        | M03       | In Progress | milestones/M03-document-model-v2.md Review |
 | 3.9     | Audio Clips and Samples                                       | 46        | M11       | Missing   |          |
 | 3.10    | MIDI Clips and MIDI Files                                     | 47        | M10       | Missing   |          |
 | 3.11    | Devices                                                       | 48-49     | M25       | Missing   |          |

@@ -103,7 +103,7 @@ Each is scheduled in [plans/livecraft-1.0/PLAN.md](plans/livecraft-1.0/PLAN.md).
 | `process_buffer_interleaved` grows its scratch buffers on the audio thread when the driver block exceeds 8192 frames | `graph.rs`                                              | 1            |
 | `DspProcessor` processes one sample per virtual call and looks parameters up by string                               | `processor.rs`                                          | 1            |
 | GUI mutates `Project` directly; most edits bypass `CommandHistory`, so undo covers few actions                       | `crates/livecraft-ui/src/*.rs`                          | 1            |
-| Note, clip-slot, and send identities are still positions in commands and messages (tracks, clips, scenes, devices, and lanes are typed since M03) | `command.rs`, `engine.rs` | 1 (M04, M18) |
+| Clip-slot, note, and send positions are still used as identities in commands and messages (tracks, clips, scenes, devices, and automation lanes are typed since M03) | `command.rs`, `engine.rs` | 1 (M04, M18) |
 | `.als` writer regenerates XML from the model; every unknown element is lost                                          | `als.rs`                                                | 2            |
 | Session clip slots without an active clip are played back as a sequential timeline                                   | `graph.rs` `dispatch_clip_events`                       | 1            |
 | Large files mixing concerns: `graph.rs` (1080), `als.rs` (1008), `devices.rs` (995)         | as listed                                               | 1            |

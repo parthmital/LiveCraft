@@ -40,7 +40,7 @@ cargo run --bin livecraft -- gui
 
 | Command                  | What it does                            | Expected result                          | Common error and fix                                                                          |
 | ------------------------ | --------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 89 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 122 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
 | `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                      |
 | `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                         |
 | `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
@@ -65,7 +65,7 @@ cargo run --bin livecraft -- gui
 
 Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan's [parity matrix](plans/livecraft-1.0/reference/PARITY-MATRIX.md) tracks each feature.
 
-- Document model (`livecraft-model`): project, tracks (audio, MIDI, return, master), clip slots, scenes, MIDI and audio clips, arrangement clips with split, duplicate, and trim, automation lanes with linear interpolation, 12 scale types, Scala `.scl` tuning, and a set of MIDI transformations.
+- Document model (`livecraft-model`): project, tracks (audio, MIDI, group, return, and Main) with group nesting and routing descriptions, typed ids for tracks, clips, scenes, devices, and lanes, `Project::validate` for references and group rules, clip slots, scenes, MIDI and audio clips, arrangement clips with split, duplicate, and trim, automation lanes with linear interpolation, 12 scale types, Scala `.scl` tuning, and a set of MIDI transformations.
 - Live Set files (`livecraft-formats`): reads and writes gzip `.als` XML for the subset of elements the model knows. Unknown elements are dropped on save (see [Known Limitations](#known-limitations)).
 - Undo and redo for a small set of commands (`CommandHistory`).
 - Audio engine (`livecraft-engine`): `cpal` output stream, per-track device chains, sends and returns, In, Auto, and Off monitoring, offline WAV render and stem export through `hound`.
@@ -157,7 +157,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-Baseline on 2026-10-31: `cargo xtask ci` passes with 89 tests (livecraft 6, livecraft-model 9, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 18, livecraft-engine 10, livecraft-time 33, livecraft-ui 2, xtask 4). One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
+Baseline on 2026-10-31: `cargo xtask ci` passes with 122 tests (livecraft 6, livecraft-model 41, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 18, livecraft-engine 10, livecraft-time 34, livecraft-ui 2, xtask 4, livecraft-testkit 0). One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
 
 ## Troubleshooting
 
