@@ -309,7 +309,28 @@ fn every_registered_command_round_trips_its_arguments() {
             json!({ "track": 1, "lane": 1, "index": 0 }),
         ),
         ("track.create_audio", json!({ "name": "5-Audio" })),
+        ("track.create_group", json!({ "name": "Drums" })),
         ("track.create_midi", json!({ "name": "6-MIDI" })),
+        ("track.create_return", json!({ "name": "C-Echo" })),
+        ("track.delete", json!({ "track": 3 })),
+        ("track.rename", json!({ "track": 1, "name": "Lead" })),
+        ("track.reorder", json!({ "track": 1, "index": 2 })),
+        ("track.set_armed", json!({ "track": 1, "is_armed": true })),
+        ("track.set_color", json!({ "track": 1, "color": "#ff4848" })),
+        (
+            "track.set_monitoring",
+            json!({ "track": 1, "monitoring": "In" }),
+        ),
+        ("track.set_muted", json!({ "track": 1, "is_muted": true })),
+        ("track.set_pan", json!({ "track": 1, "pan": -0.5 })),
+        (
+            "track.set_send",
+            json!({ "track": 1, "return": 5, "level": 0.25 }),
+        ),
+        (
+            "track.set_soloed",
+            json!({ "track": 1, "is_soloed": false }),
+        ),
         ("track.set_volume", json!({ "track": 1, "volume_db": -6.0 })),
         ("transport.set_tempo", json!({ "bpm": 140.0 })),
     ];

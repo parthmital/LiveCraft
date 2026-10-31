@@ -35,13 +35,33 @@ pub enum EditError {
     NoSuchRouteTarget(TrackId),
     #[error("a track of type {0:?} cannot be added with this operation")]
     FixedTrackKind(TrackType),
+    #[error("a track of type {0:?} is not a return track")]
+    NotReturnTrack(TrackType),
     #[error("the track has {sends} sends for {returns} return tracks")]
     SendCount { sends: usize, returns: usize },
 }
 
 impl Project {
+    /// Adds a return track after the existing ones, and gives every track a send to it at 0.0.
+    /// The track must be a return track with a new id.
+    pub fn add_return_track(&mut self, track: Track) -> Result<(), EditError> {
+        if self.track(track.id).is_some() {
+            return Err(EditError::IdInUse(track.id.0));
+        }
+        if track.track_type != TrackType::Return {
+            return Err(EditError::NotReturnTrack(track.track_type));
+        }
+        self.return_tracks.push(track);
+        let returns = self.return_tracks.len();
+        for other in self.all_tracks_mut() {
+            other.sends.resize(returns, 0.0);
+        }
+        Ok(())
+    }
+
     /// Adds a track, which must have a new id. Its group parent must be a group track, and it must
-    /// have one send per return track. Return and Main tracks are created with the Set, not added.
+    /// have one send per return track. Return tracks go through `add_return_track`, and the Main
+    /// track is created with the Set.
     pub fn add_track(&mut self, track: Track) -> Result<(), EditError> {
         if self.track(track.id).is_some() {
             return Err(EditError::IdInUse(track.id.0));

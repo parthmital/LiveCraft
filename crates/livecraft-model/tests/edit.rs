@@ -66,6 +66,32 @@ fn a_duplicate_id_is_refused() {
 }
 
 #[test]
+fn a_new_return_track_gets_a_send_on_every_track() {
+    let mut proj = Project::new_default("Return");
+    proj.add_return_track(Track::new(TrackId(30), "C-Echo", TrackType::Return, 0))
+        .expect("add return C");
+    assert_eq!(proj.return_tracks.len(), 3);
+    assert!(proj.all_tracks().all(|track| track.sends.len() == 3));
+    assert_eq!(
+        proj.all_tracks()
+            .find(|t| t.id == TrackId(1))
+            .map(|t| t.sends[2]),
+        Some(0.0)
+    );
+    assert!(proj.validate().is_empty());
+}
+
+#[test]
+fn only_a_return_track_can_be_added_as_a_return() {
+    let mut proj = Project::new_default("Return kind");
+    assert_eq!(
+        proj.add_return_track(Track::new(TrackId(30), "Audio", TrackType::Audio, 0)),
+        Err(EditError::NotReturnTrack(TrackType::Audio))
+    );
+    assert_eq!(proj.return_tracks.len(), 2);
+}
+
+#[test]
 fn group_tracks_hold_no_clips() {
     let mut proj = Project::new_default("Clips");
     proj.add_track(group(20)).expect("add group");

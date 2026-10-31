@@ -37,6 +37,8 @@ pub enum CommandError {
     },
     #[error("{what} must be a finite number, not {value}")]
     NotFinite { what: &'static str, value: f64 },
+    #[error("{value:?} is not a color in the form #RRGGBB")]
+    BadColor { value: String },
 }
 
 /// One kind of edit to a Live Set.
