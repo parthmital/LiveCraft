@@ -34,7 +34,7 @@ fn test_als_xml_export_and_import() {
 
     let imported = AlsParser::parse_xml(&xml, "Imported").expect("Failed to parse XML");
     assert_eq!(imported.tracks.len(), 4);
-    assert_eq!(imported.transport.bpm, 120.0);
+    assert_eq!(imported.transport.bpm(), 120.0);
 
     // Authentic Ableton Live 12 schema test snippet
     let authentic_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
@@ -91,7 +91,7 @@ fn test_als_xml_export_and_import() {
     let parsed_ableton = AlsParser::parse_xml(authentic_xml, "AuthenticTest")
         .expect("Failed to parse authentic Ableton XML snippet");
 
-    assert_eq!(parsed_ableton.transport.bpm, 128.5);
+    assert_eq!(parsed_ableton.transport.bpm(), 128.5);
     assert_eq!(parsed_ableton.tracks.len(), 1);
     let track = &parsed_ableton.tracks[0];
     assert_eq!(track.name, "Synth Lead");
@@ -170,7 +170,7 @@ fn test_als_full_roundtrip_with_devices_and_clips() {
         assert_eq!(mdata.notes[0].pitch, 62);
         assert_eq!(mdata.notes[1].pitch, 65);
         assert_eq!(mdata.notes[2].pitch, 69);
-        assert_eq!(mdata.notes[2].velocity, 120);
+        assert_eq!(mdata.notes[2].velocity, 120.0);
     } else {
         panic!("Expected Midi payload");
     }

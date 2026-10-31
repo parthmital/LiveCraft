@@ -79,7 +79,7 @@ impl MidiClipData {
                 .wrapping_add(1442695040888963407);
             let vel_rand = ((state >> 33) as f64 / 2147483648.0) * 2.0 - 1.0;
             let delta_v = (vel_rand * velocity_spread as f64) as i16;
-            note.velocity = (note.velocity as i16 + delta_v).clamp(1, 127) as u8;
+            note.velocity = (note.velocity + f32::from(delta_v)).clamp(1.0, 127.0);
         }
     }
 
@@ -132,7 +132,7 @@ impl MidiClipData {
         for note in &mut self.notes {
             let norm = (note.start_beat - min_start) / span;
             let vel = (start_vel as f64 + (end_vel as f64 - start_vel as f64) * norm).round();
-            note.velocity = (vel as i16).clamp(1, 127) as u8;
+            note.velocity = (vel as f32).clamp(1.0, 127.0);
         }
     }
 
@@ -144,12 +144,10 @@ impl MidiClipData {
         for note in &self.notes {
             let slice_dur = note.duration_beats / subdivisions as f64;
             for s in 0..subdivisions {
-                new_notes.push(MidiNote::new(
-                    note.pitch,
-                    note.start_beat + s as f64 * slice_dur,
-                    slice_dur,
-                    note.velocity,
-                ));
+                let mut slice = note.clone();
+                slice.start_beat = note.start_beat + s as f64 * slice_dur;
+                slice.duration_beats = slice_dur;
+                new_notes.push(slice);
             }
         }
         self.notes = new_notes;
@@ -163,13 +161,9 @@ impl MidiClipData {
         let mut new_notes = Vec::with_capacity(self.notes.len() * 2);
         for note in &self.notes {
             if note.start_beat >= offset {
-                let grace_vel = ((note.velocity as f32) * velocity_scale).clamp(1.0, 127.0) as u8;
-                new_notes.push(MidiNote::new(
-                    note.pitch,
-                    note.start_beat - offset,
-                    offset,
-                    grace_vel,
-                ));
+                let mut grace = MidiNote::new(note.pitch, note.start_beat - offset, offset, 1);
+                grace.velocity = (note.velocity * velocity_scale).clamp(1.0, 127.0);
+                new_notes.push(grace);
             }
             new_notes.push(note.clone());
         }

@@ -13,7 +13,7 @@ use std::process::{Command, ExitCode};
 /// Keep in sync with ARCHITECTURE.md; the 1.0 layout is in
 /// plans/livecraft-1.0/reference/TARGET-ARCHITECTURE.md.
 const LAYERS: &[(&str, &[&str])] = &[
-    ("livecraft-model", &[]),
+    ("livecraft-model", &["livecraft-time"]),
     ("livecraft-formats", &["livecraft-model"]),
     ("livecraft-dsp", &[]),
     (

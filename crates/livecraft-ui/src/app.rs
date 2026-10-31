@@ -79,7 +79,7 @@ impl LiveCraftApp {
 
         let bottom_tab = options.initial_tab.unwrap_or(0);
 
-        let last_bpm = project.transport.bpm;
+        let last_bpm = project.transport.bpm();
         let last_master_vol = project.master_track.volume_db;
         let last_master_pan = project.master_track.pan;
         let last_tracks_snapshot = project
@@ -276,15 +276,15 @@ impl LiveCraftApp {
                         sends: t.sends.clone(),
                     })
                     .collect();
-                self.last_bpm = self.project.transport.bpm;
+                self.last_bpm = self.project.transport.bpm();
                 self.last_master_vol = self.project.master_track.volume_db;
                 self.last_master_pan = self.project.master_track.pan;
                 return;
             }
 
-            if (self.project.transport.bpm - self.last_bpm).abs() > 0.001 {
-                eng.set_tempo(self.project.transport.bpm);
-                self.last_bpm = self.project.transport.bpm;
+            if (self.project.transport.bpm() - self.last_bpm).abs() > 0.001 {
+                eng.set_tempo(self.project.transport.bpm());
+                self.last_bpm = self.project.transport.bpm();
             }
 
             if (self.project.master_track.volume_db - self.last_master_vol).abs() > 0.01 {

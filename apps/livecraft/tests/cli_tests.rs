@@ -12,7 +12,7 @@ fn test_cli_new_and_roundtrip_project() {
     let json_path = tmp_dir.join("NewSong.json");
 
     let mut project = Project::new_default("NewSong");
-    project.transport.bpm = 135.0;
+    project.transport.set_bpm(135.0);
 
     // Save as .als
     AlsParser::save_project_to_als(&project, &als_path).expect("Failed to save .als");
@@ -20,7 +20,7 @@ fn test_cli_new_and_roundtrip_project() {
 
     // Load from .als
     let loaded_als = AlsParser::load_project(&als_path).expect("Failed to load .als");
-    assert_eq!(loaded_als.transport.bpm, 135.0);
+    assert_eq!(loaded_als.transport.bpm(), 135.0);
     assert_eq!(loaded_als.tracks.len(), 4);
 
     // Save as JSON
@@ -32,7 +32,7 @@ fn test_cli_new_and_roundtrip_project() {
     let read_json = fs::read_to_string(&json_path).expect("Failed to read JSON");
     let loaded_json: Project = serde_json::from_str(&read_json).expect("Failed to parse JSON");
     assert_eq!(loaded_json.name, "NewSong");
-    assert_eq!(loaded_json.transport.bpm, 135.0);
+    assert_eq!(loaded_json.transport.bpm(), 135.0);
 
     let _ = fs::remove_dir_all(tmp_dir);
 }
@@ -84,7 +84,7 @@ fn test_cli_render_and_stem_pipeline() {
     let stems_dir = tmp_dir.join("stems");
 
     let mut project = Project::new_default("PipelineTest");
-    project.transport.bpm = 120.0;
+    project.transport.set_bpm(120.0);
 
     let mut clip = Clip::new_midi(1, "Chord Track", 4.0);
     if let ClipPayload::Midi(ref mut m) = clip.payload {

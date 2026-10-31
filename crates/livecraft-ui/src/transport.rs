@@ -125,28 +125,33 @@ pub fn render_transport_bar(
         }
 
         // Tempo BPM LCD well with nudge
-        let mut bpm = project.transport.bpm;
+        let mut bpm = project.transport.bpm();
         let bpm_str = format!("{:.2}", bpm);
         let bpm_lcd = live_lcd_box(ui, &bpm_str, Vec2::new(56.0, 24.0), palette.amber, false);
         if bpm_lcd.dragged() {
             bpm = (bpm - bpm_lcd.drag_delta().y * 0.2).clamp(MIN_BPM as f32, MAX_BPM as f32);
-            project.transport.bpm = bpm;
+            project.transport.set_bpm(bpm);
         }
 
         // Nudge buttons
         let nudge_down = live_toggle_button(ui, false, palette.amber, "<", Vec2::new(16.0, 24.0));
         if nudge_down.clicked() {
-            project.transport.bpm = (project.transport.bpm - 0.5).max(MIN_BPM as f32);
+            project
+                .transport
+                .set_bpm((project.transport.bpm() - 0.5).max(MIN_BPM as f32));
         }
         let nudge_up = live_toggle_button(ui, false, palette.amber, ">", Vec2::new(16.0, 24.0));
         if nudge_up.clicked() {
-            project.transport.bpm = (project.transport.bpm + 0.5).min(MAX_BPM as f32);
+            project
+                .transport
+                .set_bpm((project.transport.bpm() + 0.5).min(MAX_BPM as f32));
         }
 
         // Time Signature LCD well
         let time_sig_str = format!(
             "{}/{}",
-            project.transport.time_signature.0, project.transport.time_signature.1
+            project.transport.time_signature().0,
+            project.transport.time_signature().1
         );
         let _sig_lcd = live_lcd_box(
             ui,

@@ -227,7 +227,7 @@ fn main() -> anyhow::Result<()> {
                 .and_then(|s| s.to_str())
                 .unwrap_or("New Project");
             let mut proj = Project::new_default(name);
-            proj.transport.bpm = bpm;
+            proj.transport.set_bpm(bpm);
 
             if let Some(ext) = path.extension().and_then(|s| s.to_str())
                 && ext.eq_ignore_ascii_case("json")
@@ -376,10 +376,11 @@ fn print_project_card(proj: &Project, path: &Path) {
     println!("  File Path    : {}", path.display());
     println!("  Creator      : {}", proj.creator);
     println!("  Version      : {}", proj.schema_version);
-    println!("  Tempo        : {:.1} BPM", proj.transport.bpm);
+    println!("  Tempo        : {:.1} BPM", proj.transport.bpm());
     println!(
         "  Time Sig     : {}/{}",
-        proj.transport.time_signature.0, proj.transport.time_signature.1
+        proj.transport.time_signature().0,
+        proj.transport.time_signature().1
     );
     println!("------------------------------------------------------------");
     let audio_count = proj
@@ -411,7 +412,7 @@ fn print_project_card(proj: &Project, path: &Path) {
 }
 
 fn print_project_inspection(proj: &Project, show_devices: bool, show_clips: bool) {
-    println!("Project: {} (BPM: {:.1})", proj.name, proj.transport.bpm);
+    println!("Project: {} (BPM: {:.1})", proj.name, proj.transport.bpm());
     println!("Tracks ({}):", proj.tracks.len());
     for (i, trk) in proj.tracks.iter().enumerate() {
         let type_str = match trk.track_type {
@@ -500,7 +501,8 @@ fn run_terminal_player(project: &Project, max_duration: u64) -> anyhow::Result<(
     println!("  LIVECRAFT LIVE TERMINAL PLAYBACK");
     println!(
         "  Project: {} | Tempo: {:.1} BPM",
-        project.name, project.transport.bpm
+        project.name,
+        project.transport.bpm()
     );
     println!("  Press [Enter] in this terminal or wait for timeout to stop.");
     println!("============================================================");

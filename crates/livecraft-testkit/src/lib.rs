@@ -20,8 +20,8 @@ pub fn render_project_summary(project: &Project, bars: u32, sample_rate: u32) ->
             graph.trigger_clip(trk.id, 0);
         }
     }
-    let beats_total = (bars * project.transport.time_signature.0 as u32) as f64;
-    let total_seconds = (beats_total / project.transport.bpm as f64) * 60.0;
+    let beats_total = (bars * project.transport.time_signature().0 as u32) as f64;
+    let total_seconds = (beats_total / project.transport.bpm() as f64) * 60.0;
     let total_samples = (total_seconds * sample_rate as f64) as usize;
 
     let block_size = 512;

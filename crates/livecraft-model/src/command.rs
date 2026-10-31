@@ -153,12 +153,12 @@ pub struct SetTempoAction {
 
 impl ReversibleAction for SetTempoAction {
     fn execute(&mut self, project: &mut Project) {
-        self.old_tempo = project.transport.bpm;
-        project.transport.bpm = self.new_tempo;
+        self.old_tempo = project.transport.bpm();
+        project.transport.set_bpm(self.new_tempo);
     }
 
     fn undo(&mut self, project: &mut Project) {
-        project.transport.bpm = self.old_tempo;
+        project.transport.set_bpm(self.old_tempo);
     }
 }
 

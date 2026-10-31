@@ -671,10 +671,8 @@ impl AlsParser {
             ));
         }
 
-        let transport = Transport {
-            bpm,
-            ..Default::default()
-        };
+        let mut transport = Transport::default();
+        transport.set_bpm(bpm);
 
         Ok(Project {
             schema_version,
@@ -994,7 +992,7 @@ impl AlsParser {
         writer.write_event(Event::Start(BytesStart::new("Transport")))?;
         writer.write_event(Event::Start(BytesStart::new("Tempo")))?;
         let mut manual_tempo = BytesStart::new("Manual");
-        let bpm_str = project.transport.bpm.to_string();
+        let bpm_str = project.transport.bpm().to_string();
         manual_tempo.push_attribute(("Value", bpm_str.as_str()));
         writer.write_event(Event::Empty(manual_tempo))?;
         writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Tempo")))?;

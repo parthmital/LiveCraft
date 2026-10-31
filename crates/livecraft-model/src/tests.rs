@@ -8,7 +8,7 @@ fn test_project_creation() {
     assert_eq!(proj.tracks.len(), 4);
     assert_eq!(proj.return_tracks.len(), 2);
     assert_eq!(proj.scenes.len(), 8);
-    assert_eq!(proj.transport.bpm, 120.0);
+    assert_eq!(proj.transport.bpm(), 120.0);
 }
 
 #[test]
@@ -101,20 +101,20 @@ fn test_command_undo_redo() {
     let mut proj = Project::new_default("UndoTest");
     let mut history = CommandHistory::default();
 
-    assert_eq!(proj.transport.bpm, 120.0);
+    assert_eq!(proj.transport.bpm(), 120.0);
 
     let action = Box::new(SetTempoAction {
         old_tempo: 120.0,
         new_tempo: 140.0,
     });
     history.execute(action, &mut proj);
-    assert_eq!(proj.transport.bpm, 140.0);
+    assert_eq!(proj.transport.bpm(), 140.0);
 
     assert!(history.undo(&mut proj));
-    assert_eq!(proj.transport.bpm, 120.0);
+    assert_eq!(proj.transport.bpm(), 120.0);
 
     assert!(history.redo(&mut proj));
-    assert_eq!(proj.transport.bpm, 140.0);
+    assert_eq!(proj.transport.bpm(), 140.0);
 
     // Test AutomationLane and undo/redo of automation points
     let vol_lane = AutomationLane::new(LaneId(1), AutomationTarget::TrackVolume);
@@ -198,14 +198,14 @@ fn test_command_history_capacity() {
         history.execute(action, &mut proj);
     }
 
-    assert_eq!(proj.transport.bpm, 130.0);
+    assert_eq!(proj.transport.bpm(), 130.0);
     // Can only undo 5 times because max_history is 5
     let mut undos = 0;
     while history.undo(&mut proj) {
         undos += 1;
     }
     assert_eq!(undos, 5);
-    assert_eq!(proj.transport.bpm, 125.0);
+    assert_eq!(proj.transport.bpm(), 125.0);
 }
 
 #[test]
@@ -252,8 +252,8 @@ fn test_midi_transformations() {
 
     // Velocity ramp from 40 to 120
     data.velocity_ramp(40, 120);
-    assert_eq!(data.notes[0].velocity, 40);
-    assert_eq!(data.notes[2].velocity, 120);
+    assert_eq!(data.notes[0].velocity, 40.0);
+    assert_eq!(data.notes[2].velocity, 120.0);
 
     // Test Chop into 2 subdivisions
     let mut chop_data = MidiClipData {
@@ -350,4 +350,35 @@ fn test_id_allocator_starts_above_every_existing_id() {
     let mut ids = proj.id_allocator();
     assert_eq!(ids.track(), TrackId(302));
     assert_eq!(ids.device(), DeviceId(303));
+}
+
+#[test]
+fn test_midi_note_defaults_match_live_properties() {
+    let note = MidiNote::new(60, 0.0, 1.0, 100);
+    assert_eq!(note.velocity, 100.0);
+    assert_eq!(note.release_velocity, 64.0);
+    assert_eq!(note.probability, 1.0);
+    assert_eq!(note.velocity_deviation, 0.0);
+    assert!(!note.mute);
+}
+
+#[test]
+fn test_transport_tempo_and_signature_round_trip_through_json() {
+    let mut proj = Project::new_default("Transport");
+    proj.transport.set_bpm(140.0);
+    proj.transport
+        .set_time_signature(7, 8)
+        .expect("7/8 is a valid signature");
+
+    let json = serde_json::to_string(&proj).expect("serialise project");
+    let back: Project = serde_json::from_str(&json).expect("deserialise project");
+    assert_eq!(back.transport.bpm(), 140.0);
+    assert_eq!(back.transport.time_signature(), (7, 8));
+}
+
+#[test]
+fn test_transport_rejects_an_invalid_time_signature() {
+    let mut proj = Project::new_default("Invalid");
+    assert!(proj.transport.set_time_signature(4, 3).is_err());
+    assert_eq!(proj.transport.time_signature(), (4, 4));
 }

@@ -4,12 +4,20 @@ use crate::scale::ScaleConfig;
 use crate::scene::Scene;
 use crate::track::{Track, TrackType};
 use crate::tuning::TuningSystem;
+use livecraft_time::{Beats, TempoMap, TimeError, TimeSignatureMap};
 use serde::{Deserialize, Serialize};
 
+/// Transport state. Tempo and time signature are `livecraft-time` maps over song time.
+///
+/// The JSON export keeps the tempo and signature at the song start under the keys `bpm` and
+/// `time_signature`. Tempo ramps and later signature changes are not exported yet; `.als`
+/// keeps them (M09).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transport {
-    pub bpm: f32,
-    pub time_signature: (u8, u8),
+    #[serde(rename = "bpm", with = "tempo_json")]
+    pub tempo: TempoMap,
+    #[serde(with = "meter_json")]
+    pub time_signature: TimeSignatureMap,
     pub is_playing: bool,
     pub is_recording: bool,
     pub playhead_beats: f64,
@@ -19,11 +27,67 @@ pub struct Transport {
     pub metronome_enabled: bool,
 }
 
+impl Transport {
+    /// The tempo at the song start, in BPM.
+    pub fn bpm(&self) -> f32 {
+        self.tempo.bpm_at(Beats(0.0)) as f32
+    }
+
+    /// Sets one tempo for the whole song.
+    pub fn set_bpm(&mut self, bpm: f32) {
+        self.tempo = TempoMap::constant(f64::from(bpm));
+    }
+
+    /// The time signature at the song start, as (numerator, denominator).
+    pub fn time_signature(&self) -> (u8, u8) {
+        self.time_signature.signature_at(Beats(0.0))
+    }
+
+    /// Sets one time signature for the whole song.
+    pub fn set_time_signature(&mut self, numerator: u8, denominator: u8) -> Result<(), TimeError> {
+        self.time_signature = TimeSignatureMap::constant(numerator, denominator)?;
+        Ok(())
+    }
+}
+
+mod tempo_json {
+    use livecraft_time::{Beats, TempoMap};
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S: Serializer>(map: &TempoMap, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_f64(map.bpm_at(Beats(0.0)))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<TempoMap, D::Error> {
+        Ok(TempoMap::constant(f64::deserialize(deserializer)?))
+    }
+}
+
+mod meter_json {
+    use livecraft_time::{Beats, TimeSignatureMap};
+    use serde::de::Error;
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(
+        map: &TimeSignatureMap,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error> {
+        map.signature_at(Beats(0.0)).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<TimeSignatureMap, D::Error> {
+        let (numerator, denominator) = <(u8, u8)>::deserialize(deserializer)?;
+        TimeSignatureMap::constant(numerator, denominator).map_err(D::Error::custom)
+    }
+}
+
 impl Default for Transport {
     fn default() -> Self {
         Self {
-            bpm: 120.0,
-            time_signature: (4, 4),
+            tempo: TempoMap::constant(120.0),
+            time_signature: TimeSignatureMap::default(),
             is_playing: false,
             is_recording: false,
             playhead_beats: 0.0,

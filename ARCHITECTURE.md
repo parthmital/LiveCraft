@@ -26,11 +26,11 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ------------------------------------ |
 | `crates/livecraft-model/src/ids.rs`                  | Typed ids (`TrackId`, `ClipId`, `SceneId`, `DeviceId`, `LaneId`) and `IdAllocator`           | `TrackId`, `ClipId`, `SceneId`, `DeviceId`, `LaneId`, `IdAllocator`        | none                                 |
 | `crates/livecraft-model/src/model.rs`                | Facade that re-exports the model modules, so imports from `model` keep working               | every model type                                                           | model modules                        |
-| `crates/livecraft-model/src/set.rs`                  | Live Set (`Project`), transport, and the default Set                                         | `Project`, `Transport`                                                     | track, device, scene, scale, tuning  |
+| `crates/livecraft-model/src/set.rs`                  | Live Set (`Project`), transport, and the default Set                                         | `Project`, `Transport`                                                     | time, track, device, scene, scale, tuning |
 | `crates/livecraft-model/src/track.rs`                | Tracks, track types, and monitoring                                                          | `Track`, `TrackType`, `MonitoringMode`                                     | clip, device, automation, color      |
 | `crates/livecraft-model/src/clip.rs`                 | Clips, clip slots, arrangement clips, audio payloads, and warp markers                       | `Clip`, `ClipSlot`, `ArrangementClip`, `ClipPayload`                       | note, automation                     |
 | `crates/livecraft-model/src/note.rs`                 | MIDI notes and MIDI clip data                                                                | `MidiNote`, `MidiClipData`                                                 | none                                 |
-| `crates/livecraft-model/src/midi_tools_legacy.rs`    | MIDI transformations moved unchanged from M01; M19 replaces them                             | `MidiClipData` methods (quantize, humanize, chop, and so on)               | note, scale                          |
+| `crates/livecraft-model/src/midi_tools_legacy.rs`    | MIDI transformations moved from M01 (velocity and copies adapted in M03); M19 replaces them | `MidiClipData` methods (quantize, humanize, chop, and so on)               | note, scale                          |
 | `crates/livecraft-model/src/device.rs`               | Device kinds and devices, with string-keyed parameters until M03 item 7                      | `Device`, `DeviceType`                                                     | none                                 |
 | `crates/livecraft-model/src/automation.rs`           | Automation targets, points, and lanes                                                        | `AutomationLane`, `AutomationPoint`, `AutomationTarget`                    | none                                 |
 | `crates/livecraft-model/src/scene.rs`                | Scenes with optional tempo and time signature                                                | `Scene`                                                                    | none                                 |
@@ -60,7 +60,7 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 
 ## Dependency Rules
 
-- `livecraft-model`, `livecraft-dsp`, and `livecraft-time` have no internal dependencies and no audio, UI, or OS dependencies.
+- `livecraft-dsp` and `livecraft-time` have no internal dependencies. `livecraft-model` depends only on time. None of them has audio, UI, or OS dependencies.
 - `livecraft-formats` depends on model.
 - `livecraft-devices` depends on model, dsp, and time.
 - `livecraft-engine` depends on model, dsp, devices, formats, and time.
@@ -99,7 +99,7 @@ Each is scheduled in [plans/livecraft-1.0/PLAN.md](plans/livecraft-1.0/PLAN.md).
 | `process_buffer_interleaved` grows its scratch buffers on the audio thread when the driver block exceeds 8192 frames | `graph.rs`                                              | 1            |
 | `DspProcessor` processes one sample per virtual call and looks parameters up by string                               | `processor.rs`                                          | 1            |
 | GUI mutates `Project` directly; most edits bypass `CommandHistory`, so undo covers few actions                       | `crates/livecraft-ui/src/*.rs`                          | 1            |
-| Entity identity is `usize` indexes in commands and messages, which break on insert or delete                         | `command.rs`, `engine.rs`                               | 1            |
+| Note, clip-slot, and send identities are still positions in commands and messages (tracks, clips, scenes, devices, and lanes are typed since M03) | `command.rs`, `engine.rs` | 1 (M04, M18) |
 | `.als` writer regenerates XML from the model; every unknown element is lost                                          | `als.rs`                                                | 2            |
 | Session clip slots without an active clip are played back as a sequential timeline                                   | `graph.rs` `dispatch_clip_events`                       | 1            |
 | Large files mixing concerns: `graph.rs` (1080), `als.rs` (1008), `devices.rs` (995)         | as listed                                               | 1            |

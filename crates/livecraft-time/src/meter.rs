@@ -62,12 +62,31 @@ pub struct TimeSignatureMap {
     changes: Vec<Change>,
 }
 
+impl Default for TimeSignatureMap {
+    /// 4/4 from the song start.
+    fn default() -> Self {
+        Self {
+            changes: vec![Change {
+                bar: 0,
+                numerator: 4,
+                denominator: 4,
+            }],
+        }
+    }
+}
+
 impl TimeSignatureMap {
     /// A map with one time signature for the whole song.
     pub fn constant(numerator: u8, denominator: u8) -> Result<Self, TimeError> {
         Ok(Self {
             changes: vec![Change::new(0, numerator, denominator)?],
         })
+    }
+
+    /// The time signature in effect at `at` quarter-note beats, as (numerator, denominator).
+    pub fn signature_at(&self, at: Beats) -> (u8, u8) {
+        let (change, _) = self.change_at(at.0);
+        (change.numerator, change.denominator)
     }
 
     /// Sets the time signature from `bar` onward, replacing a change already at `bar`.
@@ -181,6 +200,15 @@ mod tests {
     use super::*;
     use proptest::prelude::*;
     use proptest::sample::select;
+
+    #[test]
+    fn signature_at_follows_a_mid_song_change() {
+        let mut map = TimeSignatureMap::constant(4, 4).expect("4/4 is valid");
+        map.insert(2, 7, 8).expect("7/8 is valid");
+        assert_eq!(map.signature_at(Beats(0.0)), (4, 4));
+        assert_eq!(map.signature_at(Beats(7.9)), (4, 4));
+        assert_eq!(map.signature_at(Beats(8.0)), (7, 8));
+    }
 
     fn position(bar: i32, beat: i32, sixteenth: i32) -> BarBeatSixteenth {
         BarBeatSixteenth {

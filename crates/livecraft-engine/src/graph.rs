@@ -20,6 +20,13 @@ use livecraft_model::ids::{DeviceId, SceneId, TrackId};
 use livecraft_model::model::*;
 use livecraft_time::beats_per_sample;
 
+/// Rounds a note velocity to the 0 to 127 integer that the instruments take.
+/// Fractional velocities reach the instruments once they accept `f32` (M32, M33).
+#[inline]
+fn midi_velocity(velocity: f32) -> u8 {
+    velocity.round().clamp(0.0, 127.0) as u8
+}
+
 /// Replaces NaN and infinity with silence; finite samples pass through bit-exactly.
 #[inline]
 pub fn sanitize_output_sample(sample: f32) -> f32 {
@@ -524,7 +531,7 @@ impl AudioGraph {
             master_meter: TrackMeter::default(),
             playhead_beats: 0.0,
             is_playing: false,
-            bpm: project.transport.bpm,
+            bpm: project.transport.bpm(),
             scratch_l,
             scratch_r,
             tuning: project.tuning.clone(),
@@ -648,7 +655,7 @@ impl AudioGraph {
     }
 
     pub fn sync_project(&mut self, project: &Project) {
-        self.bpm = project.transport.bpm;
+        self.bpm = project.transport.bpm();
         self.tuning = project.tuning.clone();
         self.scene_ids = project.scenes.iter().map(|scene| scene.id).collect();
 
@@ -1016,7 +1023,7 @@ impl AudioGraph {
                 state.audio_block_r[0..block_len].fill(0.0);
                 state.current_audio_in = (0.0, 0.0);
                 for (idx, note) in midi_data.notes.iter().enumerate() {
-                    if !note.muted {
+                    if !note.mute {
                         let note_start = note.start_beat;
                         let note_end = note.start_beat + note.duration_beats;
                         let is_active_now = clip_pos >= note_start && clip_pos < note_end;
@@ -1039,13 +1046,21 @@ impl AudioGraph {
                                     440.0 * 2.0f32.powf((note.pitch as f32 - 69.0) / 12.0)
                                 };
                                 if let Some(ref mut s) = state.synth {
-                                    s.note_on_with_freq(note.pitch, note.velocity, freq);
+                                    s.note_on_with_freq(
+                                        note.pitch,
+                                        midi_velocity(note.velocity),
+                                        freq,
+                                    );
                                 }
                                 if let Some(ref mut sm) = state.simpler {
-                                    sm.note_on_with_freq(note.pitch, note.velocity, freq);
+                                    sm.note_on_with_freq(
+                                        note.pitch,
+                                        midi_velocity(note.velocity),
+                                        freq,
+                                    );
                                 }
                                 if let Some(ref mut dr) = state.drum_rack {
-                                    dr.note_on(note.pitch, note.velocity);
+                                    dr.note_on(note.pitch, midi_velocity(note.velocity));
                                 }
                             }
                         } else if let Some(pos) = existing_pos {
