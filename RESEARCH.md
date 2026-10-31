@@ -102,3 +102,13 @@ Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superse
 **Decision:** Adopt `serde_json` for JSON arguments. Build the undo history, transactions, and the command registry in `livecraft-session`. Runner-up: `undo` 0.52.0, rejected because the labelled transactions, the Undo History entries, and the 500 ms gesture merge would still have to be written on top of it.
 
 **Sources:** [undo on crates.io](https://crates.io/crates/undo) and its JSON API `https://crates.io/api/v1/crates/undo`; [typetag on crates.io](https://crates.io/crates/typetag) and its JSON API `https://crates.io/api/v1/crates/typetag`. Both read on 2026-10-31.
+
+## Settings Storage (2026-10-31)
+
+**Tier:** Skip for the storage choice, which the M06 milestone decides (TOML under the platform config folder, found through `directories`). The two crates are recorded here because each is a new dependency.
+
+**Findings:** `toml` 1.1.8 (MIT OR Apache-2.0, last released 2026-10-09, about 1.08 billion crates.io downloads) reads and writes TOML through serde; its default features are `std`, `serde`, `parse`, and `display`. `directories` 6.0.0 (MIT OR Apache-2.0, last released 2025-01-12, about 79 million downloads) returns the platform folders. On Windows `BaseDirs::config_dir` is the Roaming AppData folder, `C:\Users\<user>\AppData\Roaming`. It pulls `dirs-sys` 0.5.0 (MIT OR Apache-2.0) and `option-ext` 0.2.0 (MPL-2.0, file-level copyleft, already allowed in `deny.toml`). Licences and the Windows path were read from the crate sources in the local cargo registry on 2026-10-31.
+
+**Decision:** Adopt both, pinned exactly in `[workspace.dependencies]` (`toml = "=1.1.8"`, `directories = "=6.0.0"`). TOML because the milestone fixes it. Runner-up: JSON through `serde_json`, already a workspace dependency and needing no new crate, not chosen because the milestone fixes TOML.
+
+**Sources:** [toml on crates.io](https://crates.io/crates/toml) and its JSON API `https://crates.io/api/v1/crates/toml`; [directories on crates.io](https://crates.io/crates/directories) and its JSON API `https://crates.io/api/v1/crates/directories`. Both read on 2026-10-31.
