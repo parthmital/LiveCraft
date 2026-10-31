@@ -8,11 +8,12 @@ Last verified: 2026-10-31.
 - Format check: `cargo fmt --all -- --check` (fix: `cargo fmt --all`)
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
 - Test all: `cargo test --workspace`
-- Test one crate: `cargo test -p livecraft-model` (also `livecraft-formats`, `livecraft-dsp`, `livecraft-devices`, `livecraft-engine`, `livecraft-time`, `livecraft-ui`, `livecraft`)
+- Test one crate: `cargo test -p livecraft-model` (also `livecraft-formats`, `livecraft-dsp`, `livecraft-devices`, `livecraft-engine`, `livecraft-session`, `livecraft-time`, `livecraft-ui`, `livecraft`)
 - Test one test: `cargo test -p livecraft-devices test_eq8_processing`
 - Release build: `cargo build --release --workspace`
 - Toolchain: pinned to Rust 1.99.1 by `rust-toolchain.toml`; crate metadata comes from `[workspace.package]` in `Cargo.toml`.
 - Run: `cargo run --bin livecraft -- <subcommand>`; GUI frame capture: `cargo run --bin livecraft -- gui --screenshot out.png --view session --theme dark`
+- Registered commands: `cargo run --bin livecraft -- command list`; run one: `cargo run --bin livecraft -- command run <set.als> <name> '<json args>' -o <out.als>`
 - Query the Live 12 manual: see `docs/live-manual.md`.
 
 - All checks in one command: `cargo xtask ci` (format check, clippy, tests, release build, crate layering, Markdown links, cargo-deny). Run it before every commit.

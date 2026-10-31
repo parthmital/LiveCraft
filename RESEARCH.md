@@ -92,3 +92,13 @@ Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superse
 **Findings:** `proptest` 1.12.0 is the newest release (created 2026-10-10, after 1.11.0 on 2026-03-24), MIT OR Apache-2.0, MSRV 1.88, about 229 million crates.io downloads. It shrinks failing inputs and records failing seeds in `proptest-regressions/`. `quickcheck` 1.1.0 (created 2026-02-10, Unlicense OR MIT, MSRV 1.85, about 77 million downloads) is the runner-up: its `Arbitrary` generators are per type, so bounded ranges such as 20 to 999 BPM need hand-written wrappers, while proptest strategies express ranges directly.
 **Decision:** Adopt `proptest` 1.12.0 as a dev-dependency of `livecraft-time` only. Runner-up: `quickcheck` 1.1.0.
 **Sources:** [proptest on crates.io](https://crates.io/crates/proptest), [proptest docs](https://docs.rs/proptest), [quickcheck on crates.io](https://crates.io/crates/quickcheck).
+
+## Command Registry And Undo (2026-10-31)
+
+**Tier:** Quick. One bounded choice in a familiar domain. The design is already fixed by `plans/livecraft-1.0/milestones/M04-session-and-commands.md` and by the FilmCraft decision above.
+
+**Findings:** `undo` 0.52.0 (MIT OR Apache-2.0, created 2016-12-12, last updated 2025-03-08, 189684 downloads) is a generic undo and redo stack. It has no labelled groups, no revert to an arbitrary entry, and no time-gap merge. `typetag` 0.2.23 (MIT OR Apache-2.0, last updated 2026-07-18, about 56 million downloads) serialises trait objects through link-time registration. The registry needs neither. Command names map to constructors that call `serde_json::from_value`, and `serde_json` is already a workspace dependency.
+
+**Decision:** Adopt `serde_json` for JSON arguments. Build the undo history, transactions, and the command registry in `livecraft-session`. Runner-up: `undo` 0.52.0, rejected because the labelled transactions, the Undo History entries, and the 500 ms gesture merge would still have to be written on top of it.
+
+**Sources:** [undo on crates.io](https://crates.io/crates/undo) and its JSON API `https://crates.io/api/v1/crates/undo`; [typetag on crates.io](https://crates.io/crates/typetag) and its JSON API `https://crates.io/api/v1/crates/typetag`. Both read on 2026-10-31.

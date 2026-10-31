@@ -11,10 +11,13 @@ pub const ABLETON_PALETTE: &[&str] = &[
     "#361876", "#4f1876", "#761864", "#76183f", "#ffffff", "#000000",
 ];
 
-/// Parses a `#RRGGBB` or `#RRGGBBAA` color into RGBA bytes. Anything else is white.
+/// Parses a `#RRGGBB` or `#RRGGBBAA` color into RGBA bytes. Anything else is white. Non-ASCII
+/// input is white too, because the digits are read by byte position.
 pub fn parse_hex_color(hex: &str) -> [u8; 4] {
     let clean = hex.trim_start_matches('#');
-    if clean.len() == 6 {
+    if !clean.is_ascii() {
+        [255, 255, 255, 255]
+    } else if clean.len() == 6 {
         let r = u8::from_str_radix(&clean[0..2], 16).unwrap_or(255);
         let g = u8::from_str_radix(&clean[2..4], 16).unwrap_or(255);
         let b = u8::from_str_radix(&clean[4..6], 16).unwrap_or(255);
@@ -27,5 +30,18 @@ pub fn parse_hex_color(hex: &str) -> [u8; 4] {
         [r, g, b, a]
     } else {
         [255, 255, 255, 255]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_colors_parse_by_byte_and_non_ascii_input_is_white() {
+        assert_eq!(parse_hex_color("#ff0000"), [255, 0, 0, 255]);
+        assert_eq!(parse_hex_color("#00ff0080"), [0, 255, 0, 128]);
+        assert_eq!(parse_hex_color("#ééé"), [255, 255, 255, 255]);
+        assert_eq!(parse_hex_color("zz"), [255, 255, 255, 255]);
     }
 }

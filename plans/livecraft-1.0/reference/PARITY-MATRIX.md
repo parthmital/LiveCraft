@@ -47,7 +47,7 @@ Last verified: 2026-10-31.
 | 5.1     | Sample Files                                                  | 122-132   | M11       | Missing   |          |
 | 5.2     | MIDI Files                                                    | 133       | M10       | Missing   |          |
 | 5.3     | Live Clips                                                    | 134       | M10       | Missing   |          |
-| 5.4     | Live Sets                                                     | 135-141   | M09       | Missing   |          |
+| 5.4     | Live Sets                                                     | 135-141   | M09       | Prototype | M04 review: Undo History (5.4.2), `livecraft-session/tests/transactions.rs` |
 | 5.5     | Live Projects                                                 | 142-146   | M10       | Missing   |          |
 | 5.6     | Locating Missing Files                                        | 147-149   | M10       | Missing   |          |
 | 5.7     | Collecting External Files                                     | 150-154   | M10       | Missing   |          |

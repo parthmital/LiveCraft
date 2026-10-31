@@ -38,7 +38,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 - [x] M01-10 Verify M01 workspace restructure and update docs ([task](tasks/M01-10-milestone-verification.md))
 - [~] M02 Musical time foundation ([milestone](milestones/M02-musical-time.md))
 - [~] M03 Document model v2 ([milestone](milestones/M03-document-model-v2.md))
-- [ ] M04 Session, command registry, undo ([milestone](milestones/M04-session-and-commands.md))
+- [~] M04 Session, command registry, undo ([milestone](milestones/M04-session-and-commands.md)). Owner input queued: Q08 (Undo History labels in Live 12.4)
 - [ ] M05 Real-time engine core ([milestone](milestones/M05-realtime-engine-core.md))
 - [ ] M06 Audio and MIDI I/O and device settings ([milestone](milestones/M06-audio-midi-io.md))
 - [ ] M07 Transport, tempo, metronome, launch scheduler ([milestone](milestones/M07-transport-and-launch.md))

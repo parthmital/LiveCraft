@@ -40,7 +40,7 @@ cargo run --bin livecraft -- gui
 
 | Command                  | What it does                            | Expected result                          | Common error and fix                                                                          |
 | ------------------------ | --------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 122 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 203 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
 | `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                      |
 | `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                         |
 | `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
@@ -67,7 +67,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 
 - Document model (`livecraft-model`): project, tracks (audio, MIDI, group, return, and Main) with group nesting and routing descriptions, typed ids for tracks, clips, scenes, devices, and lanes, `Project::validate` for references and group rules, clip slots, scenes, MIDI and audio clips, arrangement clips with split, duplicate, and trim, automation lanes with linear interpolation, 12 scale types, Scala `.scl` tuning, and a set of MIDI transformations.
 - Live Set files (`livecraft-formats`): reads and writes gzip `.als` XML for the subset of elements the model knows. Unknown elements are dropped on save (see [Known Limitations](#known-limitations)).
-- Undo and redo for a small set of commands (`CommandHistory`).
+- Named, undoable edits (`livecraft-session`): every change to a Live Set is a command with a stable name, which the CLI can run. Undo and redo cover track, clip, note, device, scene, scale, and transport edits. Several edits can form one labelled step, and a drag is one step. The Undo History lists the steps, with undone ones greyed out, and can revert or reapply to any entry (manual 5.4.2).
 - Audio engine (`livecraft-engine`): `cpal` output stream, per-track device chains, sends and returns, In, Auto, and Off monitoring, offline WAV render and stem export through `hound`.
 - Devices (`livecraft-devices`, built on filters in `livecraft-dsp`): Operator-style 4-operator FM synth, Simpler-style sampler, a 16-pad drum rack, and effects named after EQ Eight, EQ Three, Compressor, Limiter, Gate, Auto Filter, Auto Pan, Chorus, Delay, Reverb, Saturator, Redux, and Utility. These are simplified approximations, not matched to Live's sound or parameter sets.
 - GUI (`livecraft-ui`): control bar, Session View with mixer strips, Arrangement View, device and clip detail area, piano roll, and browser sidebar, in dark and light themes, plus a headless `--screenshot` mode.
@@ -102,6 +102,7 @@ LiveCraft/
 |   |-- livecraft-engine/
 |   |-- livecraft-formats/
 |   |-- livecraft-model/
+|   |-- livecraft-session/
 |   |-- livecraft-testkit/
 |   |-- livecraft-time/
 |   `-- livecraft-ui/
@@ -135,6 +136,8 @@ The binary is `livecraft`. Run `livecraft <command> --help` for every option. Wi
 | `livecraft play [file] [-d seconds]`                                                                                 | Play through the default output with ASCII meters          |
 | `livecraft synth [-n 60] [-w saw] [-o out.wav] [-d 2]`                                                               | Render or play a single test tone                          |
 | `livecraft convert <input> <output>`                                                                                 | Convert between `.als` and `.json`                         |
+| `livecraft command list`                                                                                             | Print the name of every registered command                 |
+| `livecraft command run <file> <name> '<json args>' -o <out.als>`                                                     | Run one command on a Live Set and save the result as `.als` |
 | `livecraft gui [file] [--screenshot out.png] [--view session or arrangement] [--tab 0 or 1] [--theme dark or light]` | Open the GUI, or save one frame as PNG and exit            |
 
 ## Configuration
@@ -157,7 +160,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-Baseline on 2026-10-31: `cargo xtask ci` passes with 122 tests (livecraft 6, livecraft-model 41, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 18, livecraft-engine 10, livecraft-time 34, livecraft-ui 2, xtask 4, livecraft-testkit 0). One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
+On 2026-10-31, `cargo xtask ci` passes with 203 tests (livecraft 9, livecraft-model 44, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 18, livecraft-engine 10, livecraft-session 74, livecraft-time 34, livecraft-ui 2, xtask 5, livecraft-testkit 0). `livecraft command list` prints 42 registered commands. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
 
 ## Troubleshooting
 
