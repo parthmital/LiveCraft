@@ -11,7 +11,9 @@
 use crate::clip::ClipLane;
 use crate::delay::DelayLine;
 use crate::snapshot::TrackMeter;
-use livecraft_devices::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
+use livecraft_devices::{
+    AudioIo, DeviceProcessor, EventList, EventSink, NoteEvent, ProcessContext,
+};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
 use livecraft_model::model::MonitoringMode;
 use livecraft_model::param::{ParamId, ParamSpec};
@@ -61,6 +63,9 @@ pub struct InputRoute {
     pub channel: Option<u16>,
     pub monitoring: MonitoringMode,
     pub is_armed: bool,
+    /// Whether the track is a MIDI track. A MIDI track takes the MIDI input while it monitors its input
+    /// (manual 17.3, page 375).
+    pub takes_midi: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -242,6 +247,11 @@ impl Node {
         }
     }
 
+    /// Whether the track takes the MIDI input now: a MIDI track that monitors its input.
+    fn monitors_midi(&self) -> bool {
+        self.input.takes_midi && self.monitors_input()
+    }
+
     /// Fills this block's note events and audio from the clips the track plays.
     fn schedule_clips(&mut self, ctx: &ProcessContext) {
         let frames = ctx.frames;
@@ -295,6 +305,8 @@ pub struct CompiledGraph {
     /// The level of the output after the Main volume, which is what the device writes out.
     pub output_meter: TrackMeter,
     transfers: Vec<Transfer>,
+    /// The frequency of each MIDI pitch in hertz, from the Set's tuning (`GraphCompiler::compile`).
+    note_frequencies: [f32; 128],
 }
 
 /// Amplitude for a volume in dB. Volumes at or below -59 dB are silent, as the Set's fader shows.
@@ -337,13 +349,15 @@ pub fn compensate_latency(nodes: &mut [Node], track_count: usize, return_count: 
 
 impl CompiledGraph {
     /// Assembles a graph from its nodes, which must be the tracks, then the return tracks, then the
-    /// Main track. `transfers` lists the devices this graph takes over from the one it replaces.
+    /// Main track. `transfers` lists the devices this graph takes over from the one it replaces, and
+    /// `note_frequencies` gives the frequency of each MIDI pitch.
     pub fn new(
         nodes: Vec<Node>,
         track_count: usize,
         return_count: usize,
         scenes: Vec<SceneId>,
         transfers: Vec<Transfer>,
+        note_frequencies: [f32; 128],
     ) -> Self {
         Self {
             nodes,
@@ -352,6 +366,24 @@ impl CompiledGraph {
             scenes,
             output_meter: TrackMeter::default(),
             transfers,
+            note_frequencies,
+        }
+    }
+
+    /// The frequency of each MIDI pitch in hertz. The engine reads it to turn MIDI input into notes.
+    pub fn note_frequencies(&self) -> &[f32; 128] {
+        &self.note_frequencies
+    }
+
+    /// Adds a note to every MIDI track that takes MIDI input now (`Node::monitors_midi`), for the block
+    /// being rendered. A track whose note list is full drops the note, because the audio thread never
+    /// waits.
+    pub fn push_live_note(&mut self, event: NoteEvent) {
+        for node in self.nodes[..self.track_count]
+            .iter_mut()
+            .filter(|node| node.monitors_midi())
+        {
+            let _ = node.events.push(event);
         }
     }
 

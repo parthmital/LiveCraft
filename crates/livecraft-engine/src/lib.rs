@@ -7,6 +7,8 @@ pub mod compiler;
 pub mod delay;
 pub mod driver;
 pub mod executor;
+pub mod midi;
+pub mod midi_io;
 pub mod output;
 pub mod rt;
 pub mod snapshot;

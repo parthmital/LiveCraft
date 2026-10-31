@@ -45,6 +45,7 @@ triple_buffer = "=9.0.0"
 assert_no_alloc = "=1.1.2"
 toml = "=1.1.8"
 directories = "=6.0.0"
+midir = "=0.11.1"
 livecraft-testkit = { path = "crates/livecraft-testkit" }
 livecraft-model = { path = "crates/livecraft-model" }
 livecraft-formats = { path = "crates/livecraft-formats" }

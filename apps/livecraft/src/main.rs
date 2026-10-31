@@ -2,6 +2,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use livecraft_devices::operator::{OperatorSynth, Waveform};
 use livecraft_engine::bouncer::{OfflineBouncer, RenderOptions};
 use livecraft_engine::driver::{DeviceInfo, DeviceList, DriverConfig};
+use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::AlsParser;
 use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, TrackType};
@@ -142,7 +143,7 @@ enum Commands {
         /// Output file (.als or .json)
         output: PathBuf,
     },
-    /// List the audio hosts and their input and output devices (manual 41.2)
+    /// List the audio hosts and their input and output devices, and the MIDI input and output ports (manual 41.2 and 2.3)
     Devices {
         /// Print the list as JSON
         #[arg(long)]
@@ -416,10 +417,13 @@ fn main() -> anyhow::Result<()> {
         }
         Some(Commands::Devices { json }) => {
             let devices = livecraft_session::Session::audio_devices();
+            let midi = list_midi_ports();
             if json {
-                println!("{}", serde_json::to_string_pretty(&devices)?);
+                let report = serde_json::json!({ "hosts": devices.hosts, "midi": midi });
+                println!("{}", serde_json::to_string_pretty(&report)?);
             } else {
                 print_device_list(&devices);
+                print_midi_ports(&midi);
             }
         }
     }
@@ -436,6 +440,23 @@ fn print_device_list(devices: &DeviceList) {
         println!("{}{}", host.name, default_mark(host.is_default));
         print_device_group("Outputs", &host.outputs);
         print_device_group("Inputs", &host.inputs);
+    }
+}
+
+/// Prints the MIDI input and output ports, one name per line.
+fn print_midi_ports(ports: &MidiPorts) {
+    println!("MIDI");
+    print_port_group("Input ports", &ports.inputs);
+    print_port_group("Output ports", &ports.outputs);
+}
+
+fn print_port_group(heading: &str, names: &[String]) {
+    println!("  {heading}:");
+    if names.is_empty() {
+        println!("    none");
+    }
+    for name in names {
+        println!("    {name}");
     }
 }
 

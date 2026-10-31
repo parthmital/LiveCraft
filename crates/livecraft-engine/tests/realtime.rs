@@ -1,13 +1,16 @@
-//! The audio path renders a block without allocating (M05 items 5 and 6, M06 item 5 for input). The
-//! render runs inside the allocation check, which aborts on any allocation or free.
+//! The audio path renders a block without allocating (M05 items 5 and 6, M06 items 5 and 6 for audio
+//! and MIDI input). The render runs inside the allocation check, which aborts on any allocation or free.
 
 use livecraft_devices::{NoteEvent, ProcessContext};
 use livecraft_engine::compiled::MAX_BLOCK;
 use livecraft_engine::compiler::GraphCompiler;
 use livecraft_engine::executor::{Engine, EngineCommand, EngineHandle};
+use livecraft_engine::midi::{HostClock, MidiMessage, period_us};
 use livecraft_engine::rt::checked;
-use livecraft_model::ids::TrackId;
-use livecraft_model::model::{AudioInput, MonitoringMode, Project, Track, TrackType};
+use livecraft_model::ids::{DeviceId, TrackId};
+use livecraft_model::model::{
+    AudioInput, Device, DeviceType, MonitoringMode, Project, Track, TrackType,
+};
 
 #[cfg(debug_assertions)]
 #[global_allocator]
@@ -207,4 +210,57 @@ fn an_input_the_stream_has_not_delivered_is_silent() {
     // Nothing is left for the next block, so it is silent too.
     let next = render_frames(&mut engine, MAX_BLOCK);
     assert!(next.iter().all(|&sample| sample == 0.0));
+}
+
+/// Two MIDI tracks, each with an Operator. Track 1 is armed, and track 2 is not.
+fn two_midi_tracks() -> Project {
+    let mut project = Project::new_default("Midi input");
+    project.tracks[0].is_armed = true;
+    project.tracks[1].device_chain.push(Device::new(
+        DeviceId(103),
+        "Operator 2",
+        DeviceType::Operator,
+    ));
+    project
+}
+
+#[test]
+fn a_midi_note_on_plays_on_its_frame_in_an_armed_midi_track_and_not_in_an_unarmed_one() {
+    let project = two_midi_tracks();
+    let collector = basedrop::Collector::new();
+    let mut compiler = GraphCompiler::new(44100.0, collector.handle());
+    // The expected output: the same Set, with the note pushed into track 1 directly at frame 441.
+    let mut expected = compiler.compile(&project);
+    let frequency = expected.note_frequencies()[60];
+    expected
+        .node_mut(TrackId(1))
+        .expect("track 1")
+        .events
+        .push(NoteEvent::On {
+            offset: 441,
+            pitch: 60,
+            velocity: 100,
+            freq_hz: frequency,
+        });
+    let ctx = context();
+    expected.render(&ctx);
+    let (left, right) = expected.output(MAX_BLOCK);
+    let expected: Vec<f32> = left.iter().zip(right).flat_map(|(&l, &r)| [l, r]).collect();
+
+    let (mut engine, _handle) =
+        Engine::start(compiler.compile(&project), 44100.0, collector).expect("start the engine");
+    let (mut producer, consumer) = rtrb::RingBuffer::new(16);
+    engine.set_midi_input(vec![consumer], HostClock::start());
+    // The note arrived 10 ms into the previous buffer period, which is frame 441 of this buffer.
+    let block_start = 1_000_000;
+    let time = block_start - period_us(MAX_BLOCK, 44100.0) + 10_000;
+    producer
+        .push(MidiMessage::new(time, 0, &[0x90, 60, 100]).expect("a note on"))
+        .expect("the queue has room");
+    let mut out = vec![0.0f32; MAX_BLOCK * 2];
+    checked(|| engine.process_at(&mut out, 2, block_start));
+
+    assert!(out[..441 * 2].iter().all(|&sample| sample == 0.0));
+    assert!(out.iter().any(|&sample| sample != 0.0));
+    assert_eq!(out, expected);
 }

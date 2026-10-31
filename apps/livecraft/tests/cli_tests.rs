@@ -179,3 +179,23 @@ fn devices_text_has_an_outputs_block_for_each_host_in_the_json() {
         hosts
     );
 }
+
+#[test]
+fn devices_json_lists_the_midi_input_and_output_ports() {
+    let output = livecraft_devices(&["--json"]);
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let list: serde_json::Value =
+        serde_json::from_slice(&output.stdout).expect("the output is JSON");
+    assert!(
+        list["midi"]["inputs"].is_array(),
+        "no MIDI inputs in {list}"
+    );
+    assert!(
+        list["midi"]["outputs"].is_array(),
+        "no MIDI outputs in {list}"
+    );
+}

@@ -478,7 +478,7 @@ fn a_graph_with_more_nodes_than_the_snapshot_holds_is_refused() {
             )
         })
         .collect();
-    let large = CompiledGraph::new(nodes, MAX_NODES + 1, 0, Vec::new(), Vec::new());
+    let large = CompiledGraph::new(nodes, MAX_NODES + 1, 0, Vec::new(), Vec::new(), [0.0; 128]);
     assert_eq!(
         handle.submit_graph(large),
         Err(SubmitError::TooManyNodes {

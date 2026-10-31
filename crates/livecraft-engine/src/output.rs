@@ -1,12 +1,14 @@
-//! The audio output (M05 item 12, TARGET-ARCHITECTURE "Threads" and "Engine Decisions"; M06 item 2).
+//! The audio output (M05 item 12, TARGET-ARCHITECTURE "Threads" and "Engine Decisions"; M06 items 2
+//! and 6).
 //!
 //! The driver calls `Engine::process` for each buffer and does nothing else. `Playback` is the
 //! session side: it compiles the Set, submits the graphs, sends commands, and reads the snapshots.
-//! It holds the driver, so dropping it stops the output.
+//! It holds the driver and the MIDI input ports, so dropping it stops the output and closes the ports.
 
 use crate::compiler::{GraphCompiler, ProcessorFactory};
 use crate::driver::{AudioDriver, CpalDriver, DriverConfig, DriverStatus, Latency};
 use crate::executor::{Engine, EngineCommand, EngineHandle};
+use crate::midi_io::MidiInputs;
 use basedrop::Collector;
 use livecraft_devices::create_device_processor;
 use livecraft_model::model::Project;
@@ -15,25 +17,33 @@ use livecraft_model::model::Project;
 pub struct Playback {
     /// Keeps the output running. None when the Set renders without an audio driver.
     driver: Option<Box<dyn AudioDriver>>,
+    /// Keeps the MIDI input ports open, so they feed the engine. None when there is no driver.
+    _midi_inputs: Option<MidiInputs>,
     pub sample_rate: f32,
     pub compiler: GraphCompiler,
     pub handle: EngineHandle,
 }
 
 impl Playback {
-    /// Opens the output that `config` names and starts rendering `project` through it.
+    /// Opens the output that `config` names and starts rendering `project` through it, with no MIDI
+    /// input.
     pub fn open(project: &Project, config: &DriverConfig) -> anyhow::Result<Self> {
-        Self::open_with_driver(project, Box::new(CpalDriver::open(config)?))
+        Self::open_with_driver(project, Box::new(CpalDriver::open(config)?), &[])
     }
 
-    /// Starts rendering `project` through `driver`, at the driver's sample rate.
+    /// Starts rendering `project` through `driver`, at the driver's sample rate. The MIDI input ports
+    /// named in `midi_ports` feed the engine. A port that cannot be opened is skipped with a warning.
     pub fn open_with_driver(
         project: &Project,
         mut driver: Box<dyn AudioDriver>,
+        midi_ports: &[String],
     ) -> anyhow::Result<Self> {
-        let (mut playback, engine) = Self::start(project, driver.sample_rate() as f32)?;
+        let (mut playback, mut engine) = Self::start(project, driver.sample_rate() as f32)?;
+        let (midi_inputs, feed) = MidiInputs::open(midi_ports);
+        engine.set_midi_input(feed.messages, feed.clock);
         driver.start(engine)?;
         playback.driver = Some(driver);
+        playback._midi_inputs = Some(midi_inputs);
         Ok(playback)
     }
 
@@ -69,6 +79,7 @@ impl Playback {
         let (engine, handle) = Engine::start(graph, sample_rate, collector)?;
         let mut playback = Self {
             driver: None,
+            _midi_inputs: None,
             sample_rate,
             compiler,
             handle,
@@ -104,9 +115,19 @@ mod tests {
         assert_eq!(playback.latency(), Latency::default());
 
         let playback =
-            Playback::open_with_driver(&project, Box::new(NullDriver::new(44100, 512, 2)))
+            Playback::open_with_driver(&project, Box::new(NullDriver::new(44100, 512, 2)), &[])
                 .expect("open with a null driver");
         assert_eq!(playback.driver_status(), DriverStatus::Running);
         assert_eq!(playback.sample_rate, 44100.0);
+    }
+
+    #[test]
+    fn a_missing_midi_port_does_not_stop_the_playback() {
+        let project = Project::new_default("Missing port");
+        let ports = ["No Such MIDI Input Port".to_string()];
+        let playback =
+            Playback::open_with_driver(&project, Box::new(NullDriver::new(44100, 512, 2)), &ports)
+                .expect("open with a null driver and a missing MIDI port");
+        assert_eq!(playback.driver_status(), DriverStatus::Running);
     }
 }

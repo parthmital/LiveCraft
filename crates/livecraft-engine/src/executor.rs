@@ -7,9 +7,10 @@
 //! applies commands and graph swaps at the start of each driver callback and never allocates.
 
 use crate::collector;
-use crate::compiled::{CompiledGraph, InputBlock, MAX_BLOCK, Node, RAMP_STEP};
+use crate::compiled::{CompiledGraph, InputBlock, MAX_BLOCK, MAX_NOTE_EVENTS, Node, RAMP_STEP};
+use crate::midi::{HostClock, MidiMessage, note_event, period_us, sample_offset};
 use crate::snapshot::{ClipState, EngineSnapshot, MAX_NODES, Transport, cpu_load};
-use livecraft_devices::ProcessContext;
+use livecraft_devices::{EventList, ProcessContext};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
 use livecraft_model::param::ParamId;
 use livecraft_time::beats_per_sample;
@@ -168,6 +169,8 @@ pub struct Engine {
     snapshots: triple_buffer::Input<EngineSnapshot>,
     /// The external input the driver captures, when it captures any.
     input: Option<InputCapture>,
+    /// The MIDI input the driver feeds, when the session opened MIDI ports.
+    midi: Option<MidiCapture>,
 }
 
 /// The external input the driver captures: the samples its input stream pushed, and the block being
@@ -178,6 +181,17 @@ struct InputCapture {
     /// The samples of the current block, at most `MAX_BLOCK` frames. `Engine::set_input` allocates it,
     /// so `fill` allocates nothing.
     block: Box<[f32]>,
+}
+
+/// The MIDI input the driver feeds, and the note events of the buffer being rendered.
+struct MidiCapture {
+    /// One queue per open input port.
+    messages: Vec<rtrb::Consumer<MidiMessage>>,
+    clock: HostClock,
+    /// The note events of the buffer, at their offsets in the buffer and in offset order. It is
+    /// allocated with room for `MAX_NOTE_EVENTS` in `Engine::set_midi_input`, so filling it allocates
+    /// nothing.
+    notes: EventList,
 }
 
 impl InputCapture {
@@ -235,6 +249,7 @@ impl Engine {
             pending: Vec::with_capacity(COMMAND_CAPACITY),
             snapshots: snapshot_tx,
             input: None,
+            midi: None,
         };
         let handle = EngineHandle {
             commands: command_tx,
@@ -256,19 +271,40 @@ impl Engine {
         });
     }
 
+    /// Reads MIDI input from the port queues in `messages`, whose messages are stamped on `clock`. In each buffer, the note
+    /// on and note off messages that arrived during the previous buffer period play in this buffer, on
+    /// their frames, in every MIDI track that takes MIDI input (`Node::monitors_midi`). Call it before the
+    /// engine starts on a driver. The note list is allocated here.
+    pub fn set_midi_input(&mut self, messages: Vec<rtrb::Consumer<MidiMessage>>, clock: HostClock) {
+        self.midi = Some(MidiCapture {
+            messages,
+            clock,
+            notes: EventList::with_capacity(MAX_NOTE_EVENTS),
+        });
+    }
+
     /// Renders `out`, which holds interleaved frames of `channels` samples. It is the only call from
-    /// the driver callback.
+    /// the driver callback. The buffer starts at the MIDI clock's time now.
     pub fn process(&mut self, out: &mut [f32], channels: usize) {
+        let block_start_us = self.midi.as_ref().map_or(0, |midi| midi.clock.now_us());
+        self.process_at(out, channels, block_start_us);
+    }
+
+    /// As `process`, for a buffer that starts at `block_start_us` on the MIDI clock. `process` reads that
+    /// time from the clock. Tests pass a time they chose, so the frames of MIDI input are known.
+    pub fn process_at(&mut self, out: &mut [f32], channels: usize, block_start_us: u64) {
         if channels == 0 {
             return;
         }
         let started = Instant::now();
         self.apply_pending();
         let frames = out.len() / channels;
+        self.receive_midi(block_start_us, frames);
         let mut start = 0;
         while start < frames {
             self.apply_due_params();
             let block = self.segment_len(frames - start);
+            self.push_midi_notes(start, block);
             let context = ProcessContext {
                 sample_rate: self.sample_rate,
                 frames: block,
@@ -298,6 +334,47 @@ impl Engine {
             start += block;
         }
         self.publish(frames, started.elapsed().as_secs_f32());
+    }
+
+    /// Pops the MIDI messages that arrived and turns the note on and note off ones into note events at
+    /// their offsets in this buffer (`sample_offset`). The list is sorted so that a note off comes before
+    /// a note on at the same offset (`EventList::sort_by_offset`). Notes beyond its capacity are dropped.
+    fn receive_midi(&mut self, block_start_us: u64, frames: usize) {
+        let Some(midi) = self.midi.as_mut() else {
+            return;
+        };
+        midi.notes.clear();
+        let period = period_us(frames, self.sample_rate);
+        let frequency = self.graph.note_frequencies();
+        for queue in midi.messages.iter_mut() {
+            while let Ok(message) = queue.pop() {
+                let offset = sample_offset(
+                    message.time_us,
+                    block_start_us,
+                    period,
+                    frames,
+                    self.sample_rate,
+                );
+                if let Some(event) = note_event(&message, offset as u32, frequency) {
+                    let _ = midi.notes.push(event);
+                }
+            }
+        }
+        midi.notes.sort_by_offset();
+    }
+
+    /// Hands the MIDI note events that fall in the segment `start..start + block` to the tracks that take
+    /// MIDI input, at their offsets within the segment.
+    fn push_midi_notes(&mut self, start: usize, block: usize) {
+        let Some(midi) = self.midi.as_ref() else {
+            return;
+        };
+        for event in midi.notes.iter() {
+            let offset = event.offset() as usize;
+            if (start..start + block).contains(&offset) {
+                self.graph.push_live_note(event.at((offset - start) as u32));
+            }
+        }
     }
 
     /// Writes this callback's state into the snapshot and publishes it. Only fixed-size fields are

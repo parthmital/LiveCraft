@@ -214,3 +214,21 @@ fn changed_audio_settings_are_saved_to_the_preferences_file() {
     let saved = Preferences::load(&path).expect("the preferences file is readable");
     assert_eq!(saved.audio, audio(48_000, 128));
 }
+
+#[test]
+fn a_midi_input_that_is_not_connected_does_not_stop_the_set_from_playing() {
+    let path = prefs_file(
+        "midi-missing",
+        "[[midi.inputs]]\nname = \"No Such MIDI Input Port\"\ntrack = true\n",
+    );
+    let mut session = Session::with_driver_factory(demo(), null_factory(), Some(path));
+    assert_eq!(session.preferences().midi.inputs.len(), 1);
+    assert_eq!(session.status().sample_rate, Some(44_100.0));
+    session.set_playing(true);
+    let before = session.status().playhead_beats;
+    wait_for(
+        Duration::from_millis(500),
+        "the playhead moves with a missing MIDI input",
+        || session.status().playhead_beats > before,
+    );
+}

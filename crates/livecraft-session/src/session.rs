@@ -9,11 +9,12 @@ use crate::commands::clip::CreateMidiClip;
 use crate::commands::note::AddNote;
 use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
-use crate::preferences::{AudioPreferences, Preferences, PreferencesError};
+use crate::preferences::{AudioPreferences, MidiPreferences, Preferences, PreferencesError};
 use livecraft_engine::driver::{
     AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, list_devices,
 };
 use livecraft_engine::executor::EngineCommand;
+use livecraft_engine::midi_io::list_midi_ports;
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::{AlsError, AlsParser};
 use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
@@ -139,16 +140,16 @@ impl Session {
         }
     }
 
-    /// Opens a Set with the audio output that the preferences file names (manual 41.2), or the
-    /// default output when that one cannot be opened.
+    /// Opens a Set with the audio output and the MIDI inputs that the preferences file names (manual
+    /// 41.2 and 2.3), or the default output when that one cannot be opened.
     pub fn open(project: Project) -> Self {
         Self::with_driver_factory(project, Box::new(cpal_driver), Preferences::default_path())
     }
 
-    /// Opens a Set with the audio output that `factory` builds for the preferences at `prefs_path`.
-    /// A missing or unreadable file gives the defaults. When the named output cannot be opened, the
-    /// default output is used instead. Changes made by `set_audio_preferences` are saved to
-    /// `prefs_path`, when there is one.
+    /// Opens a Set with the audio output that `factory` builds for the preferences at `prefs_path`, and
+    /// the MIDI inputs those preferences name. A missing or unreadable file gives the defaults. When the
+    /// named output cannot be opened, the default output is used instead. Changes made by
+    /// `set_audio_preferences` are saved to `prefs_path`, when there is one.
     pub fn with_driver_factory(
         project: Project,
         factory: DriverFactory,
@@ -157,7 +158,7 @@ impl Session {
         let preferences = prefs_path
             .as_deref()
             .map_or_else(Preferences::default, load_preferences);
-        let engine = open_engine(&project, &factory, &preferences.audio);
+        let engine = open_engine(&project, &factory, &preferences);
         Self::from_parts(project, engine, factory, preferences, prefs_path)
     }
 
@@ -185,6 +186,7 @@ impl Session {
             &self.project,
             &self.driver_factory,
             &DriverConfig::from(&audio),
+            &self.preferences.midi,
         )?;
         if let Some(previous) = self.engine.as_mut() {
             carry_over(previous, &mut next, &self.project);
@@ -399,30 +401,43 @@ fn cpal_driver(config: &DriverConfig) -> Result<Box<dyn AudioDriver>, DriverErro
     Ok(Box::new(CpalDriver::open(config)?))
 }
 
-/// Starts `project` on the output that `factory` builds for `config`.
+/// Starts `project` on the output that `factory` builds for `config`, with the MIDI inputs that `midi`
+/// names feeding it.
 fn open_output(
     project: &Project,
     factory: &DriverFactory,
     config: &DriverConfig,
+    midi: &MidiPreferences,
 ) -> Result<Playback, SessionAudioError> {
     let driver = factory(config)?;
-    Playback::open_with_driver(project, driver).map_err(SessionAudioError::Output)
+    let ports = midi.input_ports_to_open(&list_midi_ports().inputs);
+    Playback::open_with_driver(project, driver, &ports).map_err(SessionAudioError::Output)
 }
 
-/// Opens the output that `audio` names. When that output cannot be opened, the default output is
-/// tried. The result is `None` when neither opens, and the Set then plays without audio.
+/// Opens the output and the MIDI inputs that `preferences` name. When that output cannot be opened, the
+/// default output is tried. The result is `None` when neither opens, and the Set then plays without audio.
 fn open_engine(
     project: &Project,
     factory: &DriverFactory,
-    audio: &AudioPreferences,
+    preferences: &Preferences,
 ) -> Option<Playback> {
-    open_output(project, factory, &DriverConfig::from(audio))
-        .or_else(|error| {
-            log::warn!(
-                "The audio output in the preferences could not be opened, so the default output is used: {error}"
-            );
-            open_output(project, factory, &DriverConfig::default())
-        })
+    open_output(
+        project,
+        factory,
+        &DriverConfig::from(&preferences.audio),
+        &preferences.midi,
+    )
+    .or_else(|error| {
+        log::warn!(
+            "The audio output in the preferences could not be opened, so the default output is used: {error}"
+        );
+        open_output(
+            project,
+            factory,
+            &DriverConfig::default(),
+            &preferences.midi,
+        )
+    })
         .map_err(|error| log::warn!("No audio output could be opened: {error}"))
         .ok()
 }

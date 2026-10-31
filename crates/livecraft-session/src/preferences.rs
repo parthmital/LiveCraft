@@ -60,6 +60,21 @@ pub struct MidiPreferences {
     pub outputs: Vec<MidiPortPreference>,
 }
 
+impl MidiPreferences {
+    /// The names of the input ports that feed the engine: the ports whose Track switch is on (manual 2.3).
+    /// With no MIDI preference yet, every port in `available` feeds it.
+    pub fn input_ports_to_open(&self, available: &[String]) -> Vec<String> {
+        if self.inputs.is_empty() {
+            return available.to_vec();
+        }
+        self.inputs
+            .iter()
+            .filter(|port| port.track)
+            .map(|port| port.name.clone())
+            .collect()
+    }
+}
+
 /// One MIDI port and the switches of Live's MIDI Ports table (manual 2.3).
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
 #[serde(default)]
@@ -257,5 +272,34 @@ mod tests {
     fn the_default_path_is_preferences_toml_in_a_livecraft_folder() {
         let path = Preferences::default_path().expect("a home folder on this machine");
         assert!(path.ends_with(Path::new("LiveCraft").join("Preferences.toml")));
+    }
+
+    #[test]
+    fn with_no_midi_preference_every_available_input_feeds_the_engine() {
+        let available = ["Keyboard".to_string(), "Pad".to_string()];
+        let feeding = MidiPreferences::default().input_ports_to_open(&available);
+        assert_eq!(feeding, available);
+    }
+
+    #[test]
+    fn only_the_inputs_with_track_on_feed_the_engine() {
+        let port = |name: &str, track: bool| MidiPortPreference {
+            name: name.to_string(),
+            track,
+            ..MidiPortPreference::default()
+        };
+        let midi = MidiPreferences {
+            inputs: vec![port("Keyboard", true), port("Pad", false)],
+            outputs: Vec::new(),
+        };
+        let available = [
+            "Keyboard".to_string(),
+            "Pad".to_string(),
+            "Synth".to_string(),
+        ];
+        assert_eq!(
+            midi.input_ports_to_open(&available),
+            vec!["Keyboard".to_string()]
+        );
     }
 }

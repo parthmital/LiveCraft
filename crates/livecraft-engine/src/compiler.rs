@@ -13,7 +13,7 @@ use livecraft_devices::{DeviceProcessor, create_device_processor, is_instrument}
 use livecraft_model::device::param_table;
 use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{
-    AudioInput, Clip, ClipPayload, Device, MidiClipData, MonitoringMode, Project, Track,
+    AudioInput, Clip, ClipPayload, Device, MidiClipData, MonitoringMode, Project, Track, TrackType,
     TuningSystem,
 };
 use livecraft_model::param::ParamId;
@@ -89,12 +89,14 @@ impl GraphCompiler {
                 )
             })
             .collect();
+        let note_frequencies = std::array::from_fn(|pitch| note_frequency(pitch as u8, tuning));
         CompiledGraph::new(
             nodes,
             project.tracks.len(),
             project.return_tracks.len(),
             project.scenes.iter().map(|scene| scene.id).collect(),
             transfers,
+            note_frequencies,
         )
     }
 
@@ -171,6 +173,7 @@ impl GraphCompiler {
             },
             monitoring: track.monitoring,
             is_armed: track.is_armed,
+            takes_midi: kind == NodeKind::Track && track.track_type == TrackType::Midi,
         };
         Node::new(track.id, kind, mixer, devices, clips, input)
     }
@@ -272,12 +275,17 @@ fn play_notes(midi: &MidiClipData, tuning: Option<&TuningSystem>) -> Vec<PlayNot
             end: note.start_beat + note.duration_beats,
             pitch: note.pitch,
             velocity: note.velocity.round().clamp(0.0, 127.0) as u8,
-            freq_hz: match tuning {
-                Some(tuning) => tuning.note_to_freq(note.pitch) as f32,
-                None => 440.0 * 2.0f32.powf((f32::from(note.pitch) - 69.0) / 12.0),
-            },
+            freq_hz: note_frequency(note.pitch, tuning),
         })
         .collect()
+}
+
+/// The frequency of a MIDI pitch in hertz, from the Set's tuning or from equal temperament at A4 = 440 Hz.
+fn note_frequency(pitch: u8, tuning: Option<&TuningSystem>) -> f32 {
+    match tuning {
+        Some(tuning) => tuning.note_to_freq(pitch) as f32,
+        None => 440.0 * 2.0f32.powf((f32::from(pitch) - 69.0) / 12.0),
+    }
 }
 
 #[cfg(test)]
@@ -504,8 +512,44 @@ mod tests {
                 channel: Some(1),
                 monitoring: MonitoringMode::In,
                 is_armed: true,
+                takes_midi: false,
             }
         );
+    }
+
+    #[test]
+    fn a_midi_track_takes_midi_input_and_an_audio_track_does_not() {
+        let (_collector, graph) = compile(&Project::new_default("Midi"));
+        let takes_midi = |track: TrackId| {
+            graph
+                .nodes()
+                .iter()
+                .find(|node| node.track == track)
+                .expect("the node is in the graph")
+                .input
+                .takes_midi
+        };
+        assert!(takes_midi(TrackId(1)));
+        assert!(takes_midi(TrackId(2)));
+        assert!(!takes_midi(TrackId(3)));
+        assert!(!takes_midi(TrackId(5)));
+        assert!(!takes_midi(TrackId(7)));
+    }
+
+    #[test]
+    fn the_note_frequencies_follow_the_sets_tuning() {
+        let mut project = Project::new_default("Tuning");
+        let (_collector, graph) = compile(&project);
+        assert!((graph.note_frequencies()[69] - 440.0).abs() < 1e-3);
+
+        project.tuning = Some(TuningSystem {
+            base_freq_hz: 432.0,
+            ..TuningSystem::equal_temperament_12()
+        });
+        let (_collector, tuned) = compile(&project);
+        assert!((tuned.note_frequencies()[69] - 432.0).abs() < 1e-3);
+        // Twelve pitches up is one octave, which doubles the frequency.
+        assert!((tuned.note_frequencies()[81] - 864.0).abs() < 1e-2);
     }
 
     #[test]
