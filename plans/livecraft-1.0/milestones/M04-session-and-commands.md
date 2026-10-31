@@ -41,18 +41,18 @@ Every model change goes through a named, serialisable command with undo; the GUI
 
 Every Outline item has its own commit, except items 9 and 10, which share one (see deviations). Each commit passed `cargo xtask ci` before it was pushed to `main`.
 
-| Item | Commit | Summary |
-| --- | --- | --- |
-| 1 | `23e7232` | `livecraft-session` with `Operation`, `Command`, `CommandError`, and `UndoHistory` (7 tests) |
-| 2 | `33af3b4` | `CommandRegistry` with JSON arguments and a round trip test |
-| 3 | `d4269f4` | M01 actions ported (automation points, tempo, track create and volume). `model/command.rs` deleted |
-| 4 | `41c6559` | Track commands: create return and group, delete with exact undo, rename, colour, reorder, arm, solo, mute, monitor, pan, send |
-| 5 | `c9c4571` | Clip, slot, and note commands |
-| 6 | `4f36477` | Device and parameter commands (`ParamValues::remove` added to the model) |
-| 7 | `ec5d4d3` | Scene and transport commands, the scene row insert, and the random sequence property test |
-| 8 | `f78fe0a` | Transactions, the Undo History entries, and `go_to` (revert and reapply) |
-| 9 and 10 | `0418a9b` | Every view routed through the session; `livecraft command list` and `livecraft command run` |
-| 11 | this commit | Verification, docs, owner row Q08, checklist `[~]` |
+| Item     | Commit      | Summary                                                                                                                       |
+| -------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1        | `23e7232`   | `livecraft-session` with `Operation`, `Command`, `CommandError`, and `UndoHistory` (7 tests)                                  |
+| 2        | `33af3b4`   | `CommandRegistry` with JSON arguments and a round trip test                                                                   |
+| 3        | `d4269f4`   | M01 actions ported (automation points, tempo, track create and volume). `model/command.rs` deleted                            |
+| 4        | `41c6559`   | Track commands: create return and group, delete with exact undo, rename, colour, reorder, arm, solo, mute, monitor, pan, send |
+| 5        | `c9c4571`   | Clip, slot, and note commands                                                                                                 |
+| 6        | `4f36477`   | Device and parameter commands (`ParamValues::remove` added to the model)                                                      |
+| 7        | `ec5d4d3`   | Scene and transport commands, the scene row insert, and the random sequence property test                                     |
+| 8        | `f78fe0a`   | Transactions, the Undo History entries, and `go_to` (revert and reapply)                                                      |
+| 9 and 10 | `0418a9b`   | Every view routed through the session; `livecraft command list` and `livecraft command run`                                   |
+| 11       | this commit | Verification, docs, owner row Q08, checklist `[~]`                                                                            |
 
 ### Manual quotes
 
@@ -104,11 +104,11 @@ From `docs/ableton-live-12-reference-manual.pdf`, read with `plans/livecraft-1.0
 
 ### Criteria
 
-| Criterion | Met | Evidence |
-| --- | --- | --- |
-| `grep -rn "self.project\.[a-z_.\[\]]* = \|\.push(" crates/livecraft-ui/src` finds no direct model mutation | Yes | No assignment to the Set remains, and views take `&Project`. The `.push(` hits are all `edits.push(...)` or `action.edits.push(...)`, which add a command to the list the app applies, with one exception: `points.push(Pos2::new(px, py))` in `devices.rs` builds the screen points of the EQ curve. |
-| Property test: random command sequences, then undo all, equal the start (10,000 cases) | Yes | `crates/livecraft-session/tests/random_sequences.rs` runs 10,000 cases of 1 to 29 generated commands from 26 kinds, including invalid ones. After every step the Set must validate, and after undoing every step the Debug form of the Set must equal the start. The test passed in about 4.5 s. A mutation check that broke `SetTrackVolume::revert` made it fail with a minimal failing input, and the operation was restored. |
-| `livecraft command list` prints every registered command name; count recorded | Yes | 42 names (see Evidence). The count is also in the README. |
+| Criterion                                                                                                  | Met | Evidence                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------------------------------- | --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `grep -rn "self.project\.[a-z_.\[\]]* = \|\.push(" crates/livecraft-ui/src` finds no direct model mutation | Yes | No assignment to the Set remains, and views take `&Project`. The `.push(` hits are all `edits.push(...)` or `action.edits.push(...)`, which add a command to the list the app applies, with one exception: `points.push(Pos2::new(px, py))` in `devices.rs` builds the screen points of the EQ curve.                                                                                                                            |
+| Property test: random command sequences, then undo all, equal the start (10,000 cases)                     | Yes | `crates/livecraft-session/tests/random_sequences.rs` runs 10,000 cases of 1 to 29 generated commands from 26 kinds, including invalid ones. After every step the Set must validate, and after undoing every step the Debug form of the Set must equal the start. The test passed in about 4.5 s. A mutation check that broke `SetTrackVolume::revert` made it fail with a minimal failing input, and the operation was restored. |
+| `livecraft command list` prints every registered command name; count recorded                              | Yes | 42 names (see Evidence). The count is also in the README.                                                                                                                                                                                                                                                                                                                                                                        |
 
 ### Owner rows
 

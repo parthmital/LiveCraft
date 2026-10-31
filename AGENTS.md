@@ -8,6 +8,7 @@ Last verified: 2026-10-31.
 - Format check: `cargo fmt --all -- --check` (fix: `cargo fmt --all`)
 - Lint: `cargo clippy --workspace --all-targets -- -D warnings`
 - Test all: `cargo test --workspace`
+- Long playback (10 minutes of a 16-track Set under the allocation check, about 20 minutes): `cargo test --release -p livecraft-engine --no-default-features --features rt-checks --test long_playback -- --ignored`
 - Test one crate: `cargo test -p livecraft-model` (also `livecraft-formats`, `livecraft-dsp`, `livecraft-devices`, `livecraft-engine`, `livecraft-session`, `livecraft-time`, `livecraft-ui`, `livecraft`)
 - Test one test: `cargo test -p livecraft-devices test_eq8_processing`
 - Release build: `cargo build --release --workspace`

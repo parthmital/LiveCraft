@@ -38,13 +38,13 @@ cargo run --bin livecraft -- render demo.als -o demo.wav --duration-bars 4
 cargo run --bin livecraft -- gui
 ```
 
-| Command                  | What it does                            | Expected result                          | Common error and fix                                                                          |
-| ------------------------ | --------------------------------------- | ---------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 265 tests pass                            | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)    |
-| `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                      |
-| `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                         |
-| `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: the demo set may have no notes on unmuted tracks; check with `inspect --clips` |
-| `livecraft gui`          | Opens the desktop window                | A Live-style window with Session View    | Window fails to open: update GPU drivers; on Windows set WGPU_BACKEND=gl to try OpenGL        |
+| Command                  | What it does                            | Expected result                          | Common error and fix                                                                                                                         |
+| ------------------------ | --------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 265 tests pass                           | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)                                                   |
+| `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                                                                     |
+| `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                                                                        |
+| `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: render plays each track's first clip slot and its arrangement clips, and a new Set has no clips; check with `inspect --clips` |
+| `livecraft gui`          | Opens the desktop window                | A Live-style window with Session View    | Window fails to open: update GPU drivers; on Windows set WGPU_BACKEND=gl to try OpenGL                                                       |
 
 `cargo run --bin livecraft -- <args>` and `target/debug/livecraft <args>` are equivalent. The first build takes several minutes.
 
@@ -68,7 +68,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 - Document model (`livecraft-model`): project, tracks (audio, MIDI, group, return, and Main) with group nesting and routing descriptions, typed ids for tracks, clips, scenes, devices, and lanes, `Project::validate` for references and group rules, clip slots, scenes, MIDI and audio clips, arrangement clips with split, duplicate, and trim, automation lanes with linear interpolation, 12 scale types, Scala `.scl` tuning, and a set of MIDI transformations.
 - Live Set files (`livecraft-formats`): reads and writes gzip `.als` XML for the subset of elements the model knows. Unknown elements are dropped on save (see [Known Limitations](#known-limitations)).
 - Named, undoable edits (`livecraft-session`): every change to a Live Set is a command with a stable name, which the CLI can run. Undo and redo cover track, clip, note, device, scene, scale, and transport edits. Several edits can form one labelled step, and a drag is one step. The Undo History lists the steps, with undone ones greyed out, and can revert or reapply to any entry (manual 5.4.2).
-- Audio engine (`livecraft-engine`): `cpal` output stream, per-track device chains, sends and returns, In, Auto, and Off monitoring, offline WAV render and stem export through `hound`.
+- Audio engine (`livecraft-engine`): a real-time engine. The session compiles the Set into a graph and sends it to the audio thread through queues, and the audio thread takes no locks and allocates nothing (checked by the `rt-checks` tests). It has per-track device chains, sends and returns, In, Auto, and Off monitoring, note events at their exact sample, device delay compensation, offline WAV render, and stem export through `hound`. The module map is in [ARCHITECTURE.md](ARCHITECTURE.md#module-map).
 - Devices (`livecraft-devices`, built on filters in `livecraft-dsp`): Operator-style 4-operator FM synth, Simpler-style sampler, a 16-pad drum rack, and effects named after EQ Eight, EQ Three, Compressor, Limiter, Gate, Auto Filter, Auto Pan, Chorus, Delay, Reverb, Saturator, Redux, and Utility. These are simplified approximations, not matched to Live's sound or parameter sets.
 - GUI (`livecraft-ui`): control bar, Session View with mixer strips, Arrangement View, device and clip detail area, piano roll, and browser sidebar, in dark and light themes, plus a headless `--screenshot` mode.
 
@@ -126,19 +126,19 @@ LiveCraft/
 
 The binary is `livecraft`. Run `livecraft <command> --help` for every option. With no command it opens the GUI (`-p <file>` opens a project).
 
-| Command                                                                                                              | Purpose                                                    |
-| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `livecraft new <file.als or file.json> [--bpm 120]`                                                                  | Create a new project                                       |
-| `livecraft info <file>`                                                                                              | Print tempo, track, and scene counts                       |
-| `livecraft inspect <file> [--devices] [--clips] [--json]`                                                            | Print tracks, device chains, and clips                     |
-| `livecraft render <file> [-o output.wav] [-d 8] [-s 44100] [-b 24]`                                                  | Offline render to WAV; `-d` is bars, `-b` is 16, 24, or 32 |
-| `livecraft stems <file> [-o ./stems] [-d 8]`                                                                         | Render one WAV per track                                   |
-| `livecraft play [file] [-d seconds]`                                                                                 | Play through the default output with ASCII meters          |
-| `livecraft synth [-n 60] [-w saw] [-o out.wav] [-d 2]`                                                               | Render or play a single test tone                          |
-| `livecraft convert <input> <output>`                                                                                 | Convert between `.als` and `.json`                         |
-| `livecraft command list`                                                                                             | Print the name of every registered command                 |
-| `livecraft command run <file> <name> '<json args>' -o <out.als>`                                                     | Run one command on a Live Set and save the result as `.als` |
-| `livecraft gui [file] [--screenshot out.png] [--view session or arrangement] [--tab 0 or 1] [--theme dark or light]` | Open the GUI, or save one frame as PNG and exit            |
+| Command                                                                                                              | Purpose                                                                                                                                                          |
+| -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `livecraft new <file.als or file.json> [--bpm 120]`                                                                  | Create a new project                                                                                                                                             |
+| `livecraft info <file>`                                                                                              | Print tempo, track, and scene counts                                                                                                                             |
+| `livecraft inspect <file> [--devices] [--clips] [--json]`                                                            | Print tracks, device chains, and clips                                                                                                                           |
+| `livecraft render <file> [-o output.wav] [-d 8] [-s 44100] [-b 24]`                                                  | Offline render to WAV; `-d` is bars, `-b` is 16, 24, or 32. Starts each track's first clip slot and plays its arrangement clips; other session slots stay silent |
+| `livecraft stems <file> [-o ./stems] [-d 8]`                                                                         | Render one WAV per track                                                                                                                                         |
+| `livecraft play [file] [-d seconds]`                                                                                 | Play through the default output with ASCII meters                                                                                                                |
+| `livecraft synth [-n 60] [-w saw] [-o out.wav] [-d 2]`                                                               | Render or play a single test tone                                                                                                                                |
+| `livecraft convert <input> <output>`                                                                                 | Convert between `.als` and `.json`                                                                                                                               |
+| `livecraft command list`                                                                                             | Print the name of every registered command                                                                                                                       |
+| `livecraft command run <file> <name> '<json args>' -o <out.als>`                                                     | Run one command on a Live Set and save the result as `.als`                                                                                                      |
+| `livecraft gui [file] [--screenshot out.png] [--view session or arrangement] [--tab 0 or 1] [--theme dark or light]` | Open the GUI, or save one frame as PNG and exit                                                                                                                  |
 
 ## Configuration
 
@@ -164,17 +164,17 @@ On 2026-10-31, `cargo xtask ci` passes with 265 tests (livecraft 9, livecraft-mo
 
 ## Troubleshooting
 
-| Problem                               | Likely cause                                    | Diagnostic                       | Resolution                                              |
-| ------------------------------------- | ----------------------------------------------- | -------------------------------- | ------------------------------------------------------- |
-| Build fails on Linux with ALSA errors | Missing system headers                          | `pkg-config --libs alsa`         | Install the packages in [Prerequisites](#prerequisites) |
-| `play` or GUI has no sound            | No default output device, or engine failed      | `RUST_LOG=debug livecraft play`  | Select a default output device in the OS                |
-| Audio crackles while using the GUI    | GUI and audio thread share a mutex              | Reproduce while dragging a fader | Known issue, fixed in the plan's Phase 1                |
-| `.als` loses data after `convert`     | Writer only emits elements the model knows      | Compare XML of input and output  | Known issue, fixed in the plan's Phase 2                |
-| GUI crashes at start on Windows       | GPU driver problem in the selected wgpu backend | WGPU_BACKEND=gl cargo dev        | Default is DX12; try gl, or update drivers              |
+| Problem                               | Likely cause                                    | Diagnostic                      | Resolution                                              |
+| ------------------------------------- | ----------------------------------------------- | ------------------------------- | ------------------------------------------------------- |
+| Build fails on Linux with ALSA errors | Missing system headers                          | `pkg-config --libs alsa`        | Install the packages in [Prerequisites](#prerequisites) |
+| `play` or GUI has no sound            | No default output device, or engine failed      | `RUST_LOG=debug livecraft play` | Select a default output device in the OS                |
+| `.als` loses data after `convert`     | Writer only emits elements the model knows      | Compare XML of input and output | Known issue, fixed in the plan's Phase 2                |
+| GUI crashes at start on Windows       | GPU driver problem in the selected wgpu backend | WGPU_BACKEND=gl cargo dev       | Default is DX12; try gl, or update drivers              |
 
 ## Known Limitations
 
-- The audio callback locks a mutex shared with the GUI and outputs silence when it cannot get it, and it clones clip data every block. It is not real-time safe yet.
+- A WAV clip is decoded in full into memory when its Set is compiled. Disk streaming for long files is planned for M11.
+- Instrument-less MIDI tracks are silent, as in Live (manual pages 55 and 127). Main pan is not applied yet.
 - `.als` round trips are lossy, and only Live 12 sets were tested.
 - Most of Live 12 is missing: warping, recording, routing, racks, automation editing, most devices, plug-in hosting, MIDI input, and preferences. The [parity matrix](plans/livecraft-1.0/reference/PARITY-MATRIX.md) has the full list.
 

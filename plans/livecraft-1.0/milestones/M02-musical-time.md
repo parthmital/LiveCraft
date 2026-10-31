@@ -86,11 +86,11 @@ Launch quantization menu: not verified. Page 363 names only "None" and "Global" 
 
 ### Criteria
 
-| Criterion | Met | Evidence |
-| --- | --- | --- |
-| Property tests for round trips pass with 10,000 cases | Yes | Four properties with `with_cases(10_000)`, all pass |
-| `grep -rn "60.0 /" crates/livecraft-engine/src` shows no hand-written beat-to-second conversions | Yes | No matches |
-| M01 characterisation tests pass | Yes | 2 passed, test file and snapshot unchanged |
+| Criterion                                                                                        | Met | Evidence                                            |
+| ------------------------------------------------------------------------------------------------ | --- | --------------------------------------------------- |
+| Property tests for round trips pass with 10,000 cases                                            | Yes | Four properties with `with_cases(10_000)`, all pass |
+| `grep -rn "60.0 /" crates/livecraft-engine/src` shows no hand-written beat-to-second conversions | Yes | No matches                                          |
+| M01 characterisation tests pass                                                                  | Yes | 2 passed, test file and snapshot unchanged          |
 
 All Outline items are done and the three Acceptance Criteria hold. The checklist line stays `[~]` because the launch menu check (Q03) needs owner input.
 

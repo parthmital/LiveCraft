@@ -17,7 +17,7 @@ use livecraft_model::model::{MidiNote, Project};
 use std::path::Path;
 use std::time::Instant;
 
-pub use livecraft_engine::graph::TrackMeter;
+pub use livecraft_engine::snapshot::TrackMeter;
 
 /// Reads a `.als` Live Set from disk (manual 5.4.1).
 pub fn load_set(path: &Path) -> Result<Project, AlsError> {

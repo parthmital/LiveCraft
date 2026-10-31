@@ -127,3 +127,64 @@ impl OfflineBouncer {
         Ok(stem_paths)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use livecraft_model::model::{Clip, ClipPayload, MidiNote};
+
+    #[test]
+    fn a_bounce_writes_a_stereo_wav_at_the_requested_rate() {
+        let mut project = Project::new_default("BounceTest");
+        let mut clip = Clip::new_midi(1, "Lead Chords", 4.0);
+        if let ClipPayload::Midi(ref mut mdata) = clip.payload {
+            mdata.notes.push(MidiNote::new(60, 0.0, 2.0, 100));
+            mdata.notes.push(MidiNote::new(64, 0.0, 2.0, 100));
+            mdata.notes.push(MidiNote::new(67, 0.0, 2.0, 100));
+        }
+        project.tracks[0].clip_slots[0].clip = Some(clip);
+
+        let out_dir = std::env::temp_dir().join("livecraft_test");
+        fs::create_dir_all(&out_dir).expect("create the test folder");
+        let wav_path = out_dir.join("test_bounce.wav");
+
+        let options = RenderOptions {
+            sample_rate: 44100,
+            duration_bars: 2,
+            bits_per_sample: 16,
+        };
+
+        OfflineBouncer::render_project(&project, &wav_path, options)
+            .expect("Failed to render project");
+        assert!(wav_path.exists());
+
+        let reader = hound::WavReader::open(&wav_path).expect("Failed to read rendered WAV");
+        assert_eq!(reader.spec().channels, 2);
+        assert_eq!(reader.spec().sample_rate, 44100);
+        assert!(reader.len() > 0);
+
+        let _ = fs::remove_file(wav_path);
+    }
+
+    #[test]
+    fn a_stem_export_writes_one_wav_per_track() {
+        let project = Project::new_default("StemTest");
+        let out_dir = std::env::temp_dir().join("livecraft_stem_test");
+
+        let options = RenderOptions {
+            sample_rate: 44100,
+            duration_bars: 1,
+            bits_per_sample: 16,
+        };
+
+        let stems = OfflineBouncer::render_stems(&project, &out_dir, options)
+            .expect("Failed to render stems");
+        assert_eq!(stems.len(), project.tracks.len());
+
+        for stem in &stems {
+            assert!(Path::new(stem).exists());
+        }
+
+        let _ = fs::remove_dir_all(out_dir);
+    }
+}

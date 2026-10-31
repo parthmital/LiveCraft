@@ -517,6 +517,24 @@ mod tests {
     }
 
     #[test]
+    fn overlapping_notes_of_one_pitch_are_two_notes_that_end_apart() {
+        let collector = Collector::new();
+        let notes = vec![note(0.0, 1.5, 60), note(1.0, 2.5, 60)];
+        let mut lane = lane_with(midi_clip(&collector, 4.0, notes));
+        let events = schedule(&mut lane, &context(12, 0.0, 0.25));
+        assert_eq!(
+            listed(&events),
+            vec![
+                (0, true, 60),
+                (4, true, 60),
+                (6, false, 60),
+                (10, false, 60)
+            ]
+        );
+        assert_eq!(lane.sounding.len(), 0);
+    }
+
+    #[test]
     fn stopping_the_clip_ends_the_notes_that_are_sounding() {
         let collector = Collector::new();
         let mut lane = lane_with(midi_clip(&collector, 4.0, vec![note(0.0, 2.0, 60)]));

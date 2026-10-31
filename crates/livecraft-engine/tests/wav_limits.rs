@@ -1,4 +1,4 @@
-use livecraft_engine::audio_clip::AudioSampleCache;
+use livecraft_engine::audio_clip::load_file_with_limit;
 use std::path::PathBuf;
 
 fn write_test_wav(name: &str, frames: u32) -> PathBuf {
@@ -22,7 +22,7 @@ fn write_test_wav(name: &str, frames: u32) -> PathBuf {
 #[test]
 fn wav_within_limit_loads() {
     let path = write_test_wav("wav_within_limit.wav", 1000);
-    let audio = AudioSampleCache::load_file_with_limit(&path, 2000).unwrap();
+    let audio = load_file_with_limit(&path, 2000).unwrap();
     assert_eq!(audio.channels, 2);
     assert_eq!(audio.sample_rate, 44_100);
     assert_eq!(audio.samples_l.len(), 1000);
@@ -32,6 +32,6 @@ fn wav_within_limit_loads() {
 #[test]
 fn wav_over_limit_is_rejected() {
     let path = write_test_wav("wav_over_limit.wav", 1000);
-    let err = AudioSampleCache::load_file_with_limit(&path, 1999).unwrap_err();
+    let err = load_file_with_limit(&path, 1999).unwrap_err();
     assert!(err.to_string().contains("over the limit"), "{err}");
 }

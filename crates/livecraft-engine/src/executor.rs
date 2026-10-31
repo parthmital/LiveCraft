@@ -8,7 +8,6 @@
 
 use crate::collector;
 use crate::compiled::{CompiledGraph, MAX_BLOCK, Node, RAMP_STEP};
-use crate::graph::sanitize_output_sample;
 use crate::snapshot::{ClipState, EngineSnapshot, MAX_NODES, Transport, cpu_load};
 use livecraft_devices::ProcessContext;
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
@@ -456,6 +455,12 @@ impl Engine {
     fn playhead_at(&self, frame: u64) -> f64 {
         self.origin_beats + (frame - self.origin_frame) as f64 * self.beats_per_frame()
     }
+}
+
+/// Replaces NaN and infinity with silence; finite samples pass through bit-exactly.
+#[inline]
+fn sanitize_output_sample(sample: f32) -> f32 {
+    if sample.is_finite() { sample } else { 0.0 }
 }
 
 #[cfg(test)]
@@ -949,5 +954,15 @@ mod tests {
                 max: MAX_NODES,
             })
         );
+    }
+
+    #[test]
+    fn sanitize_replaces_non_finite_samples_and_keeps_finite_ones_bit_exact() {
+        assert_eq!(sanitize_output_sample(f32::NAN), 0.0);
+        assert_eq!(sanitize_output_sample(f32::INFINITY), 0.0);
+        assert_eq!(sanitize_output_sample(f32::NEG_INFINITY), 0.0);
+        for value in [0.0_f32, -0.0, 0.5, -1.0, 3.75, f32::MIN_POSITIVE, f32::MAX] {
+            assert_eq!(sanitize_output_sample(value).to_bits(), value.to_bits());
+        }
     }
 }

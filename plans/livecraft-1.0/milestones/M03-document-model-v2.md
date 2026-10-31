@@ -79,18 +79,18 @@ Read with `plans/livecraft-1.0/tools/manual.py` from `docs/ableton-live-12-refer
 - `cargo xtask ci` passes on the final tree, with log `.agent-local/logs/2026-10-31_m03-09-ci.log`. Earlier per-item logs are in `.agent-local/logs/2026-10-31_m03-0N-ci.log`.
 - `cargo test --workspace` (final tree): 122 passed, 0 failed.
 
-| Crate | Tests |
-| --- | --- |
-| livecraft (characterisation 2, cli 4) | 6 |
-| livecraft-model (unit 25, edit 8, validation 8) | 41 |
-| livecraft-formats | 6 |
-| livecraft-dsp | 1 |
-| livecraft-devices (unit 17, tempo_sync 1) | 18 |
-| livecraft-engine (unit 8, wav_limits 2) | 10 |
-| livecraft-time | 34 |
-| livecraft-ui | 2 |
-| xtask | 4 |
-| livecraft-testkit | 0 |
+| Crate                                           | Tests |
+| ----------------------------------------------- | ----- |
+| livecraft (characterisation 2, cli 4)           | 6     |
+| livecraft-model (unit 25, edit 8, validation 8) | 41    |
+| livecraft-formats                               | 6     |
+| livecraft-dsp                                   | 1     |
+| livecraft-devices (unit 17, tempo_sync 1)       | 18    |
+| livecraft-engine (unit 8, wav_limits 2)         | 10    |
+| livecraft-time                                  | 34    |
+| livecraft-ui                                    | 2     |
+| xtask                                           | 4     |
+| livecraft-testkit                               | 0     |
 
 - Property test: `random_edit_sequences_keep_the_set_valid` in `crates/livecraft-model/tests/edit.rs` runs `ProptestConfig::with_cases(10_000)`, and each case checks `validate()` after every step. It passes in about 2.9 s. The acceptance rate of edits is not measured, so the test does not show how many edits were accepted.
 - `cargo test -p livecraft --test characterisation`: 2 passed. `git diff 39115f4 HEAD -- apps/livecraft/tests/characterisation.rs apps/livecraft/tests/snapshots/` prints nothing.
@@ -98,11 +98,11 @@ Read with `plans/livecraft-1.0/tools/manual.py` from `docs/ableton-live-12-refer
 
 ### Criteria
 
-| Criterion | Met | Evidence |
-| --- | --- | --- |
-| `grep -rn "track_index: usize\|track_idx: usize" crates` returns nothing | Yes | No matches in `crates` or `apps` |
-| Property test: random edit sequences keep `validate()` empty (10,000 cases) | Yes | `tests/edit.rs`, `with_cases(10_000)`, passes |
-| M01 characterisation tests pass | Yes | 2 passed. Test and snapshot unchanged since `39115f4` |
+| Criterion                                                                   | Met | Evidence                                              |
+| --------------------------------------------------------------------------- | --- | ----------------------------------------------------- |
+| `grep -rn "track_index: usize\|track_idx: usize" crates` returns nothing    | Yes | No matches in `crates` or `apps`                      |
+| Property test: random edit sequences keep `validate()` empty (10,000 cases) | Yes | `tests/edit.rs`, `with_cases(10_000)`, passes         |
+| M01 characterisation tests pass                                             | Yes | 2 passed. Test and snapshot unchanged since `39115f4` |
 
 ### Outline items
 

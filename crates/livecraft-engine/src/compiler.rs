@@ -2,7 +2,7 @@
 //! never on the audio thread: it allocates the processors and buffers the audio thread then uses,
 //! and it decodes the audio files the clips play, so the audio thread never reads a file.
 
-use crate::audio_clip::{AudioSampleCache, DecodedAudio};
+use crate::audio_clip::{DecodedAudio, load_file};
 use crate::clip::{ArrangedClip, ClipLane, PlayNote, PlayableClip, PlayableSource};
 use crate::compiled::{
     CompiledGraph, DeviceSlot, MAX_NOTE_EVENTS, Mixer, Node, NodeKind, Transfer, compensate_latency,
@@ -226,7 +226,7 @@ impl GraphCompiler {
         if let Some(data) = self.audio.get(path) {
             return Some(data.clone());
         }
-        match AudioSampleCache::load_file(Path::new(path)) {
+        match load_file(Path::new(path)) {
             Ok(decoded) => {
                 let data = Shared::new(&self.handle, decoded);
                 self.audio.insert(path.to_string(), data.clone());
@@ -277,7 +277,7 @@ mod tests {
     use basedrop::Collector;
     use livecraft_devices::{NoteEvent, ProcessContext};
     use livecraft_model::ids::{DeviceId, TrackId};
-    use livecraft_model::model::{DeviceType, MidiNote};
+    use livecraft_model::model::{Device, DeviceType, MidiNote, Track, TrackType};
 
     /// A compiler and the collector that frees its shared data. The collector must outlive the graphs.
     fn compiler(collector: &Collector) -> GraphCompiler {
@@ -420,5 +420,56 @@ mod tests {
         graph.render(&context(MAX_BLOCK));
         let (left, _) = graph.output(MAX_BLOCK);
         assert!(left.iter().all(|&sample| sample == 0.0));
+    }
+
+    #[test]
+    fn a_track_added_or_removed_changes_the_node_count_of_the_next_compile() {
+        let mut project = Project::new_default("Sync");
+        let (_collector, before) = compile(&project);
+        project
+            .tracks
+            .push(Track::new(TrackId(5), "Track 5", TrackType::Audio, 4));
+        project
+            .tracks
+            .push(Track::new(TrackId(6), "Track 6", TrackType::Midi, 4));
+        let (_collector, grown) = compile(&project);
+        assert_eq!(grown.nodes().len(), before.nodes().len() + 2);
+
+        project.tracks.pop();
+        let (_collector, shrunk) = compile(&project);
+        assert_eq!(shrunk.nodes().len(), before.nodes().len() + 1);
+    }
+
+    #[test]
+    fn the_devices_of_a_chain_compile_in_chain_order() {
+        let device_ids = |graph: &CompiledGraph| -> Vec<DeviceId> {
+            graph
+                .nodes()
+                .iter()
+                .find(|node| node.track == TrackId(2))
+                .expect("track 2")
+                .devices
+                .iter()
+                .map(|slot| slot.id)
+                .collect()
+        };
+        let mut project = Project::new_default("ChainOrder");
+        project.tracks[1].device_chain = vec![
+            Device::new(DeviceId(101), "Delay 1", DeviceType::Delay),
+            Device::new(DeviceId(102), "Delay 2", DeviceType::Delay),
+            Device::new(DeviceId(103), "Compressor 1", DeviceType::Compressor),
+        ];
+        let (_collector, graph) = compile(&project);
+        assert_eq!(
+            device_ids(&graph),
+            vec![DeviceId(101), DeviceId(102), DeviceId(103)]
+        );
+
+        project.tracks[1].device_chain.reverse();
+        let (_collector, reversed) = compile(&project);
+        assert_eq!(
+            device_ids(&reversed),
+            vec![DeviceId(103), DeviceId(102), DeviceId(101)]
+        );
     }
 }

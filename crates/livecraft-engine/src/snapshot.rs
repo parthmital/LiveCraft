@@ -5,11 +5,47 @@
 //! never waits for the reader, and the reader always gets the newest complete snapshot. The snapshot
 //! holds fixed-size arrays only, so writing it neither allocates nor locks.
 
-use crate::graph::TrackMeter;
-
 /// Most nodes (tracks, returns, and Main) a snapshot holds. `EngineHandle::submit_graph` refuses a
 /// graph with more.
 pub const MAX_NODES: usize = 256;
+
+/// Peak and RMS levels of one node, smoothed per sample by the audio thread.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TrackMeter {
+    pub peak_l: f32,
+    pub peak_r: f32,
+    pub rms_l: f32,
+    pub rms_r: f32,
+}
+
+impl TrackMeter {
+    pub fn update(&mut self, l: f32, r: f32) {
+        let abs_l = l.abs();
+        let abs_r = r.abs();
+        // Decay peak
+        self.peak_l = abs_l.max(self.peak_l * 0.95);
+        self.peak_r = abs_r.max(self.peak_r * 0.95);
+        // Simple smoothing for RMS
+        self.rms_l = (self.rms_l * 0.9) + (abs_l * 0.1);
+        self.rms_r = (self.rms_r * 0.9) + (abs_r * 0.1);
+    }
+
+    pub fn peak_db_l(&self) -> f32 {
+        if self.peak_l <= 1e-5 {
+            -60.0
+        } else {
+            20.0 * self.peak_l.log10()
+        }
+    }
+
+    pub fn peak_db_r(&self) -> f32 {
+        if self.peak_r <= 1e-5 {
+            -60.0
+        } else {
+            20.0 * self.peak_r.log10()
+        }
+    }
+}
 
 /// The transport at the end of the last published block.
 #[derive(Debug, Clone, Copy, Default, PartialEq)]

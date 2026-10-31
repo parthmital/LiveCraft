@@ -1,7 +1,4 @@
 use hound::WavReader;
-use livecraft_model::model::{Clip, ClipPayload};
-use livecraft_time::samples_per_beat;
-use std::collections::HashMap;
 use std::path::Path;
 
 #[inline(always)]
@@ -22,190 +19,88 @@ pub struct DecodedAudio {
     pub samples_r: Vec<f32>,
 }
 
-#[derive(Debug, Clone, Default)]
-pub struct AudioSampleCache {
-    cache: HashMap<String, DecodedAudio>,
+/// Most samples (all channels together) a WAV file may hold to be decoded into memory:
+/// 2^28 samples, 1 GiB as `f32`. Longer files need disk streaming (milestone M11).
+pub const MAX_WAV_SAMPLES: u64 = 1 << 28;
+
+/// Decodes a WAV file into de-interleaved left and right channels (mono is copied to both).
+pub fn load_file(path: &Path) -> anyhow::Result<DecodedAudio> {
+    load_file_with_limit(path, MAX_WAV_SAMPLES)
 }
 
-impl AudioSampleCache {
-    pub fn new() -> Self {
-        Self {
-            cache: HashMap::new(),
-        }
+/// Like [`load_file`], but rejects a file holding more than `max_samples` samples
+/// before reading any sample data.
+pub fn load_file_with_limit(path: &Path, max_samples: u64) -> anyhow::Result<DecodedAudio> {
+    let mut reader = WavReader::open(path)?;
+    let spec = reader.spec();
+    let total = u64::from(reader.duration()) * u64::from(spec.channels);
+    if total > max_samples {
+        anyhow::bail!(
+            "{} holds {total} samples, over the limit of {max_samples}",
+            path.display()
+        );
     }
-
-    pub fn get_or_load<P: AsRef<Path>>(&mut self, path: P) -> Option<&DecodedAudio> {
-        let p_str = path.as_ref().to_string_lossy().to_string();
-        if !self.cache.contains_key(&p_str) {
-            match Self::load_file(path.as_ref()) {
-                Ok(decoded) => {
-                    self.cache.insert(p_str.clone(), decoded);
-                }
-                _ => {
-                    return None;
-                }
-            }
-        }
-        self.cache.get(&p_str)
+    if spec.channels == 0 {
+        anyhow::bail!("{} has no audio channels", path.display());
     }
+    let channels = spec.channels;
+    let sample_rate = spec.sample_rate;
 
-    /// Most samples (all channels together) a WAV file may hold to be decoded into memory:
-    /// 2^28 samples, 1 GiB as `f32`. Longer files need disk streaming (milestone M11).
-    pub const MAX_WAV_SAMPLES: u64 = 1 << 28;
+    let mut samples_l = Vec::new();
+    let mut samples_r = Vec::new();
 
-    /// Decodes a WAV file into de-interleaved left and right channels (mono is copied to both).
-    pub fn load_file(path: &Path) -> anyhow::Result<DecodedAudio> {
-        Self::load_file_with_limit(path, Self::MAX_WAV_SAMPLES)
-    }
+    let max_val = match spec.bits_per_sample {
+        16 => 32768.0,
+        24 => 8388608.0,
+        32 => 2147483648.0,
+        _ => 32768.0,
+    };
 
-    /// Like [`Self::load_file`], but rejects a file holding more than `max_samples` samples
-    /// before reading any sample data.
-    pub fn load_file_with_limit(path: &Path, max_samples: u64) -> anyhow::Result<DecodedAudio> {
-        let mut reader = WavReader::open(path)?;
-        let spec = reader.spec();
-        let total = u64::from(reader.duration()) * u64::from(spec.channels);
-        if total > max_samples {
-            anyhow::bail!(
-                "{} holds {total} samples, over the limit of {max_samples}",
-                path.display()
-            );
-        }
-        if spec.channels == 0 {
-            anyhow::bail!("{} has no audio channels", path.display());
-        }
-        let channels = spec.channels;
-        let sample_rate = spec.sample_rate;
-
-        let mut samples_l = Vec::new();
-        let mut samples_r = Vec::new();
-
-        let max_val = match spec.bits_per_sample {
-            16 => 32768.0,
-            24 => 8388608.0,
-            32 => 2147483648.0,
-            _ => 32768.0,
-        };
-
-        if spec.sample_format == hound::SampleFormat::Float {
-            let mut ch = 0;
-            for s in reader.samples::<f32>() {
-                let sample = s.unwrap_or(0.0);
-                if ch == 0 {
-                    samples_l.push(sample);
-                    if channels == 1 {
-                        samples_r.push(sample);
-                    }
-                } else {
+    if spec.sample_format == hound::SampleFormat::Float {
+        let mut ch = 0;
+        for s in reader.samples::<f32>() {
+            let sample = s.unwrap_or(0.0);
+            if ch == 0 {
+                samples_l.push(sample);
+                if channels == 1 {
                     samples_r.push(sample);
                 }
-                ch = (ch + 1) % channels;
+            } else {
+                samples_r.push(sample);
             }
-        } else {
-            let mut ch = 0;
-            for s in reader.samples::<i32>() {
-                let sample = s.unwrap_or(0) as f32 / max_val;
-                if ch == 0 {
-                    samples_l.push(sample);
-                    if channels == 1 {
-                        samples_r.push(sample);
-                    }
-                } else {
+            ch = (ch + 1) % channels;
+        }
+    } else {
+        let mut ch = 0;
+        for s in reader.samples::<i32>() {
+            let sample = s.unwrap_or(0) as f32 / max_val;
+            if ch == 0 {
+                samples_l.push(sample);
+                if channels == 1 {
                     samples_r.push(sample);
                 }
-                ch = (ch + 1) % channels;
+            } else {
+                samples_r.push(sample);
             }
-        }
-
-        Ok(DecodedAudio {
-            channels,
-            sample_rate,
-            samples_l,
-            samples_r,
-        })
-    }
-
-    pub fn render_clip_samples(
-        &mut self,
-        clip: &Clip,
-        start_clip_pos_beats: f64,
-        dt_beats_per_sample: f64,
-        bpm: f32,
-        out_l: &mut [f32],
-        out_r: &mut [f32],
-    ) {
-        out_l.fill(0.0);
-        out_r.fill(0.0);
-
-        if let ClipPayload::Audio(ref audio_data) = clip.payload {
-            if audio_data.file_path.is_empty() {
-                return;
-            }
-
-            let path = audio_data.file_path.clone();
-            if let Some(audio) = self.get_or_load(&path) {
-                let total_samples = audio.samples_l.len();
-                if total_samples == 0 {
-                    return;
-                }
-
-                let gain_lin = 10.0f32.powf(audio_data.gain_db / 20.0);
-                let time_scale = if audio_data.is_warped {
-                    samples_per_beat(f64::from(bpm), audio.sample_rate as f64)
-                } else {
-                    samples_per_beat(audio_data.original_bpm, audio.sample_rate as f64)
-                };
-
-                let n = out_l.len().min(out_r.len());
-                let last_idx = (total_samples - 1) as isize;
-                let clamp_idx = |idx: isize| -> usize { idx.clamp(0, last_idx) as usize };
-
-                for i in 0..n {
-                    let beat_pos = start_clip_pos_beats + (i as f64) * dt_beats_per_sample;
-                    if beat_pos < 0.0 {
-                        continue;
-                    }
-
-                    let sample_idx_f = beat_pos * time_scale;
-                    if sample_idx_f < 0.0 {
-                        continue;
-                    }
-
-                    let idx1 = sample_idx_f.floor() as isize;
-                    if idx1 >= total_samples as isize {
-                        continue;
-                    }
-
-                    let mu = (sample_idx_f - sample_idx_f.floor()) as f32;
-
-                    let i0 = clamp_idx(idx1 - 1);
-                    let i1 = clamp_idx(idx1);
-                    let i2 = clamp_idx(idx1 + 1);
-                    let i3 = clamp_idx(idx1 + 2);
-
-                    let y0_l = audio.samples_l[i0];
-                    let y1_l = audio.samples_l[i1];
-                    let y2_l = audio.samples_l[i2];
-                    let y3_l = audio.samples_l[i3];
-
-                    let y0_r = audio.samples_r[i0];
-                    let y1_r = audio.samples_r[i1];
-                    let y2_r = audio.samples_r[i2];
-                    let y3_r = audio.samples_r[i3];
-
-                    let samp_l = hermite_interp(y0_l, y1_l, y2_l, y3_l, mu);
-                    let samp_r = hermite_interp(y0_r, y1_r, y2_r, y3_r, mu);
-
-                    out_l[i] = samp_l * gain_lin;
-                    out_r[i] = samp_r * gain_lin;
-                }
-            }
+            ch = (ch + 1) % channels;
         }
     }
 
-    pub fn sample_clip(&mut self, clip: &Clip, clip_pos_beats: f64, bpm: f32) -> (f32, f32) {
-        let mut buf_l = [0.0f32; 1];
-        let mut buf_r = [0.0f32; 1];
-        self.render_clip_samples(clip, clip_pos_beats, 0.0, bpm, &mut buf_l, &mut buf_r);
-        (buf_l[0], buf_r[0])
+    Ok(DecodedAudio {
+        channels,
+        sample_rate,
+        samples_l,
+        samples_r,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hermite_interpolation_passes_through_a_straight_line_at_its_midpoint() {
+        let mid = hermite_interp(0.0, 1.0, 2.0, 3.0, 0.5);
+        assert!((mid - 1.5).abs() < 1e-4);
     }
 }

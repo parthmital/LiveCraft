@@ -2,13 +2,13 @@
 
 Date: 2026-10-31. Commit: 26b544c (HEAD when verified). This review is committed on top.
 
-| Acceptance criterion                       | Met | Evidence                                                                                                  |
-| ------------------------------------------ | --- | --------------------------------------------------------------------------------------------------------- |
-| `cargo xtask ci` passes                    | Yes | `xtask: all checks passed`, 55 tests, exit 0 (`cargo xtask ci` on the M01-10 tree)                        |
-| Characterisation tests pass unchanged      | Yes | `cargo test -p livecraft --test characterisation`: 2 passed. Test source blob unchanged since 70076ac     |
-| Target packages match target architecture  | Yes | `cargo metadata --no-deps` lists the nine packages under Package check below                              |
-| No legacy crate names in Rust source files | Yes | `git grep -E` for `livecraft_core`, `livecraft_gui`, and `livecraft_cli` in `*.rs` files: no output       |
-| ARCHITECTURE.md module map matches layout  | Yes | Module Map paths, Dependency Rules, Where New Code Goes, and Growth Signals match the `LAYERS` table      |
+| Acceptance criterion                       | Met | Evidence                                                                                              |
+| ------------------------------------------ | --- | ----------------------------------------------------------------------------------------------------- |
+| `cargo xtask ci` passes                    | Yes | `xtask: all checks passed`, 55 tests, exit 0 (`cargo xtask ci` on the M01-10 tree)                    |
+| Characterisation tests pass unchanged      | Yes | `cargo test -p livecraft --test characterisation`: 2 passed. Test source blob unchanged since 70076ac |
+| Target packages match target architecture  | Yes | `cargo metadata --no-deps` lists the nine packages under Package check below                          |
+| No legacy crate names in Rust source files | Yes | `git grep -E` for `livecraft_core`, `livecraft_gui`, and `livecraft_cli` in `*.rs` files: no output   |
+| ARCHITECTURE.md module map matches layout  | Yes | Module Map paths, Dependency Rules, Where New Code Goes, and Growth Signals match the `LAYERS` table  |
 
 Package check (`cargo metadata --no-deps`, sorted): livecraft, livecraft-devices, livecraft-dsp, livecraft-engine, livecraft-formats, livecraft-model, livecraft-testkit, livecraft-ui, xtask.
 
