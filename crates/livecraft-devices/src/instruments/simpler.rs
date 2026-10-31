@@ -1,6 +1,11 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use crate::device_processor::{
+    AudioIo, DeviceProcessor, EventList, EventSink, NoteEvent, NoteSource, ProcessContext,
+    render_notes,
+};
 use crate::operator::AdsrEnvelope;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimplerPlaybackMode {
@@ -458,5 +463,97 @@ impl SimplerInstrument {
         self.filter
             .set_params(self.filter_cutoff, 0.0, self.filter_resonance);
         self.filter.process_stereo(mix_l, mix_r)
+    }
+}
+
+impl NoteSource for SimplerInstrument {
+    fn apply_note(&mut self, event: &NoteEvent) {
+        match *event {
+            NoteEvent::On {
+                pitch,
+                velocity,
+                freq_hz,
+                ..
+            } => self.note_on_with_freq(pitch, velocity, freq_hz),
+            NoteEvent::Off { pitch, .. } => self.note_off(pitch),
+        }
+    }
+
+    fn next_frame(&mut self) -> (f32, f32) {
+        self.process_sample()
+    }
+}
+
+impl DeviceProcessor for SimplerInstrument {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        render_notes(self, io, events);
+    }
+
+    /// Ids are positions in the Simpler table of `livecraft_model::device`. Id 1, the gain, has no
+    /// effect in this port, as before M05.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => {
+                self.mode = match value.round() as i32 {
+                    1 => SimplerPlaybackMode::OneShot,
+                    2 => SimplerPlaybackMode::Slicing,
+                    _ => SimplerPlaybackMode::Classic,
+                };
+            }
+            2 => self.envelope.attack_sec = (value * 0.001).clamp(0.001, 10.0),
+            3 => self.envelope.decay_sec = (value * 0.001).clamp(0.001, 10.0),
+            4 => self.envelope.sustain_level = value.clamp(0.0, 1.0),
+            5 => self.envelope.release_sec = (value * 0.001).clamp(0.001, 10.0),
+            6 => self.filter_cutoff = value.clamp(20.0, 20000.0),
+            7 => self.start_pct = value.clamp(0.0, 1.0),
+            8 => self.length_pct = value.clamp(0.01, 1.0),
+            9 => self.crossfade_pct = value.clamp(0.0, 1.0),
+            10 => self.filter_resonance = value.clamp(0.1, 10.0),
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {
+        self.all_notes_off();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{assert_block_size_does_not_change_notes, run_notes};
+
+    fn loaded() -> SimplerInstrument {
+        let mut simpler = SimplerInstrument::new(44100.0);
+        simpler.set_sample_data(vec![0.5; 4410], vec![0.5; 4410], 44100);
+        simpler
+    }
+
+    fn on(pitch: u8) -> NoteEvent {
+        NoteEvent::On {
+            offset: 0,
+            pitch,
+            velocity: 100,
+            freq_hz: 261.6,
+        }
+    }
+
+    #[test]
+    fn simpler_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_notes(loaded, &[(100, on(60))]);
+    }
+
+    #[test]
+    fn simpler_plays_its_sample_from_the_note_offset() {
+        let mut simpler = loaded();
+        let (left, _) = run_notes(&mut simpler, 512, 512, &[(100, on(60))]);
+        assert!(left[..100].iter().all(|&s| s == 0.0));
+        assert!(left[100..].iter().any(|&s| s != 0.0));
     }
 }

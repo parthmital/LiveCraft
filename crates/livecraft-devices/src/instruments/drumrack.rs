@@ -1,4 +1,9 @@
+use crate::device_processor::{
+    AudioIo, DeviceProcessor, EventList, EventSink, NoteEvent, NoteSource, ProcessContext,
+    render_notes,
+};
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone)]
@@ -292,5 +297,86 @@ impl DrumRackInstrument {
 
         let master_lin = 10.0f32.powf(self.master_gain_db / 20.0);
         (sum_l * master_lin, sum_r * master_lin)
+    }
+}
+
+impl NoteSource for DrumRackInstrument {
+    fn apply_note(&mut self, event: &NoteEvent) {
+        match *event {
+            NoteEvent::On {
+                pitch, velocity, ..
+            } => self.note_on(pitch, velocity),
+            NoteEvent::Off { pitch, .. } => self.note_off(pitch),
+        }
+    }
+
+    fn next_frame(&mut self) -> (f32, f32) {
+        self.process_sample()
+    }
+}
+
+impl DeviceProcessor for DrumRackInstrument {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        render_notes(self, io, events);
+    }
+
+    /// Id 0 is the master gain, the only parameter of the Drum Rack table.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        if id.0 == 0 {
+            self.master_gain_db = value;
+        }
+    }
+
+    fn reset(&mut self) {
+        self.all_notes_off();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{assert_block_size_does_not_change_notes, run_notes};
+
+    /// Pad 36 is the kick drum, the first pad of the default kit.
+    fn kick(offset_frame: usize) -> (usize, NoteEvent) {
+        (
+            offset_frame,
+            NoteEvent::On {
+                offset: 0,
+                pitch: 36,
+                velocity: 100,
+                freq_hz: 0.0,
+            },
+        )
+    }
+
+    #[test]
+    fn drum_rack_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_notes(|| DrumRackInstrument::new(44100.0), &[kick(100)]);
+    }
+
+    #[test]
+    fn a_pad_is_silent_before_its_offset() {
+        let mut rack = DrumRackInstrument::new(44100.0);
+        let (left, _) = run_notes(&mut rack, 512, 512, &[kick(100)]);
+        assert!(left[..100].iter().all(|&s| s == 0.0));
+        assert!(left[100..].iter().any(|&s| s != 0.0));
+    }
+
+    #[test]
+    fn master_gain_changes_the_output() {
+        let mut quiet = DrumRackInstrument::new(44100.0);
+        quiet.set_param(ParamId(0), -12.0, 0);
+        let mut loud = DrumRackInstrument::new(44100.0);
+        loud.set_param(ParamId(0), 0.0, 0);
+        let (quiet_l, _) = run_notes(&mut quiet, 512, 512, &[kick(0)]);
+        let (loud_l, _) = run_notes(&mut loud, 512, 512, &[kick(0)]);
+        assert_ne!(quiet_l, loud_l);
     }
 }
