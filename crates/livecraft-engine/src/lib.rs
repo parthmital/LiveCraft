@@ -5,6 +5,7 @@ pub mod collector;
 pub mod compiled;
 pub mod compiler;
 pub mod delay;
+pub mod driver;
 pub mod executor;
 pub mod output;
 pub mod rt;

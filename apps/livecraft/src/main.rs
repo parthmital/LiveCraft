@@ -1,6 +1,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use livecraft_devices::operator::{OperatorSynth, Waveform};
 use livecraft_engine::bouncer::{OfflineBouncer, RenderOptions};
+use livecraft_engine::driver::DriverConfig;
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::AlsParser;
 use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, TrackType};
@@ -530,8 +531,10 @@ fn print_project_inspection(proj: &Project, show_devices: bool, show_clips: bool
 
 fn run_terminal_player(project: &Project, max_duration: u64) -> anyhow::Result<()> {
     println!("\nStarting LiveCraft Real-Time Audio Engine...");
-    let mut session =
-        livecraft_session::Session::new(project.clone(), Some(Playback::open(project)?));
+    let mut session = livecraft_session::Session::new(
+        project.clone(),
+        Some(Playback::open(project, &DriverConfig::default())?),
+    );
 
     // Trigger first available clip on each track
     for trk in project.tracks.iter() {

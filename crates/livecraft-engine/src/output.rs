@@ -1,52 +1,54 @@
-//! The audio output (M05 item 12, TARGET-ARCHITECTURE "Threads" and "Engine Decisions").
+//! The audio output (M05 item 12, TARGET-ARCHITECTURE "Threads" and "Engine Decisions"; M06 item 2).
 //!
-//! The cpal stream calls `Engine::process` for each driver buffer and does nothing else. `Playback`
-//! is the session side: it compiles the Set, submits the graphs, sends commands, and reads the
-//! snapshots. It owns the stream, so dropping it stops the output.
+//! The driver calls `Engine::process` for each buffer and does nothing else. `Playback` is the
+//! session side: it compiles the Set, submits the graphs, sends commands, and reads the snapshots.
+//! It holds the driver, so dropping it stops the output.
 
 use crate::compiler::{GraphCompiler, ProcessorFactory};
+use crate::driver::{AudioDriver, CpalDriver, DriverConfig, DriverStatus, Latency};
 use crate::executor::{Engine, EngineCommand, EngineHandle};
-use anyhow::anyhow;
 use basedrop::Collector;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{FromSample, SampleFormat, SizedSample, Stream, StreamConfig};
 use livecraft_devices::create_device_processor;
 use livecraft_model::model::Project;
 
-/// Frames converted per step when the device does not take `f32` samples. A callback buffer longer
-/// than this is converted in steps, so the scratch buffer never grows on the audio thread.
-const SCRATCH_FRAMES: usize = 1024;
-
-/// The session side of a running engine, and the output stream when there is a device.
+/// The session side of a running engine, and the driver that plays it when there is one.
 pub struct Playback {
-    /// Keeps the output running. None when the Set renders without an audio device.
-    stream: Option<Stream>,
+    /// Keeps the output running. None when the Set renders without an audio driver.
+    driver: Option<Box<dyn AudioDriver>>,
     pub sample_rate: f32,
     pub compiler: GraphCompiler,
     pub handle: EngineHandle,
 }
 
 impl Playback {
-    /// Opens the default output device and starts rendering `project` through it.
-    pub fn open(project: &Project) -> anyhow::Result<Self> {
-        let device = cpal::default_host()
-            .default_output_device()
-            .ok_or_else(|| anyhow!("No default audio output device found"))?;
-        let supported = device.default_output_config()?;
-        let sample_rate = supported.sample_rate() as f32;
-        let channels = supported.channels().max(1) as usize;
-        let format = supported.sample_format();
-        let config: StreamConfig = supported.into();
-        let (mut playback, engine) = Self::start(project, sample_rate)?;
-        let stream = match format {
-            SampleFormat::F32 => output_stream::<f32>(&device, config, engine, channels)?,
-            SampleFormat::I16 => output_stream::<i16>(&device, config, engine, channels)?,
-            SampleFormat::U16 => output_stream::<u16>(&device, config, engine, channels)?,
-            other => anyhow::bail!("Unsupported CPAL sample format: {other:?}"),
-        };
-        stream.play()?;
-        playback.stream = Some(stream);
+    /// Opens the output that `config` names and starts rendering `project` through it.
+    pub fn open(project: &Project, config: &DriverConfig) -> anyhow::Result<Self> {
+        Self::open_with_driver(project, Box::new(CpalDriver::open(config)?))
+    }
+
+    /// Starts rendering `project` through `driver`, at the driver's sample rate.
+    pub fn open_with_driver(
+        project: &Project,
+        mut driver: Box<dyn AudioDriver>,
+    ) -> anyhow::Result<Self> {
+        let (mut playback, engine) = Self::start(project, driver.sample_rate() as f32)?;
+        driver.start(engine)?;
+        playback.driver = Some(driver);
         Ok(playback)
+    }
+
+    /// Whether the driver runs. It is `Stopped` when the Set renders without a driver.
+    pub fn driver_status(&self) -> DriverStatus {
+        self.driver
+            .as_ref()
+            .map_or(DriverStatus::Stopped, |driver| driver.status())
+    }
+
+    /// The output latency of the driver. It is zero when the Set renders without a driver.
+    pub fn latency(&self) -> Latency {
+        self.driver
+            .as_ref()
+            .map_or_else(Latency::default, |driver| driver.latency())
     }
 
     /// Starts an engine rendering `project` at `sample_rate`, without an audio device. The caller
@@ -66,7 +68,7 @@ impl Playback {
         let graph = compiler.compile(project);
         let (engine, handle) = Engine::start(graph, sample_rate, collector)?;
         let mut playback = Self {
-            stream: None,
+            driver: None,
             sample_rate,
             compiler,
             handle,
@@ -78,37 +80,10 @@ impl Playback {
     }
 }
 
-/// Builds the output stream for samples of type `T`. The callback converts each engine block from
-/// `f32` in place of the device buffer, using a scratch buffer allocated here.
-fn output_stream<T>(
-    device: &cpal::Device,
-    config: StreamConfig,
-    mut engine: Engine,
-    channels: usize,
-) -> Result<Stream, cpal::Error>
-where
-    T: SizedSample + FromSample<f32>,
-{
-    let mut scratch = vec![0.0f32; SCRATCH_FRAMES * channels];
-    device.build_output_stream(
-        config,
-        move |data: &mut [T], _: &cpal::OutputCallbackInfo| {
-            for chunk in data.chunks_mut(scratch.len()) {
-                let rendered = &mut scratch[..chunk.len()];
-                engine.process(rendered, channels);
-                for (out, sample) in chunk.iter_mut().zip(rendered.iter()) {
-                    *out = T::from_sample(*sample);
-                }
-            }
-        },
-        |err| log::error!("Audio stream error: {err}"),
-        None,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::driver::NullDriver;
     use livecraft_model::model::Project;
 
     #[test]
@@ -119,5 +94,19 @@ mod tests {
         let mut out = vec![0.0f32; 64];
         engine.process(&mut out, 2);
         assert_eq!(playback.handle.snapshot().transport.bpm, 140.0);
+    }
+
+    #[test]
+    fn a_playback_reports_the_status_of_the_driver_it_holds() {
+        let project = Project::new_default("Driver");
+        let (playback, _engine) = Playback::start(&project, 44100.0).expect("start");
+        assert_eq!(playback.driver_status(), DriverStatus::Stopped);
+        assert_eq!(playback.latency(), Latency::default());
+
+        let playback =
+            Playback::open_with_driver(&project, Box::new(NullDriver::new(44100, 512, 2)))
+                .expect("open with a null driver");
+        assert_eq!(playback.driver_status(), DriverStatus::Running);
+        assert_eq!(playback.sample_rate, 44100.0);
     }
 }

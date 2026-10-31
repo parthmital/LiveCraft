@@ -9,6 +9,7 @@ use crate::commands::clip::CreateMidiClip;
 use crate::commands::note::AddNote;
 use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
+use livecraft_engine::driver::DriverConfig;
 use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::{AlsError, AlsParser};
@@ -94,7 +95,7 @@ impl Session {
 
     /// Opens a Set with the audio output of the default device, when there is one.
     pub fn open(project: Project) -> Self {
-        let engine = Playback::open(&project).ok();
+        let engine = Playback::open(&project, &DriverConfig::default()).ok();
         Self::new(project, engine)
     }
 

@@ -40,7 +40,7 @@ cargo run --bin livecraft -- gui
 
 | Command                  | What it does                            | Expected result                          | Common error and fix                                                                                                                         |
 | ------------------------ | --------------------------------------- | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cargo test --workspace` | Builds every crate and runs all tests   | 303 tests pass                           | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)                                                   |
+| `cargo test --workspace` | Builds every crate and runs all tests   | 318 tests pass                           | Linux link errors for ALSA or X11: install the packages in [Prerequisites](#prerequisites)                                                   |
 | `livecraft new demo.als` | Writes a new gzip-compressed Live Set   | `demo.als` is created                    | Permission denied: use a writable folder                                                                                                     |
 | `livecraft inspect ...`  | Prints tracks, device chains, and clips | A track and clip summary in the terminal | `Decompression failed`: the file is not a gzip `.als`                                                                                        |
 | `livecraft render ...`   | Renders the set offline to a WAV file   | `demo.wav` exists                        | Silent output: render plays each track's first clip slot and its arrangement clips, and a new Set has no clips; check with `inspect --clips` |
@@ -77,7 +77,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 | Technology            | Version in `Cargo.toml` | Purpose and where used                                               |
 | --------------------- | ----------------------- | -------------------------------------------------------------------- |
 | Rust                  | 2024 edition            | Whole workspace                                                      |
-| `cpal`                | 0.18                    | Audio output stream in `crates/livecraft-engine/src/output.rs`       |
+| `cpal`                | 0.18                    | Audio output in `crates/livecraft-engine/src/driver/cpal_driver.rs`       |
 | `hound`               | 3.5                     | WAV read and write for render, stems, and samples                    |
 | `egui`, `eframe`      | 0.37 (wgpu renderer)    | Immediate-mode desktop GUI in `crates/livecraft-ui`                  |
 | `image`               | 0.25 (PNG only)         | Saves `--screenshot` captures                                        |
@@ -160,7 +160,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-On 2026-10-31, `cargo xtask ci` passes with 303 tests (livecraft 9, livecraft-model 47, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 57, livecraft-engine 56, livecraft-session 86, livecraft-time 34, livecraft-ui 2, xtask 5, livecraft-testkit 0). `livecraft command list` prints 42 registered commands. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
+On 2026-10-31, `cargo xtask ci` passes with 318 tests (livecraft 9, livecraft-model 47, livecraft-formats 6, livecraft-dsp 1, livecraft-devices 57, livecraft-engine 71, livecraft-session 86, livecraft-time 34, livecraft-ui 2, xtask 5, livecraft-testkit 0). `livecraft command list` prints 42 registered commands. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path.
 
 ## Troubleshooting
 
