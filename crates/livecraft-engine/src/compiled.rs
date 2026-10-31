@@ -12,13 +12,16 @@ use crate::clip::ClipLane;
 use crate::graph::TrackMeter;
 use livecraft_devices::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
-use livecraft_model::param::ParamId;
+use livecraft_model::param::{ParamId, ParamSpec};
 
 /// Most frames one render call handles. The engine cuts a driver buffer into blocks of this size.
 pub const MAX_BLOCK: usize = 512;
 
 /// Most note events one node holds in a block.
 pub const MAX_NOTE_EVENTS: usize = 256;
+
+/// Most frames a block holds while a parameter ramps, so the ramp moves in small steps.
+pub const RAMP_STEP: usize = 32;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NodeKind {
@@ -45,6 +48,41 @@ pub struct DeviceSlot {
     pub enabled: bool,
     pub processor: Box<dyn DeviceProcessor>,
     pub values: Vec<(ParamId, f32)>,
+    /// The parameter table of the device kind, which says how each parameter is smoothed.
+    pub table: &'static [ParamSpec],
+    /// Continuous parameters still moving to their target value.
+    pub ramps: Vec<Ramp>,
+}
+
+/// A continuous parameter that moves from the value its processor holds toward the value the Set
+/// asks for (`ParamSpec::smoothing_ms`).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Ramp {
+    pub id: ParamId,
+    pub current: f32,
+    pub target: f32,
+}
+
+impl DeviceSlot {
+    /// Moves each ramp over `frames` frames toward its target and gives the processor the new value.
+    /// A ramp that has arrived is dropped. The step is exponential, so a ramp takes the same time at
+    /// any block size.
+    fn apply_ramps(&mut self, frames: usize, sample_rate: f32) {
+        let table = self.table;
+        let processor = &mut self.processor;
+        self.ramps.retain_mut(|ramp| {
+            let smoothing_ms = table
+                .get(ramp.id.0 as usize)
+                .map_or(0.0, |spec| spec.smoothing_ms);
+            let decay = (-(frames as f32) / (smoothing_ms * sample_rate / 1000.0)).exp();
+            ramp.current = ramp.target + (ramp.current - ramp.target) * decay;
+            if (ramp.current - ramp.target).abs() <= 1e-6 * (1.0 + ramp.target.abs()) {
+                ramp.current = ramp.target;
+            }
+            processor.set_param(ramp.id, ramp.current, 0);
+            ramp.current != ramp.target
+        });
+    }
 }
 
 /// Moves the processor of a device that a new graph keeps from the previous graph's slot to the new
@@ -113,6 +151,9 @@ impl Node {
     /// Runs the enabled devices over the node's buffers in chain order, then updates the meter.
     fn run_devices(&mut self, ctx: &ProcessContext) {
         let frames = ctx.frames;
+        for slot in self.devices.iter_mut() {
+            slot.apply_ramps(frames, ctx.sample_rate);
+        }
         let mut io = AudioIo {
             left: &mut self.left[..frames],
             right: &mut self.right[..frames],
@@ -245,8 +286,9 @@ impl CompiledGraph {
         }
     }
 
-    /// Sets a parameter of a device on a track. The processor takes the value at once, and the stored
-    /// values follow, so a graph swap keeps it.
+    /// Sets a parameter of a device on a track. The stored values follow, so a graph swap keeps the
+    /// value. A continuous parameter ramps from the value it has now (`ParamSpec::smoothing_ms`); a
+    /// stepped one takes the new value at once.
     pub fn set_device_param(
         &mut self,
         track: TrackId,
@@ -260,12 +302,39 @@ impl CompiledGraph {
         let Some(slot) = node.devices.iter_mut().find(|slot| slot.id == device) else {
             return;
         };
-        slot.processor.set_param(param, value, 0);
+        let previous = slot
+            .values
+            .iter()
+            .find(|(id, _)| *id == param)
+            .map(|entry| entry.1);
         if let Some(entry) = slot.values.iter_mut().find(|(id, _)| *id == param) {
             entry.1 = value;
         } else if slot.values.len() < slot.values.capacity() {
             slot.values.push((param, value));
         }
+        let smoothing_ms = slot
+            .table
+            .get(param.0 as usize)
+            .map_or(0.0, |spec| spec.smoothing_ms);
+        if smoothing_ms <= 0.0 {
+            slot.ramps.retain(|ramp| ramp.id != param);
+            slot.processor.set_param(param, value, 0);
+        } else if let Some(ramp) = slot.ramps.iter_mut().find(|ramp| ramp.id == param) {
+            ramp.target = value;
+        } else {
+            slot.ramps.push(Ramp {
+                id: param,
+                current: previous.unwrap_or(value),
+                target: value,
+            });
+        }
+    }
+
+    /// True while a continuous parameter is still ramping. The engine then renders in short steps.
+    pub fn ramping(&self) -> bool {
+        self.nodes
+            .iter()
+            .any(|node| node.devices.iter().any(|slot| !slot.ramps.is_empty()))
     }
 
     /// Stops the clips on every track.

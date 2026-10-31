@@ -10,12 +10,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct ParamId(pub u16);
 
-/// One parameter of a device kind: its name and its default. A parameter without a default
-/// has no value until it is set.
+/// One parameter of a device kind: its name, its default, and how a change reaches the audio. A
+/// parameter without a default has no value until it is set.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ParamSpec {
     pub name: &'static str,
     pub default: Option<f32>,
+    /// Milliseconds over which the engine ramps a change to this parameter. Zero applies the change
+    /// at its sample offset with no ramp, which switches and enums need.
+    pub smoothing_ms: f32,
 }
 
 /// The id of a parameter by name, if the table has it.
@@ -79,14 +82,17 @@ mod tests {
         ParamSpec {
             name: "gain_db",
             default: Some(0.0),
+            smoothing_ms: 10.0,
         },
         ParamSpec {
             name: "send",
             default: None,
+            smoothing_ms: 10.0,
         },
         ParamSpec {
             name: "width",
             default: Some(1.0),
+            smoothing_ms: 10.0,
         },
     ];
 

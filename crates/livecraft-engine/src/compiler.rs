@@ -9,6 +9,7 @@ use crate::compiled::{
 };
 use basedrop::{Handle, Shared};
 use livecraft_devices::{create_device_processor, is_instrument};
+use livecraft_model::device::param_table;
 use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{
     Clip, ClipPayload, Device, MidiClipData, MonitoringMode, Project, Track, TuningSystem,
@@ -109,6 +110,8 @@ impl GraphCompiler {
                     enabled: device.is_enabled,
                     processor,
                     values: parameter_values(device),
+                    table: param_table(&device.device_type),
+                    ramps: Vec::with_capacity(MAX_PARAMETERS),
                 })
             })
             .collect();

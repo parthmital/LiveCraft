@@ -24,17 +24,33 @@ pub enum DeviceType {
     Custom(String),
 }
 
+/// Milliseconds over which a continuous parameter ramps to a new value (a de-zippering ramp).
+const CONTINUOUS_SMOOTHING_MS: f32 = 10.0;
+
+/// A continuous parameter with a default. Its changes ramp over `CONTINUOUS_SMOOTHING_MS`.
 const fn with_default(name: &'static str, default: f32) -> ParamSpec {
     ParamSpec {
         name,
         default: Some(default),
+        smoothing_ms: CONTINUOUS_SMOOTHING_MS,
     }
 }
 
+/// A continuous parameter without a default. Its changes ramp over `CONTINUOUS_SMOOTHING_MS`.
 const fn without_default(name: &'static str) -> ParamSpec {
     ParamSpec {
         name,
         default: None,
+        smoothing_ms: CONTINUOUS_SMOOTHING_MS,
+    }
+}
+
+/// A switch or an enum with a default. Its changes apply at their sample offset with no ramp.
+const fn stepped(name: &'static str, default: f32) -> ParamSpec {
+    ParamSpec {
+        name,
+        default: Some(default),
+        smoothing_ms: 0.0,
     }
 }
 
@@ -44,42 +60,42 @@ const EQ_EIGHT: &[ParamSpec] = &[
     with_default("band_1_freq", 100.0),
     with_default("band_1_gain", 0.0),
     with_default("band_1_q", 0.707),
-    with_default("band_1_enabled", 1.0),
+    stepped("band_1_enabled", 1.0),
     with_default("band_2_freq", 200.0),
     with_default("band_2_gain", 0.0),
     with_default("band_2_q", 0.707),
-    with_default("band_2_enabled", 1.0),
+    stepped("band_2_enabled", 1.0),
     with_default("band_3_freq", 400.0),
     with_default("band_3_gain", 0.0),
     with_default("band_3_q", 0.707),
-    with_default("band_3_enabled", 1.0),
+    stepped("band_3_enabled", 1.0),
     with_default("band_4_freq", 800.0),
     with_default("band_4_gain", 0.0),
     with_default("band_4_q", 0.707),
-    with_default("band_4_enabled", 1.0),
+    stepped("band_4_enabled", 1.0),
     with_default("band_5_freq", 1600.0),
     with_default("band_5_gain", 0.0),
     with_default("band_5_q", 0.707),
-    with_default("band_5_enabled", 1.0),
+    stepped("band_5_enabled", 1.0),
     with_default("band_6_freq", 3200.0),
     with_default("band_6_gain", 0.0),
     with_default("band_6_q", 0.707),
-    with_default("band_6_enabled", 1.0),
+    stepped("band_6_enabled", 1.0),
     with_default("band_7_freq", 6400.0),
     with_default("band_7_gain", 0.0),
     with_default("band_7_q", 0.707),
-    with_default("band_7_enabled", 1.0),
+    stepped("band_7_enabled", 1.0),
     with_default("band_8_freq", 12800.0),
     with_default("band_8_gain", 0.0),
     with_default("band_8_q", 0.707),
-    with_default("band_8_enabled", 1.0),
+    stepped("band_8_enabled", 1.0),
 ];
 
 const DELAY: &[ParamSpec] = &[
     with_default("time_ms", 375.0),
     with_default("feedback", 0.35),
     with_default("dry_wet", 0.30),
-    with_default("ping_pong", 1.0),
+    stepped("ping_pong", 1.0),
 ];
 
 const REVERB: &[ParamSpec] = &[
@@ -108,16 +124,16 @@ const UTILITY: &[ParamSpec] = &[
     with_default("gain_db", 0.0),
     with_default("pan", 0.0),
     with_default("width", 1.0),
-    with_default("mute", 0.0),
+    stepped("mute", 0.0),
 ];
 
 const OPERATOR: &[ParamSpec] = &[
-    with_default("osc1_waveform", 0.0),
+    stepped("osc1_waveform", 0.0),
     with_default("osc1_level", 1.0),
-    with_default("osc1_coarse", 1.0),
-    with_default("osc2_waveform", 1.0),
+    stepped("osc1_coarse", 1.0),
+    stepped("osc2_waveform", 1.0),
     with_default("osc2_level", 0.5),
-    with_default("osc2_coarse", 2.0),
+    stepped("osc2_coarse", 2.0),
     with_default("filter_cutoff", 2400.0),
     with_default("filter_resonance", 0.3),
     with_default("attack_ms", 5.0),
@@ -129,7 +145,7 @@ const OPERATOR: &[ParamSpec] = &[
 ];
 
 const SIMPLER: &[ParamSpec] = &[
-    with_default("playback_mode", 0.0),
+    stepped("playback_mode", 0.0),
     with_default("gain_db", 0.0),
     with_default("attack_ms", 2.0),
     with_default("decay_ms", 50.0),
@@ -146,14 +162,14 @@ const DRUM_RACK: &[ParamSpec] = &[without_default("gain_db")];
 
 const SATURATOR: &[ParamSpec] = &[
     with_default("drive_db", 6.0),
-    with_default("curve_type", 0.0),
+    stepped("curve_type", 0.0),
     with_default("output_db", -2.0),
     with_default("dry_wet", 1.0),
     with_default("tone", 0.5),
 ];
 
 const AUTO_FILTER: &[ParamSpec] = &[
-    with_default("filter_type", 0.0),
+    stepped("filter_type", 0.0),
     with_default("cutoff", 1200.0),
     with_default("resonance", 1.5),
     with_default("lfo_rate", 1.0),
@@ -172,8 +188,8 @@ const AUTO_PAN: &[ParamSpec] = &[
     with_default("amount", 1.0),
     with_default("rate_hz", 1.0),
     with_default("phase_deg", 180.0),
-    with_default("shape", 0.0),
-    with_default("mode", 0.0),
+    stepped("shape", 0.0),
+    stepped("mode", 0.0),
 ];
 
 const GATE: &[ParamSpec] = &[
@@ -191,14 +207,14 @@ const EQ_THREE: &[ParamSpec] = &[
     with_default("high_gain_db", 0.0),
     with_default("low_freq", 250.0),
     with_default("high_freq", 2500.0),
-    with_default("low_on", 1.0),
-    with_default("mid_on", 1.0),
-    with_default("high_on", 1.0),
+    stepped("low_on", 1.0),
+    stepped("mid_on", 1.0),
+    stepped("high_on", 1.0),
 ];
 
 const REDUX: &[ParamSpec] = &[
     with_default("rate_factor", 1.0),
-    with_default("bits", 16.0),
+    stepped("bits", 16.0),
     with_default("jitter", 0.0),
     with_default("dry_wet", 1.0),
 ];

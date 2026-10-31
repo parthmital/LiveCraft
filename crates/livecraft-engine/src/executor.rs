@@ -7,7 +7,7 @@
 //! applies commands and graph swaps at the start of each driver callback and never allocates.
 
 use crate::collector;
-use crate::compiled::{CompiledGraph, MAX_BLOCK, Node};
+use crate::compiled::{CompiledGraph, MAX_BLOCK, Node, RAMP_STEP};
 use crate::graph::sanitize_output_sample;
 use livecraft_devices::ProcessContext;
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
@@ -62,13 +62,25 @@ pub enum EngineCommand {
         scene: SceneId,
     },
     StopAll,
-    /// Sets a parameter of a device on a track, by its id in the device table.
+    /// Sets a parameter of a device on a track, by its id in the device table. The change takes
+    /// effect `offset` frames after the first frame of the next driver buffer.
     SetDeviceParam {
         track: TrackId,
         device: DeviceId,
         param: ParamId,
         value: f32,
+        offset: u32,
     },
+}
+
+/// A parameter change waiting for its frame. `due` is an absolute frame of the engine.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct PendingParam {
+    due: u64,
+    track: TrackId,
+    device: DeviceId,
+    param: ParamId,
+    value: f32,
 }
 
 /// A discrete event from the audio thread, read by the session.
@@ -127,6 +139,8 @@ pub struct Engine {
     origin_frame: u64,
     /// Frames rendered since the engine started.
     frame: u64,
+    /// Parameter changes that take effect at a later frame, in the order they were sent.
+    pending: Vec<PendingParam>,
 }
 
 impl Engine {
@@ -156,6 +170,7 @@ impl Engine {
             origin_beats: 0.0,
             origin_frame: 0,
             frame: 0,
+            pending: Vec::with_capacity(COMMAND_CAPACITY),
         };
         let handle = EngineHandle {
             commands: command_tx,
@@ -175,6 +190,7 @@ impl Engine {
         let frames = out.len() / channels;
         let mut start = 0;
         while start < frames {
+            self.apply_due_params();
             let block = self.segment_len(frames - start);
             let context = ProcessContext {
                 sample_rate: self.sample_rate,
@@ -276,7 +292,41 @@ impl Engine {
                 device,
                 param,
                 value,
-            } => self.graph.set_device_param(track, device, param, value),
+                offset,
+            } => {
+                let event = PendingParam {
+                    due: self.frame + u64::from(offset),
+                    track,
+                    device,
+                    param,
+                    value,
+                };
+                // A full queue applies the change at once rather than dropping it.
+                if self.pending.len() < self.pending.capacity() {
+                    self.pending.push(event);
+                } else {
+                    self.graph.set_device_param(
+                        event.track,
+                        event.device,
+                        event.param,
+                        event.value,
+                    );
+                }
+            }
+        }
+    }
+
+    /// Applies, in the order they were sent, the parameter changes whose frame has come.
+    fn apply_due_params(&mut self) {
+        let mut index = 0;
+        while index < self.pending.len() {
+            if self.pending[index].due <= self.frame {
+                let event = self.pending.remove(index);
+                self.graph
+                    .set_device_param(event.track, event.device, event.param, event.value);
+            } else {
+                index += 1;
+            }
         }
     }
 
@@ -294,7 +344,19 @@ impl Engine {
     /// the frame where the playhead reaches the next arrangement clip boundary, so the clip starts or
     /// stops on its exact sample.
     fn segment_len(&self, remaining: usize) -> usize {
-        let limit = remaining.min(MAX_BLOCK);
+        let mut limit = remaining.min(MAX_BLOCK);
+        if self.graph.ramping() {
+            limit = limit.min(RAMP_STEP);
+        }
+        if let Some(due) = self
+            .pending
+            .iter()
+            .map(|event| event.due)
+            .filter(|due| *due > self.frame)
+            .min()
+        {
+            limit = limit.min((due - self.frame) as usize);
+        }
         if !self.playing {
             return limit;
         }
@@ -493,13 +555,13 @@ mod tests {
     }
 
     #[test]
-    fn a_parameter_command_gives_the_same_output_as_the_value_in_the_set() {
+    fn a_parameter_command_settles_on_the_value_in_the_set() {
         use livecraft_model::ids::DeviceId;
         let project = Project::new_default("Param");
         let mut edited = project.clone();
         edited.tracks[0].device_chain[0].set_param("osc1_level", 0.25);
         let (mut in_the_set, _set_handle, _set_compiler) = started(&edited);
-        let expected = render_blocks(&mut in_the_set, 2);
+        let mut expected = render_blocks(&mut in_the_set, 40);
 
         let (mut engine, mut handle, _compiler) = started(&project);
         handle
@@ -508,8 +570,113 @@ mod tests {
                 device: DeviceId(101),
                 param: ParamId(1),
                 value: 0.25,
+                offset: 0,
             })
             .expect("send");
-        assert_eq!(render_blocks(&mut engine, 2), expected);
+        let mut actual = render_blocks(&mut engine, 40);
+        // The level ramps over 10 ms, so the first blocks differ. The last two have settled.
+        let settled = actual.len() - 2 * MAX_BLOCK * 2;
+        assert_eq!(actual.split_off(settled), expected.split_off(settled));
+    }
+
+    /// Starts the Set with a constant 0.5 input on track 1: an audio clip of four beats from beat 0,
+    /// which the track's devices process, played from beat 0.
+    fn constant_input(project: &Project) -> (Engine, EngineHandle) {
+        use crate::audio_clip::DecodedAudio;
+        use crate::clip::{ArrangedClip, PlayableClip, PlayableSource};
+        use basedrop::Shared;
+        let collector = Collector::new();
+        let mut compiler = GraphCompiler::new(RATE, collector.handle());
+        let mut graph = compiler.compile(project);
+        let samples = vec![0.5f32; 88200];
+        let data = DecodedAudio {
+            samples_l: samples.clone(),
+            samples_r: samples,
+            sample_rate: 44100,
+            channels: 2,
+        };
+        let track = graph.node_mut(TrackId(1)).expect("track 1");
+        track.clips.arranged.push(ArrangedClip {
+            start_beat: 0.0,
+            length_beats: 4.0,
+            clip: PlayableClip {
+                length_beats: 4.0,
+                is_looping: false,
+                source: PlayableSource::Audio {
+                    data: Shared::new(&collector.handle(), data),
+                    gain: 1.0,
+                    is_warped: false,
+                    original_bpm: 120.0,
+                },
+            },
+        });
+        let (engine, mut handle) = Engine::start(graph, RATE, collector).expect("start");
+        handle.send(EngineCommand::SetPlaying(true)).expect("send");
+        (engine, handle)
+    }
+
+    /// The Set with a Utility device after the track's devices, which the constant input runs through.
+    fn with_utility() -> Project {
+        use livecraft_model::ids::DeviceId;
+        use livecraft_model::model::{Device, DeviceType};
+        let mut project = Project::new_default("Utility");
+        project.tracks[0].device_chain.push(Device::new(
+            DeviceId(500),
+            "Utility",
+            DeviceType::Utility,
+        ));
+        project
+    }
+
+    #[test]
+    fn a_stepped_parameter_takes_effect_at_its_sample_offset() {
+        use livecraft_model::ids::DeviceId;
+        let project = with_utility();
+        let (mut reference, _) = constant_input(&project);
+        let before = render_left(&mut reference, 1024);
+        let (mut engine, mut handle) = constant_input(&project);
+        handle
+            .send(EngineCommand::SetDeviceParam {
+                track: TrackId(1),
+                device: DeviceId(500),
+                param: ParamId(3),
+                value: 1.0,
+                offset: 300,
+            })
+            .expect("send");
+        let after = render_left(&mut engine, 1024);
+        assert!(
+            after[..300]
+                .iter()
+                .zip(&before[..300])
+                .all(|(a, b)| a.to_bits() == b.to_bits())
+        );
+        assert!(before[300..].iter().any(|&sample| sample != 0.0));
+        assert!(after[300..].iter().all(|&sample| sample == 0.0));
+    }
+
+    #[test]
+    fn a_continuous_parameter_ramps_instead_of_jumping() {
+        use livecraft_model::ids::DeviceId;
+        let (mut engine, mut handle) = constant_input(&with_utility());
+        handle
+            .send(EngineCommand::SetDeviceParam {
+                track: TrackId(1),
+                device: DeviceId(500),
+                param: ParamId(0),
+                value: -60.0,
+                offset: 0,
+            })
+            .expect("send");
+        let out = render_left(&mut engine, 4096);
+        let peaks: Vec<f32> = out
+            .chunks(64)
+            .map(|window| window.iter().fold(0.0f32, |peak, s| peak.max(s.abs())))
+            .collect();
+        assert!(peaks.windows(2).all(|pair| pair[1] <= pair[0]));
+        // A jump to -60 dB would leave the second window near silence. The ramp is still above it.
+        assert!(peaks[1] > 0.1 * peaks[0]);
+        assert!(peaks[6] < 0.5 * peaks[0]);
+        assert!(peaks[peaks.len() - 1] < 0.01 * peaks[0]);
     }
 }
