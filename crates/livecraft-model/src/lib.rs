@@ -7,6 +7,7 @@ pub mod ids;
 pub mod midi_tools_legacy;
 pub mod model;
 pub mod note;
+pub mod param;
 pub mod routing;
 pub mod scale;
 pub mod scene;

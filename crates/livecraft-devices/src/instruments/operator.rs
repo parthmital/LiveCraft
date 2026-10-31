@@ -250,10 +250,10 @@ impl OperatorSynth {
 
     pub fn update_from_device(&mut self, dev: &Device) {
         self.is_enabled = dev.is_enabled;
-        if let Some(alg) = dev.parameters.get("algorithm") {
+        if let Some(alg) = dev.param("algorithm") {
             self.algorithm = (alg.round() as u8).clamp(1, 11);
         }
-        if let Some(fb) = dev.parameters.get("feedback") {
+        if let Some(fb) = dev.param("feedback") {
             self.feedback = fb.clamp(0.0, 1.0);
         }
         let w1 = dev.get_param("osc1_waveform").round() as i32;

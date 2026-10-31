@@ -391,7 +391,7 @@ impl AlsParser {
                                 name: dev_name,
                                 device_type: dtype,
                                 is_enabled: dev_enabled,
-                                parameters: std::collections::HashMap::new(),
+                                parameters: livecraft_model::model::ParamValues::default(),
                             });
                         }
                         "MidiNoteEvent" => {
@@ -729,11 +729,11 @@ impl AlsParser {
         writer.write_event(Event::Empty(on_elem))?;
         writer.write_event(Event::End(quick_xml::events::BytesEnd::new("On")))?;
 
-        let mut sorted_params: Vec<(&String, &f32)> = dev.parameters.iter().collect();
+        let mut sorted_params: Vec<(&str, f32)> = dev.named_params().collect();
         sorted_params.sort_by_key(|(k, _)| *k);
 
         for (pk, pv) in sorted_params {
-            let param_tag = match pk.as_str() {
+            let param_tag = match pk {
                 "filter_cutoff" => "FilterCutoff",
                 "filter_resonance" => "FilterResonance",
                 "attack_ms" => "Attack",
@@ -764,7 +764,7 @@ impl AlsParser {
             } else {
                 let mut p_elem = BytesStart::new("Parameter");
                 let val_str = pv.to_string();
-                p_elem.push_attribute(("Name", pk.as_str()));
+                p_elem.push_attribute(("Name", pk));
                 p_elem.push_attribute(("Value", val_str.as_str()));
                 writer.write_event(Event::Empty(p_elem))?;
             }

@@ -166,10 +166,10 @@ impl SimplerInstrument {
     pub fn update_from_device(&mut self, dev: &Device) {
         self.is_enabled = dev.is_enabled;
         self.filter_cutoff = dev.get_param("filter_cutoff").clamp(20.0, 20000.0);
-        if let Some(res) = dev.parameters.get("filter_resonance") {
+        if let Some(res) = dev.param("filter_resonance") {
             self.filter_resonance = res.clamp(0.1, 10.0);
         }
-        if let Some(m) = dev.parameters.get("playback_mode") {
+        if let Some(m) = dev.param("playback_mode") {
             let mi = m.round() as i32;
             self.mode = match mi {
                 0 => SimplerPlaybackMode::Classic,
@@ -178,13 +178,13 @@ impl SimplerInstrument {
                 _ => SimplerPlaybackMode::Classic,
             };
         }
-        if let Some(sp) = dev.parameters.get("start_pct") {
+        if let Some(sp) = dev.param("start_pct") {
             self.start_pct = sp.clamp(0.0, 1.0);
         }
-        if let Some(lp) = dev.parameters.get("length_pct") {
+        if let Some(lp) = dev.param("length_pct") {
             self.length_pct = lp.clamp(0.01, 1.0);
         }
-        if let Some(xf) = dev.parameters.get("crossfade_pct") {
+        if let Some(xf) = dev.param("crossfade_pct") {
             self.crossfade_pct = xf.clamp(0.0, 1.0);
         }
         self.envelope.attack_sec = (dev.get_param("attack_ms") * 0.001).clamp(0.001, 10.0);

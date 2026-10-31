@@ -431,3 +431,36 @@ fn test_routing_defaults_to_main_and_round_trips_track_targets() {
     let back: Track = serde_json::from_str(&json).expect("deserialise track");
     assert_eq!(back.routing, synth.routing);
 }
+
+#[test]
+fn test_device_parameters_are_stored_by_id_and_addressed_by_name() {
+    let mut eq = Device::new(DeviceId(1), "EQ", DeviceType::EqEight);
+    assert_eq!(eq.parameters.iter().count(), 32);
+    assert_eq!(eq.get_param("band_8_freq"), 12800.0);
+    // Band 8 starts at index 28 of the EQ Eight table; its frequency is the first entry of that band.
+    assert_eq!(
+        param_id(param_table(&DeviceType::EqEight), "band_8_freq"),
+        Some(ParamId(28))
+    );
+
+    eq.set_param("band_2_gain", 3.5);
+    assert_eq!(eq.parameters.get(ParamId(5)), Some(3.5));
+    assert_eq!(eq.param("band_2_gain"), Some(3.5));
+
+    // Names outside the device kind's table are ignored, and read as 0.0.
+    eq.set_param("no_such_param", 9.0);
+    assert_eq!(eq.parameters.iter().count(), 32);
+    assert_eq!(eq.get_param("no_such_param"), 0.0);
+}
+
+#[test]
+fn test_device_json_writes_names_and_leaves_out_unset_parameters() {
+    let op = Device::new(DeviceId(4), "Operator", DeviceType::Operator);
+    let json = serde_json::to_value(&op).expect("serialise device");
+    assert_eq!(json["parameters"]["osc1_level"], 1.0);
+    assert!(json["parameters"].get("algorithm").is_none());
+
+    let back: Device = serde_json::from_value(json).expect("deserialise device");
+    assert_eq!(back.get_param("filter_cutoff"), 2400.0);
+    assert_eq!(back.param("algorithm"), None);
+}

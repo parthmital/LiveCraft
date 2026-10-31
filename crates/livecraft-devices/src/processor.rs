@@ -621,8 +621,8 @@ pub fn create_processor(dev: &Device, sample_rate: f32) -> Option<Box<dyn DspPro
     };
 
     proc.set_enabled(dev.is_enabled);
-    for (k, v) in &dev.parameters {
-        proc.update_param(k, *v);
+    for (k, v) in dev.named_params() {
+        proc.update_param(k, v);
     }
     Some(proc)
 }

@@ -240,8 +240,8 @@ impl TrackDspState {
             if let Some(pos) = self.processors.iter().position(|p| p.device_id() == dev.id) {
                 let mut existing = self.processors.remove(pos);
                 existing.set_enabled(dev.is_enabled);
-                for (k, v) in &dev.parameters {
-                    existing.update_param(k, *v);
+                for (k, v) in dev.named_params() {
+                    existing.update_param(k, v);
                 }
                 new_processors.push(existing);
             } else {

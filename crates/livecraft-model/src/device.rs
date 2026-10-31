@@ -1,6 +1,7 @@
 use crate::ids::DeviceId;
+use crate::param::{ParamSpec, ParamValues, param_id};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DeviceType {
@@ -23,137 +24,223 @@ pub enum DeviceType {
     Custom(String),
 }
 
+const fn with_default(name: &'static str, default: f32) -> ParamSpec {
+    ParamSpec {
+        name,
+        default: Some(default),
+    }
+}
+
+const fn without_default(name: &'static str) -> ParamSpec {
+    ParamSpec {
+        name,
+        default: None,
+    }
+}
+
+// Each table is append only: a parameter's id is its position here, and the JSON export
+// writes the names. Parameters without a default exist only once they are set.
+const EQ_EIGHT: &[ParamSpec] = &[
+    with_default("band_1_freq", 100.0),
+    with_default("band_1_gain", 0.0),
+    with_default("band_1_q", 0.707),
+    with_default("band_1_enabled", 1.0),
+    with_default("band_2_freq", 200.0),
+    with_default("band_2_gain", 0.0),
+    with_default("band_2_q", 0.707),
+    with_default("band_2_enabled", 1.0),
+    with_default("band_3_freq", 400.0),
+    with_default("band_3_gain", 0.0),
+    with_default("band_3_q", 0.707),
+    with_default("band_3_enabled", 1.0),
+    with_default("band_4_freq", 800.0),
+    with_default("band_4_gain", 0.0),
+    with_default("band_4_q", 0.707),
+    with_default("band_4_enabled", 1.0),
+    with_default("band_5_freq", 1600.0),
+    with_default("band_5_gain", 0.0),
+    with_default("band_5_q", 0.707),
+    with_default("band_5_enabled", 1.0),
+    with_default("band_6_freq", 3200.0),
+    with_default("band_6_gain", 0.0),
+    with_default("band_6_q", 0.707),
+    with_default("band_6_enabled", 1.0),
+    with_default("band_7_freq", 6400.0),
+    with_default("band_7_gain", 0.0),
+    with_default("band_7_q", 0.707),
+    with_default("band_7_enabled", 1.0),
+    with_default("band_8_freq", 12800.0),
+    with_default("band_8_gain", 0.0),
+    with_default("band_8_q", 0.707),
+    with_default("band_8_enabled", 1.0),
+];
+
+const DELAY: &[ParamSpec] = &[
+    with_default("time_ms", 375.0),
+    with_default("feedback", 0.35),
+    with_default("dry_wet", 0.30),
+    with_default("ping_pong", 1.0),
+];
+
+const REVERB: &[ParamSpec] = &[
+    with_default("decay_time_sec", 2.2),
+    with_default("room_size", 0.65),
+    with_default("damping", 0.4),
+    with_default("dry_wet", 0.25),
+    with_default("stereo_width", 1.0),
+];
+
+const COMPRESSOR: &[ParamSpec] = &[
+    with_default("threshold_db", -18.0),
+    with_default("ratio", 4.0),
+    with_default("attack_ms", 15.0),
+    with_default("release_ms", 100.0),
+    with_default("makeup_gain_db", 2.0),
+];
+
+const LIMITER: &[ParamSpec] = &[
+    with_default("ceiling_db", -0.3),
+    with_default("gain_db", 0.0),
+    with_default("release_ms", 150.0),
+];
+
+const UTILITY: &[ParamSpec] = &[
+    with_default("gain_db", 0.0),
+    with_default("pan", 0.0),
+    with_default("width", 1.0),
+    with_default("mute", 0.0),
+];
+
+const OPERATOR: &[ParamSpec] = &[
+    with_default("osc1_waveform", 0.0),
+    with_default("osc1_level", 1.0),
+    with_default("osc1_coarse", 1.0),
+    with_default("osc2_waveform", 1.0),
+    with_default("osc2_level", 0.5),
+    with_default("osc2_coarse", 2.0),
+    with_default("filter_cutoff", 2400.0),
+    with_default("filter_resonance", 0.3),
+    with_default("attack_ms", 5.0),
+    with_default("decay_ms", 120.0),
+    with_default("sustain", 0.7),
+    with_default("release_ms", 300.0),
+    without_default("algorithm"),
+    without_default("feedback"),
+];
+
+const SIMPLER: &[ParamSpec] = &[
+    with_default("playback_mode", 0.0),
+    with_default("gain_db", 0.0),
+    with_default("attack_ms", 2.0),
+    with_default("decay_ms", 50.0),
+    with_default("sustain", 1.0),
+    with_default("release_ms", 100.0),
+    with_default("filter_cutoff", 20000.0),
+    without_default("start_pct"),
+    without_default("length_pct"),
+    without_default("crossfade_pct"),
+    without_default("filter_resonance"),
+];
+
+const DRUM_RACK: &[ParamSpec] = &[without_default("gain_db")];
+
+const SATURATOR: &[ParamSpec] = &[
+    with_default("drive_db", 6.0),
+    with_default("curve_type", 0.0),
+    with_default("output_db", -2.0),
+    with_default("dry_wet", 1.0),
+    with_default("tone", 0.5),
+];
+
+const AUTO_FILTER: &[ParamSpec] = &[
+    with_default("filter_type", 0.0),
+    with_default("cutoff", 1200.0),
+    with_default("resonance", 1.5),
+    with_default("lfo_rate", 1.0),
+    with_default("lfo_depth", 0.4),
+    with_default("envelope_amount", 0.3),
+];
+
+const CHORUS: &[ParamSpec] = &[
+    with_default("rate_hz", 1.2),
+    with_default("depth", 0.5),
+    with_default("feedback", 0.2),
+    with_default("dry_wet", 0.5),
+];
+
+const AUTO_PAN: &[ParamSpec] = &[
+    with_default("amount", 1.0),
+    with_default("rate_hz", 1.0),
+    with_default("phase_deg", 180.0),
+    with_default("shape", 0.0),
+    with_default("mode", 0.0),
+];
+
+const GATE: &[ParamSpec] = &[
+    with_default("threshold_db", -30.0),
+    with_default("return_db", 3.0),
+    with_default("attack_ms", 1.0),
+    with_default("hold_ms", 50.0),
+    with_default("release_ms", 100.0),
+    with_default("floor_db", -60.0),
+];
+
+const EQ_THREE: &[ParamSpec] = &[
+    with_default("low_gain_db", 0.0),
+    with_default("mid_gain_db", 0.0),
+    with_default("high_gain_db", 0.0),
+    with_default("low_freq", 250.0),
+    with_default("high_freq", 2500.0),
+    with_default("low_on", 1.0),
+    with_default("mid_on", 1.0),
+    with_default("high_on", 1.0),
+];
+
+const REDUX: &[ParamSpec] = &[
+    with_default("rate_factor", 1.0),
+    with_default("bits", 16.0),
+    with_default("jitter", 0.0),
+    with_default("dry_wet", 1.0),
+];
+
+/// The parameter table of a device kind. Kinds without parameters have an empty table.
+pub fn param_table(device_type: &DeviceType) -> &'static [ParamSpec] {
+    match device_type {
+        DeviceType::EqEight => EQ_EIGHT,
+        DeviceType::Delay => DELAY,
+        DeviceType::Reverb => REVERB,
+        DeviceType::Compressor => COMPRESSOR,
+        DeviceType::Limiter => LIMITER,
+        DeviceType::Utility => UTILITY,
+        DeviceType::Operator => OPERATOR,
+        DeviceType::Simpler => SIMPLER,
+        DeviceType::Saturator => SATURATOR,
+        DeviceType::AutoFilter => AUTO_FILTER,
+        DeviceType::Chorus => CHORUS,
+        DeviceType::AutoPan => AUTO_PAN,
+        DeviceType::Gate => GATE,
+        DeviceType::EqThree => EQ_THREE,
+        DeviceType::Redux => REDUX,
+        DeviceType::DrumRack => DRUM_RACK,
+        DeviceType::Custom(_) => &[],
+    }
+}
+
+/// A device on a track. Values are stored by parameter id. `get_param` and `set_param` take the
+/// names of M01, which are the adapter until the engine moves to ids (M05).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "DeviceRepr", into = "DeviceRepr")]
 pub struct Device {
     pub id: DeviceId,
     pub name: String,
     pub device_type: DeviceType,
     pub is_enabled: bool,
-    pub parameters: HashMap<String, f32>,
+    pub parameters: ParamValues,
 }
 
 impl Device {
     pub fn new(id: DeviceId, name: impl Into<String>, device_type: DeviceType) -> Self {
-        let mut parameters = HashMap::new();
-        match &device_type {
-            DeviceType::EqEight => {
-                // 8 bands: freq, gain, q
-                for i in 1..=8 {
-                    parameters.insert(format!("band_{}_freq", i), 100.0 * (2.0f32.powi(i - 1)));
-                    parameters.insert(format!("band_{}_gain", i), 0.0);
-                    parameters.insert(format!("band_{}_q", i), 0.707);
-                    parameters.insert(format!("band_{}_enabled", i), 1.0);
-                }
-            }
-            DeviceType::Delay => {
-                parameters.insert("time_ms".to_string(), 375.0); // 1/8th note at 120 BPM
-                parameters.insert("feedback".to_string(), 0.35);
-                parameters.insert("dry_wet".to_string(), 0.30);
-                parameters.insert("ping_pong".to_string(), 1.0);
-            }
-            DeviceType::Reverb => {
-                parameters.insert("decay_time_sec".to_string(), 2.2);
-                parameters.insert("room_size".to_string(), 0.65);
-                parameters.insert("damping".to_string(), 0.4);
-                parameters.insert("dry_wet".to_string(), 0.25);
-                parameters.insert("stereo_width".to_string(), 1.0);
-            }
-            DeviceType::Compressor => {
-                parameters.insert("threshold_db".to_string(), -18.0);
-                parameters.insert("ratio".to_string(), 4.0);
-                parameters.insert("attack_ms".to_string(), 15.0);
-                parameters.insert("release_ms".to_string(), 100.0);
-                parameters.insert("makeup_gain_db".to_string(), 2.0);
-            }
-            DeviceType::Limiter => {
-                parameters.insert("ceiling_db".to_string(), -0.3);
-                parameters.insert("gain_db".to_string(), 0.0);
-                parameters.insert("release_ms".to_string(), 150.0);
-            }
-            DeviceType::Utility => {
-                parameters.insert("gain_db".to_string(), 0.0);
-                parameters.insert("pan".to_string(), 0.0);
-                parameters.insert("width".to_string(), 1.0); // 1.0 = 100%
-                parameters.insert("mute".to_string(), 0.0);
-            }
-            DeviceType::Operator => {
-                parameters.insert("osc1_waveform".to_string(), 0.0); // 0=Sine, 1=Saw, 2=Square, 3=Triangle
-                parameters.insert("osc1_level".to_string(), 1.0);
-                parameters.insert("osc1_coarse".to_string(), 1.0);
-                parameters.insert("osc2_waveform".to_string(), 1.0); // Saw
-                parameters.insert("osc2_level".to_string(), 0.5);
-                parameters.insert("osc2_coarse".to_string(), 2.0);
-                parameters.insert("filter_cutoff".to_string(), 2400.0);
-                parameters.insert("filter_resonance".to_string(), 0.3);
-                parameters.insert("attack_ms".to_string(), 5.0);
-                parameters.insert("decay_ms".to_string(), 120.0);
-                parameters.insert("sustain".to_string(), 0.7);
-                parameters.insert("release_ms".to_string(), 300.0);
-            }
-            DeviceType::Simpler => {
-                parameters.insert("playback_mode".to_string(), 0.0); // 0=Classic, 1=1-Shot, 2=Slice
-                parameters.insert("gain_db".to_string(), 0.0);
-                parameters.insert("attack_ms".to_string(), 2.0);
-                parameters.insert("decay_ms".to_string(), 50.0);
-                parameters.insert("sustain".to_string(), 1.0);
-                parameters.insert("release_ms".to_string(), 100.0);
-                parameters.insert("filter_cutoff".to_string(), 20000.0);
-            }
-            DeviceType::Saturator => {
-                parameters.insert("drive_db".to_string(), 6.0);
-                parameters.insert("curve_type".to_string(), 0.0); // 0=Soft Sine, 1=Hard Clip, 2=Analog Warmth, 3=Foldback
-                parameters.insert("output_db".to_string(), -2.0);
-                parameters.insert("dry_wet".to_string(), 1.0);
-                parameters.insert("tone".to_string(), 0.5);
-            }
-            DeviceType::AutoFilter => {
-                parameters.insert("filter_type".to_string(), 0.0); // 0=LP, 1=HP, 2=BP, 3=Notch
-                parameters.insert("cutoff".to_string(), 1200.0);
-                parameters.insert("resonance".to_string(), 1.5);
-                parameters.insert("lfo_rate".to_string(), 1.0);
-                parameters.insert("lfo_depth".to_string(), 0.4);
-                parameters.insert("envelope_amount".to_string(), 0.3);
-            }
-            DeviceType::Chorus => {
-                parameters.insert("rate_hz".to_string(), 1.2);
-                parameters.insert("depth".to_string(), 0.5);
-                parameters.insert("feedback".to_string(), 0.2);
-                parameters.insert("dry_wet".to_string(), 0.5);
-            }
-            DeviceType::AutoPan => {
-                parameters.insert("amount".to_string(), 1.0);
-                parameters.insert("rate_hz".to_string(), 1.0);
-                parameters.insert("phase_deg".to_string(), 180.0);
-                parameters.insert("shape".to_string(), 0.0); // 0=Sine, 1=Tri
-                parameters.insert("mode".to_string(), 0.0); // 0=Panning, 1=Tremolo
-            }
-            DeviceType::Gate => {
-                parameters.insert("threshold_db".to_string(), -30.0);
-                parameters.insert("return_db".to_string(), 3.0);
-                parameters.insert("attack_ms".to_string(), 1.0);
-                parameters.insert("hold_ms".to_string(), 50.0);
-                parameters.insert("release_ms".to_string(), 100.0);
-                parameters.insert("floor_db".to_string(), -60.0);
-            }
-            DeviceType::EqThree => {
-                parameters.insert("low_gain_db".to_string(), 0.0);
-                parameters.insert("mid_gain_db".to_string(), 0.0);
-                parameters.insert("high_gain_db".to_string(), 0.0);
-                parameters.insert("low_freq".to_string(), 250.0);
-                parameters.insert("high_freq".to_string(), 2500.0);
-                parameters.insert("low_on".to_string(), 1.0);
-                parameters.insert("mid_on".to_string(), 1.0);
-                parameters.insert("high_on".to_string(), 1.0);
-            }
-            DeviceType::Redux => {
-                parameters.insert("rate_factor".to_string(), 1.0); // 1.0 to 32.0 downsample
-                parameters.insert("bits".to_string(), 16.0); // 1.0 to 16.0 bits
-                parameters.insert("jitter".to_string(), 0.0);
-                parameters.insert("dry_wet".to_string(), 1.0);
-            }
-            _ => {}
-        }
-
+        let parameters = ParamValues::from_defaults(param_table(&device_type));
         Self {
             id,
             name: name.into(),
@@ -163,11 +250,72 @@ impl Device {
         }
     }
 
-    pub fn get_param(&self, key: &str) -> f32 {
-        self.parameters.get(key).copied().unwrap_or(0.0)
+    /// The stored values by parameter name, in table order.
+    pub fn named_params(&self) -> impl Iterator<Item = (&'static str, f32)> + '_ {
+        let table = param_table(&self.device_type);
+        self.parameters.iter().filter_map(move |(id, value)| {
+            table.get(usize::from(id.0)).map(|spec| (spec.name, value))
+        })
     }
 
-    pub fn set_param(&mut self, key: impl Into<String>, value: f32) {
-        self.parameters.insert(key.into(), value);
+    /// The value of a parameter by name, or `None` when the device has no value for it.
+    pub fn param(&self, name: &str) -> Option<f32> {
+        let table = param_table(&self.device_type);
+        param_id(table, name).and_then(|id| self.parameters.get(id))
+    }
+
+    /// The value of a parameter by name, or 0.0 when the device has no value for it.
+    pub fn get_param(&self, name: &str) -> f32 {
+        self.param(name).unwrap_or(0.0)
+    }
+
+    /// Sets a parameter by name. A name outside the device kind's table is ignored.
+    pub fn set_param(&mut self, name: impl AsRef<str>, value: f32) {
+        let table = param_table(&self.device_type);
+        if let Some(id) = param_id(table, name.as_ref()) {
+            self.parameters.set(id, value);
+        }
+    }
+}
+
+/// The exported shape of a device: parameters by name, as M01 wrote them.
+#[derive(Serialize, Deserialize)]
+struct DeviceRepr {
+    id: DeviceId,
+    name: String,
+    device_type: DeviceType,
+    is_enabled: bool,
+    parameters: BTreeMap<String, f32>,
+}
+
+impl From<Device> for DeviceRepr {
+    fn from(device: Device) -> Self {
+        let parameters = device
+            .named_params()
+            .map(|(name, value)| (name.to_string(), value))
+            .collect();
+        Self {
+            id: device.id,
+            name: device.name,
+            device_type: device.device_type,
+            is_enabled: device.is_enabled,
+            parameters,
+        }
+    }
+}
+
+impl From<DeviceRepr> for Device {
+    fn from(repr: DeviceRepr) -> Self {
+        let mut device = Self {
+            id: repr.id,
+            name: repr.name,
+            device_type: repr.device_type,
+            is_enabled: repr.is_enabled,
+            parameters: ParamValues::default(),
+        };
+        for (name, value) in &repr.parameters {
+            device.set_param(name, *value);
+        }
+        device
     }
 }
