@@ -10,6 +10,7 @@ use crate::commands::note::AddNote;
 use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
 use crate::preferences::{AudioPreferences, MidiPreferences, Preferences, PreferencesError};
+use crate::transport::TransportControl;
 use livecraft_engine::driver::{
     AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, DriverStatus, Latency,
     NullDriver, list_devices,
@@ -108,6 +109,8 @@ pub struct Session {
     driver_factory: DriverFactory,
     /// Where the preferences are saved after an audio change, or `None` when there is no file.
     prefs_path: Option<PathBuf>,
+    /// The insert marker and the stop position that Play, Continue, and Stop use (manual 6.3).
+    transport: TransportControl,
     /// Why the audio output is not the one the preferences name, for the status bar.
     audio_error: Option<String>,
     /// When to try the preferred output again, while the Set plays on the silent driver.
@@ -151,6 +154,7 @@ impl Session {
             audio_error: None,
             audio_retry: None,
             carried: None,
+            transport: TransportControl::default(),
         }
     }
 
@@ -480,43 +484,116 @@ impl Session {
 
     /// Starts playback, or stops it, and records the state in the Set's transport. Stopping also
     /// stops the clips, as the Live transport does.
+    /// Plays from the insert marker, or stops (manual 6.3). The space bar does this.
     pub fn set_playing(&mut self, playing: bool) {
-        self.project.transport.is_playing = playing;
-        self.send(EngineCommand::SetPlaying(playing));
-        if !playing {
-            self.send(EngineCommand::StopAll);
+        if playing {
+            self.play();
+        } else {
+            self.stop();
         }
     }
 
-    /// Starts or stops recording. Recording is transport state, so it is not an undo step.
-    pub fn set_recording(&mut self, recording: bool) {
-        self.project.transport.is_recording = recording;
+    /// The Play button: starts playback from the insert marker (manual 6.3, page 169).
+    pub fn play(&mut self) {
+        let start = self.transport.play();
+        self.start_at(start);
     }
 
-    /// Moves the playhead, in beats, in the Set and in the engine.
+    /// Shift and the space bar: continues playback from where it last stopped (manual 6.3, page 169).
+    pub fn continue_play(&mut self) {
+        let start = self.transport.continue_play();
+        self.start_at(start);
+    }
+
+    fn start_at(&mut self, start: f64) {
+        self.project.transport.is_playing = true;
+        self.project.transport.playhead_beats = start;
+        self.send(EngineCommand::SetPlayhead(start));
+        self.send(EngineCommand::SetPlaying(true));
+    }
+
+    /// The Stop button. Stopping stops the Session clips too. A second press while stopped returns the
+    /// insert marker to the start, as a double-click does (manual 6.3, page 169).
+    pub fn stop(&mut self) {
+        let position = self.status().playhead_beats;
+        let home = self.transport.stop(position);
+        self.project.transport.is_playing = false;
+        self.send(EngineCommand::SetPlaying(false));
+        if home {
+            self.project.transport.playhead_beats = 0.0;
+            self.send(EngineCommand::SetPlayhead(0.0));
+        }
+    }
+
+    /// The Arrangement Record button (manual 19.3.1). Recording is transport state, so it is not an
+    /// undo step. With a count-in set, the next start counts in first (manual 19.6).
+    pub fn set_recording(&mut self, recording: bool) {
+        self.project.transport.is_recording = recording;
+        self.send(EngineCommand::SetRecording(recording));
+    }
+
+    /// Moves the insert marker and the playhead, in beats, in the Set and in the engine.
     pub fn set_playhead(&mut self, beats: f64) {
+        self.transport.set_insert_marker(beats);
         self.project.transport.playhead_beats = beats;
         self.send(EngineCommand::SetPlayhead(beats));
     }
 
-    pub fn trigger_clip(&mut self, track: TrackId, slot: usize) {
-        self.send(EngineCommand::TriggerClip { track, slot });
-        self.send(EngineCommand::SetPlaying(true));
+    /// Jumps to a song position at the next global quantization step while playing, as a locator does
+    /// (manual 6.4, page 171), and moves the insert marker there.
+    pub fn jump_to(&mut self, beats: f64) {
+        self.transport.set_insert_marker(beats);
+        self.project.transport.playhead_beats = beats;
+        self.send(EngineCommand::JumpTo(beats));
     }
 
+    /// Presses a clip's launch button at full velocity. The transport starts if it is stopped.
+    pub fn trigger_clip(&mut self, track: TrackId, slot: usize) {
+        self.press_clip(track, slot, 127);
+    }
+
+    /// Presses a clip's launch button with a MIDI velocity (manual 16.2 and 16.5).
+    pub fn press_clip(&mut self, track: TrackId, slot: usize, velocity: u8) {
+        self.transport.playing = true;
+        self.project.transport.is_playing = true;
+        self.send(EngineCommand::PressClip {
+            track,
+            slot,
+            velocity,
+        });
+    }
+
+    /// Releases a clip's launch button, which stops a Gate clip and ends a Repeat (manual 16.2).
+    pub fn release_clip(&mut self, track: TrackId, slot: usize) {
+        self.send(EngineCommand::ReleaseClip { track, slot });
+    }
+
+    /// Jumps within a track's playing clip by the global quantization period (manual 16.6).
+    pub fn nudge_clip(&mut self, track: TrackId, forward: bool) {
+        self.send(EngineCommand::NudgeClip { track, forward });
+    }
+
+    /// A track's Clip Stop button, at the next global quantization step.
     pub fn stop_clip(&mut self, track: TrackId) {
         self.send(EngineCommand::StopClip { track });
     }
 
+    /// Launches a scene. The transport starts if it is stopped.
     pub fn trigger_scene(&mut self, scene: SceneId) {
+        self.transport.playing = true;
+        self.project.transport.is_playing = true;
         self.send(EngineCommand::TriggerScene { scene });
-        self.send(EngineCommand::SetPlaying(true));
     }
 
-    /// Stops every clip and playback, and returns the playhead to the start.
+    /// The Stop All Clips button: stops every Session clip at the next global quantization step. The
+    /// transport keeps running.
     pub fn stop_all(&mut self) {
-        self.set_playing(false);
-        self.set_playhead(0.0);
+        self.send(EngineCommand::StopAll);
+    }
+
+    /// The Back to Arrangement button (manual 3.7, page 42).
+    pub fn back_to_arrangement(&mut self) {
+        self.send(EngineCommand::BackToArrangement);
     }
 }
 

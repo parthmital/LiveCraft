@@ -11,6 +11,7 @@
 use crate::clip::ClipLane;
 use crate::delay::DelayLine;
 use crate::snapshot::TrackMeter;
+use crate::transport::Timeline;
 use livecraft_devices::{
     AudioIo, DeviceProcessor, EventList, EventSink, NoteEvent, ProcessContext,
 };
@@ -271,11 +272,12 @@ impl Node {
 
     /// Fills this block's note events and audio from the clips the track plays. When the track sends its
     /// notes to an external port, the notes its clips schedule are copied to `midi_out_notes`.
-    fn schedule_clips(&mut self, ctx: &ProcessContext) {
+    fn schedule_clips(&mut self, ctx: &ProcessContext, clock: f64) {
         let frames = ctx.frames;
         let before = self.events.len();
         self.clips.schedule(
             ctx,
+            clock,
             &mut self.events,
             &mut self.left[..frames],
             &mut self.right[..frames],
@@ -321,13 +323,15 @@ impl Node {
     }
 }
 
-/// The compiled graph: nodes in topological order, and the Main output level.
+/// The compiled graph: nodes in topological order, the song timeline, and the Main output level.
 pub struct CompiledGraph {
     nodes: Vec<Node>,
     track_count: usize,
     return_count: usize,
-    /// The Set's scenes, in row order, so a scene can be triggered by its row.
-    pub scenes: Vec<SceneId>,
+    /// The tempo and time signature maps, the scenes in row order, and the transport settings.
+    pub timeline: Timeline,
+    /// The launch clock at the first frame of the block being rendered (`launch`). The engine sets it.
+    pub clock: f64,
     /// The level of the output after the Main volume, which is what the device writes out.
     pub output_meter: TrackMeter,
     transfers: Vec<Transfer>,
@@ -381,7 +385,7 @@ impl CompiledGraph {
         nodes: Vec<Node>,
         track_count: usize,
         return_count: usize,
-        scenes: Vec<SceneId>,
+        timeline: Timeline,
         transfers: Vec<Transfer>,
         note_frequencies: [f32; 128],
     ) -> Self {
@@ -389,7 +393,8 @@ impl CompiledGraph {
             nodes,
             track_count,
             return_count,
-            scenes,
+            timeline,
+            clock: 0.0,
             output_meter: TrackMeter::default(),
             transfers,
             note_frequencies,
@@ -418,6 +423,15 @@ impl CompiledGraph {
     /// does not allocate, and the processors the new graph replaces end up in `previous` to be freed
     /// off the audio thread.
     pub fn adopt_state(&mut self, previous: &mut CompiledGraph) {
+        let (tracks, old_tracks) = (self.track_count, previous.track_count);
+        for node in &mut self.nodes[..tracks] {
+            if let Some(old) = previous.nodes[..old_tracks]
+                .iter_mut()
+                .find(|old| old.track == node.track)
+            {
+                node.clips.adopt(&mut old.clips);
+            }
+        }
         for transfer in &self.transfers {
             let source = previous
                 .nodes
@@ -447,18 +461,27 @@ impl CompiledGraph {
         self.nodes.iter_mut().find(|node| node.track == track)
     }
 
-    /// Launches a session slot on a track (its clip replaces the one playing).
-    pub fn launch_clip(&mut self, track: TrackId, slot: usize) {
-        if let Some(node) = self.node_mut(track) {
-            node.clips.launch(slot);
-        }
+    /// The track nodes, in track order.
+    pub fn tracks_mut(&mut self) -> &mut [Node] {
+        &mut self.nodes[..self.track_count]
     }
 
-    /// Stops the clip a track is playing.
-    pub fn stop_clip(&mut self, track: TrackId) {
-        if let Some(node) = self.node_mut(track) {
-            node.clips.stop();
-        }
+    /// How many nodes are tracks; they come first.
+    pub fn track_count(&self) -> usize {
+        self.track_count
+    }
+
+    /// The timeline, and the track nodes to change while reading it.
+    pub fn split_timeline(&mut self) -> (&Timeline, &mut [Node]) {
+        (&self.timeline, &mut self.nodes[..self.track_count])
+    }
+
+    /// The row of a scene, if the Set has it.
+    pub fn scene_row(&self, scene: SceneId) -> Option<usize> {
+        self.timeline
+            .scenes
+            .iter()
+            .position(|settings| settings.id == scene)
     }
 
     /// The first beat after `position` at which a track starts or stops an arrangement clip.
@@ -467,18 +490,6 @@ impl CompiledGraph {
             .iter()
             .filter_map(|node| node.clips.next_boundary(position))
             .reduce(f64::min)
-    }
-
-    /// Launches the slot in the scene's row on every track that has a clip there.
-    pub fn launch_scene(&mut self, scene: SceneId) {
-        let Some(row) = self.scenes.iter().position(|id| *id == scene) else {
-            return;
-        };
-        for node in &mut self.nodes[..self.track_count] {
-            if matches!(node.clips.slots.get(row), Some(Some(_))) {
-                node.clips.launch(row);
-            }
-        }
     }
 
     /// Sets a parameter of a device on a track. The stored values follow, so a graph swap keeps the
@@ -542,13 +553,6 @@ impl CompiledGraph {
             .any(|node| node.devices.iter().any(|slot| !slot.ramps.is_empty()))
     }
 
-    /// Stops the clips on every track.
-    pub fn stop_all(&mut self) {
-        for node in &mut self.nodes[..self.track_count] {
-            node.clips.stop();
-        }
-    }
-
     /// The left and right output of the last rendered block.
     pub fn output(&self, frames: usize) -> (&[f32], &[f32]) {
         let main = &self.nodes[self.nodes.len() - 1];
@@ -567,6 +571,7 @@ impl CompiledGraph {
         let any_solo = self.nodes[..self.track_count]
             .iter()
             .any(|node| node.mixer.is_soloed);
+        let clock = self.clock;
         let CompiledGraph {
             nodes,
             track_count,
@@ -584,7 +589,7 @@ impl CompiledGraph {
 
         for track in tracks.iter_mut() {
             track.clear(frames);
-            track.schedule_clips(&ProcessContext { frames, ..*ctx });
+            track.schedule_clips(&ProcessContext { frames, ..*ctx }, clock);
             track.monitor_input(&input, frames);
             track.run_devices(&ProcessContext { frames, ..*ctx });
             track.delay_input(frames);

@@ -1,5 +1,6 @@
 use crate::device::{Device, DeviceType};
 use crate::ids::{IdAllocator, SceneId, TrackId};
+use crate::launch::{Metronome, Quantization};
 use crate::scale::ScaleConfig;
 use crate::scene::Scene;
 use crate::track::{Track, TrackType};
@@ -25,6 +26,52 @@ pub struct Transport {
     pub loop_start_beats: f64,
     pub loop_length_beats: f64,
     pub metronome_enabled: bool,
+    /// The Control Bar's Global Quantization (manual 16.4, page 363). Never `Global`.
+    #[serde(default = "one_bar", skip_serializing_if = "is_one_bar")]
+    pub global_quantization: Quantization,
+    /// The Punch-In and Punch-Out switches. The punch points are the Arrangement Loop's start and end
+    /// (manual 19.3.1, page 414).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub punch_in: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub punch_out: bool,
+    /// The Enable Follow Actions Globally button (manual 16.7, page 368).
+    #[serde(default = "enabled", skip_serializing_if = "is_true")]
+    pub follow_actions_enabled: bool,
+    /// The seed of the Follow Action chances, so a render of the Set is the same every time.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub follow_seed: u64,
+    /// The Metronome Settings (manual 19.4.1).
+    #[serde(default, skip_serializing_if = "is_default_metronome")]
+    pub metronome: Metronome,
+}
+
+fn one_bar() -> Quantization {
+    Quantization::Bars(1)
+}
+
+fn is_one_bar(value: &Quantization) -> bool {
+    *value == one_bar()
+}
+
+fn enabled() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
+}
+
+fn is_default_metronome(value: &Metronome) -> bool {
+    *value == Metronome::default()
 }
 
 impl Transport {
@@ -95,6 +142,12 @@ impl Default for Transport {
             loop_start_beats: 0.0,
             loop_length_beats: 16.0,
             metronome_enabled: false,
+            global_quantization: one_bar(),
+            punch_in: false,
+            punch_out: false,
+            follow_actions_enabled: true,
+            follow_seed: 0,
+            metronome: Metronome::default(),
         }
     }
 }

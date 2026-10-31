@@ -1,6 +1,7 @@
 use crate::automation::AutomationLane;
 use crate::color::ABLETON_PALETTE;
 use crate::ids::ClipId;
+use crate::launch::{ClipLaunch, FollowActions};
 use crate::note::MidiClipData;
 use serde::{Deserialize, Serialize};
 
@@ -53,6 +54,17 @@ pub struct Clip {
     pub payload: ClipPayload,
     #[serde(default)]
     pub automation_lanes: Vec<AutomationLane>,
+    /// How the clip launches from the Session View (manual 16.1 to 16.5).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub launch: ClipLaunch,
+    /// What happens after the clip plays (manual 16.7).
+    #[serde(default, skip_serializing_if = "is_default")]
+    pub follow: FollowActions,
+}
+
+/// True for a value equal to its default, which the JSON export leaves out.
+fn is_default<T: Default + PartialEq>(value: &T) -> bool {
+    *value == T::default()
 }
 
 impl Clip {
@@ -69,6 +81,8 @@ impl Clip {
             end_marker_beat: length_beats,
             payload: ClipPayload::Midi(MidiClipData { notes: Vec::new() }),
             automation_lanes: Vec::new(),
+            launch: ClipLaunch::default(),
+            follow: FollowActions::default(),
         }
     }
 
@@ -100,6 +114,8 @@ impl Clip {
                 pitch_cents: 0,
             }),
             automation_lanes: Vec::new(),
+            launch: ClipLaunch::default(),
+            follow: FollowActions::default(),
         }
     }
 }

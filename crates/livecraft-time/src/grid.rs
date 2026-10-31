@@ -103,6 +103,30 @@ pub fn quantize_launch(now: Beats, q: LaunchQuantization, sig: &TimeSignatureMap
     }
 }
 
+/// The length in beats of one step of `grid` at `at`: `n` bars of the time signature there, or the note
+/// value. None for `Grid::None`, which has no steps. Clip nudging and Repeat launching move by it
+/// (manual 16.2 and 16.6).
+pub fn grid_period(at: Beats, grid: Grid, sig: &TimeSignatureMap) -> Option<f64> {
+    match grid {
+        Grid::None | Grid::Bars(0) => None,
+        Grid::Bars(bars) => {
+            let (numerator, denominator) = sig.signature_at(at);
+            Some(f64::from(bars) * 4.0 * f64::from(numerator) / f64::from(denominator))
+        }
+        Grid::Fraction { num, den, triplet } => {
+            if num == 0 || den == 0 {
+                return None;
+            }
+            let straight = 4.0 * f64::from(num) / f64::from(den);
+            Some(if triplet {
+                straight * 2.0 / 3.0
+            } else {
+                straight
+            })
+        }
+    }
+}
+
 fn next_grid_line(now: Beats, grid: Grid, sig: &TimeSignatureMap) -> Beats {
     match grid {
         Grid::None => now,
@@ -147,6 +171,19 @@ mod tests {
 
     fn four_four() -> TimeSignatureMap {
         TimeSignatureMap::constant(4, 4).unwrap()
+    }
+
+    #[test]
+    fn a_grid_period_is_its_bars_in_the_time_signature_or_its_note_value() {
+        let sig = TimeSignatureMap::constant(3, 4).unwrap();
+        assert_eq!(grid_period(Beats(0.0), Grid::Bars(2), &sig), Some(6.0));
+        assert_eq!(
+            grid_period(Beats(0.0), fraction(1, 8, false), &sig),
+            Some(0.5)
+        );
+        let triplet = grid_period(Beats(0.0), fraction(1, 4, true), &sig).unwrap();
+        assert!((triplet - 2.0 / 3.0).abs() < 1e-12);
+        assert_eq!(grid_period(Beats(0.0), Grid::None, &sig), None);
     }
 
     fn fraction(num: u32, den: u32, triplet: bool) -> Grid {

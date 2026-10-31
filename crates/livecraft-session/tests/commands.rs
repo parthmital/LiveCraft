@@ -324,6 +324,14 @@ fn every_registered_command_round_trips_its_arguments() {
         ("clip.move", json!({ "clip": 9, "track": 1, "slot": 2 })),
         ("clip.rename", json!({ "clip": 9, "name": "Verse" })),
         (
+            "clip.set_follow_actions",
+            json!({ "clip": 9, "follow": { "enabled": true, "action_a": "Next", "action_b": { "Jump": 2 }, "chance_a": 1.0, "chance_b": 0.5, "linked": false, "multiplier": 1, "time_beats": 4.0 } }),
+        ),
+        (
+            "clip.set_launch",
+            json!({ "clip": 9, "launch": { "mode": "Gate", "quantization": { "Bars": 2 }, "legato": true, "velocity_amount": 0.5 } }),
+        ),
+        (
             "clip.set_loop",
             json!({ "clip": 9, "loop_start_beat": 0.0, "loop_end_beat": 4.0, "is_looping": true }),
         ),
@@ -364,6 +372,11 @@ fn every_registered_command_round_trips_its_arguments() {
         ("scene.create", json!({ "name": "9" })),
         ("scene.delete", json!({ "scene": 3 })),
         ("scene.duplicate", json!({ "scene": 3 })),
+        ("scene.set_tempo", json!({ "scene": 3, "tempo": 98.0 })),
+        (
+            "scene.set_time_signature",
+            json!({ "scene": 3, "time_signature": [7, 8] }),
+        ),
         ("track.create_audio", json!({ "name": "5-Audio" })),
         ("track.create_group", json!({ "name": "Drums" })),
         ("track.create_midi", json!({ "name": "6-MIDI" })),
@@ -388,6 +401,7 @@ fn every_registered_command_round_trips_its_arguments() {
             json!({ "track": 1, "is_soloed": false }),
         ),
         ("track.set_volume", json!({ "track": 1, "volume_db": -6.0 })),
+        ("transport.set_follow_actions", json!({ "enabled": false })),
         (
             "transport.set_loop",
             json!({ "loop_enabled": true, "loop_start_beats": 4.0, "loop_length_beats": 8.0 }),
@@ -395,6 +409,18 @@ fn every_registered_command_round_trips_its_arguments() {
         (
             "transport.set_metronome",
             json!({ "metronome_enabled": true }),
+        ),
+        (
+            "transport.set_metronome_settings",
+            json!({ "metronome": { "count_in_bars": 2, "rhythm": "Auto", "sound": "Wood", "only_while_recording": true, "volume_db": -6.0 } }),
+        ),
+        (
+            "transport.set_punch",
+            json!({ "punch_in": true, "punch_out": false }),
+        ),
+        (
+            "transport.set_quantization",
+            json!({ "quantization": { "Note": { "num": 1, "den": 16, "triplet": false } } }),
         ),
         ("transport.set_tempo", json!({ "bpm": 140.0 })),
         (

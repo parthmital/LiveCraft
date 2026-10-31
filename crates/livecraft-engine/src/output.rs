@@ -7,7 +7,7 @@
 
 use crate::compiler::{GraphCompiler, ProcessorFactory};
 use crate::driver::{AudioDriver, CpalDriver, DriverConfig, DriverStatus, Latency};
-use crate::executor::{Engine, EngineCommand, EngineHandle};
+use crate::executor::{Engine, EngineHandle};
 use crate::midi_io::{MidiInputs, MidiOutputs, MidiPorts};
 use basedrop::Collector;
 use livecraft_devices::create_device_processor;
@@ -100,7 +100,7 @@ impl Playback {
         let mut compiler = GraphCompiler::with_factory(sample_rate, collector.handle(), factory);
         let graph = compiler.compile(project);
         let (engine, handle) = Engine::start(graph, sample_rate, collector)?;
-        let mut playback = Self {
+        let playback = Self {
             driver: None,
             _midi_inputs: None,
             _midi_outputs: None,
@@ -108,9 +108,6 @@ impl Playback {
             compiler,
             handle,
         };
-        playback
-            .handle
-            .send(EngineCommand::SetTempo(project.transport.bpm()))?;
         Ok((playback, engine))
     }
 }

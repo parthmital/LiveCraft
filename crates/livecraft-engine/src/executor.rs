@@ -6,16 +6,20 @@
 //! graphs the audio thread replaces flow to the collector thread, which frees them. The audio thread
 //! applies commands and graph swaps at the start of each driver callback and never allocates.
 
+use crate::clip::PlayableClip;
 use crate::collector;
 use crate::compiled::{CompiledGraph, InputBlock, MAX_BLOCK, MAX_NOTE_EVENTS, Node, RAMP_STEP};
+use crate::launch::{Fired, FollowTarget, Pcg32, follow_target, pick_action};
 use crate::midi::{
     HostClock, MidiMessage, MidiOutEvent, note_event, note_out_event, period_us, sample_offset,
 };
 use crate::snapshot::{ClipState, EngineSnapshot, MAX_NODES, Transport, cpu_load};
+use crate::transport::{MetronomeVoice, Timeline, TransportSettings};
 use livecraft_devices::{EventList, ProcessContext};
 use livecraft_model::ids::{DeviceId, SceneId, TrackId};
+use livecraft_model::model::Quantization;
 use livecraft_model::param::ParamId;
-use livecraft_time::beats_per_sample;
+use livecraft_time::{Beats, LaunchQuantization, TimeSignatureMap, beats_per_sample, grid_period};
 use std::time::Instant;
 
 /// Capacity of the command queue, in commands.
@@ -29,7 +33,11 @@ pub const EVENT_CAPACITY: usize = 256;
 /// next driver callback.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EngineCommand {
+    /// A tempo set by hand while playing, as the Control Bar's tempo field does when the Set has tempo
+    /// changes: the tempo map is not followed until Back to Arrangement.
     SetTempo(f32),
+    /// The Set's one tempo changed. The engine's tempo map takes it in place.
+    SetSongTempo(f32),
     SetPlaying(bool),
     SetPlayhead(f64),
     SetTrackVolume {
@@ -53,11 +61,37 @@ pub enum EngineCommand {
         send: usize,
         amount: f32,
     },
-    /// Launches a session slot on a track.
+    /// Presses the launch button of a Session slot at full velocity (manual 16.2). The clip starts at
+    /// its quantized launch time, or at once when the transport is stopped, which starts it.
     TriggerClip {
         track: TrackId,
         slot: usize,
     },
+    /// Presses a launch button with a MIDI velocity (manual 16.5).
+    PressClip {
+        track: TrackId,
+        slot: usize,
+        velocity: u8,
+    },
+    /// Releases a launch button, which Gate and Repeat modes act on (manual 16.2).
+    ReleaseClip {
+        track: TrackId,
+        slot: usize,
+    },
+    /// Jumps within the playing clip by the global quantization period (manual 16.6).
+    NudgeClip {
+        track: TrackId,
+        forward: bool,
+    },
+    /// Stops every Session clip and lets the tracks play the Arrangement again (manual 3.7, page 42).
+    BackToArrangement,
+    /// Moves the song position to a beat, at the next global quantization step while playing, as a
+    /// locator does (manual 6.4, page 171).
+    JumpTo(f64),
+    /// The Control Bar settings: global quantization, loop, punch, Follow Actions, and metronome.
+    SetTransport(TransportSettings),
+    /// The Arrangement Record button (manual 19.3.1). With a count-in, the next start counts in first.
+    SetRecording(bool),
     StopClip {
         track: TrackId,
     },
@@ -177,6 +211,29 @@ pub struct Engine {
     midi_out: Option<MidiOutCapture>,
     /// The clock the buffers start on. `set_midi_input` replaces it with the MIDI input's clock.
     clock: HostClock,
+    /// The launch clock minus the song position (`launch`). It changes only when the song position jumps,
+    /// so launched clips keep their sync through loops and jumps.
+    clock_offset: f64,
+    /// True after a tempo change by hand or by a scene, until Back to Arrangement: the tempo map is not
+    /// followed meanwhile.
+    tempo_override: bool,
+    /// The scene whose time signature replaced the Set's, after it launched.
+    scene_signature: Option<usize>,
+    settings: TransportSettings,
+    /// Picks Follow Actions. It is seeded from the Set, so a render repeats.
+    rng: Pcg32,
+    /// A launched scene's tempo and signature, waiting for the scene's launch time on the launch clock.
+    pending_scene: Option<(f64, usize)>,
+    /// A song position jump waiting for its launch clock time: (time, target beat).
+    pending_jump: Option<(f64, f64)>,
+    /// The song position at the start of the last segment, to see the Arrangement Loop's end crossed.
+    last_song: f64,
+    recording: bool,
+    /// The song position where the count-in ends and recording starts (manual 19.6).
+    count_in_end: Option<f64>,
+    metronome: MetronomeVoice,
+    click_left: Box<[f32]>,
+    click_right: Box<[f32]>,
 }
 
 /// The external input the driver captures: the samples its input stream pushed, and the block being
@@ -246,6 +303,9 @@ impl Engine {
         }
         let (snapshot_tx, snapshot_rx) = triple_buffer::triple_buffer(&EngineSnapshot::default());
         collector::spawn(retired_rx, shared)?;
+        let settings = graph.timeline.transport;
+        let rng = Pcg32::new(graph.timeline.follow_seed);
+        let bpm = graph.timeline.tempo.bpm_at(Beats(0.0)) as f32;
         let engine = Engine {
             graph: Box::new(graph),
             sample_rate,
@@ -253,7 +313,7 @@ impl Engine {
             graphs: graph_rx,
             retired: retired_tx,
             events: event_tx,
-            bpm: 120.0,
+            bpm,
             playing: false,
             origin_beats: 0.0,
             origin_frame: 0,
@@ -264,6 +324,19 @@ impl Engine {
             midi: None,
             midi_out: None,
             clock: HostClock::start(),
+            clock_offset: 0.0,
+            tempo_override: false,
+            scene_signature: None,
+            settings,
+            rng,
+            pending_scene: None,
+            pending_jump: None,
+            last_song: 0.0,
+            recording: false,
+            count_in_end: None,
+            metronome: MetronomeVoice::default(),
+            click_left: vec![0.0; MAX_BLOCK].into_boxed_slice(),
+            click_right: vec![0.0; MAX_BLOCK].into_boxed_slice(),
         };
         let handle = EngineHandle {
             commands: command_tx,
@@ -331,26 +404,34 @@ impl Engine {
         let mut start = 0;
         while start < frames {
             self.apply_due_params();
+            self.advance_transport();
+            self.fire_launches();
             let block = self.segment_len(frames - start);
             self.push_midi_notes(start, block);
+            let song = self.playhead_at(self.frame);
+            let dt = self.beats_per_frame();
+            let counting_in = self.count_in_end.is_some();
             let context = ProcessContext {
                 sample_rate: self.sample_rate,
                 frames: block,
                 bpm: self.bpm,
-                playhead_beats: self.playhead_at(self.frame),
-                beats_per_frame: self.beats_per_frame(),
+                playhead_beats: song,
+                // During a count-in the clips stay silent, as when the transport is stopped.
+                beats_per_frame: if counting_in { 0.0 } else { dt },
             };
             let input = self
                 .input
                 .as_mut()
                 .map_or(InputBlock::SILENT, |capture| capture.fill(block));
+            self.graph.clock = song + self.clock_offset;
             self.graph.render_with_input(&context, input);
             self.push_midi_out();
+            self.render_metronome(song, dt, block);
             let (left, right) = self.graph.output(block);
             let samples = &mut out[start * channels..(start + block) * channels];
             for (frame, chunk) in samples.chunks_exact_mut(channels).enumerate() {
-                let l = sanitize_output_sample(left[frame]);
-                let r = sanitize_output_sample(right[frame]);
+                let l = sanitize_output_sample(left[frame] + self.click_left[frame]);
+                let r = sanitize_output_sample(right[frame] + self.click_right[frame]);
                 if channels == 1 {
                     chunk[0] = (l + r) * 0.5;
                 } else {
@@ -359,6 +440,7 @@ impl Engine {
                     chunk[2..].fill(0.0);
                 }
             }
+            self.last_song = song;
             self.frame += block as u64;
             start += block;
         }
@@ -432,17 +514,24 @@ impl Engine {
     fn publish(&mut self, frames: usize, elapsed_seconds: f32, anchor: (u64, u64)) {
         let playhead_beats = self.playhead_at(self.frame);
         let snapshot = self.snapshots.input_buffer_mut();
+        let tracks = self.graph.track_count();
         snapshot.transport = Transport {
             playing: self.playing,
             playhead_beats,
             bpm: self.bpm,
+            recording: self.recording,
+            counting_in: self.count_in_end.is_some(),
+            back_to_arrangement: self.graph.nodes()[..tracks]
+                .iter()
+                .any(|node| node.clips.launcher.left_arrangement),
         };
         let nodes = self.graph.nodes();
         snapshot.node_count = nodes.len().min(MAX_NODES);
         for (out, node) in snapshot.nodes.iter_mut().zip(nodes) {
             out.meter = node.meter;
             out.clip = ClipState {
-                active_slot: node.clips.active_slot,
+                active_slot: node.clips.active_slot(),
+                queued_slot: node.clips.launcher.queued_slot(),
                 playing: node.clips.playing,
             };
         }
@@ -466,6 +555,14 @@ impl Engine {
         }
         if let Ok(mut next) = self.graphs.pop() {
             next.adopt_state(&mut self.graph);
+            next.clock = self.graph.clock;
+            self.settings = next.timeline.transport;
+            if self
+                .scene_signature
+                .is_some_and(|row| row >= next.timeline.scenes.len())
+            {
+                self.scene_signature = None;
+            }
             let previous = std::mem::replace(&mut self.graph, next);
             // Room was checked above, so the push cannot fail and nothing is freed here.
             let _ = self.retired.push(previous);
@@ -479,15 +576,40 @@ impl Engine {
             EngineCommand::SetTempo(bpm) => {
                 self.restart_playhead();
                 self.bpm = bpm;
+                self.tempo_override = true;
             }
-            EngineCommand::SetPlaying(playing) => {
-                self.restart_playhead();
-                self.playing = playing;
+            EngineCommand::SetSongTempo(bpm) => {
+                if self.graph.timeline.tempo.set_constant_bpm(f64::from(bpm))
+                    && !self.tempo_override
+                {
+                    self.restart_playhead();
+                    self.bpm = bpm;
+                } else if !self.graph.timeline.tempo.is_constant() {
+                    self.restart_playhead();
+                    self.bpm = bpm;
+                    self.tempo_override = true;
+                }
             }
-            EngineCommand::SetPlayhead(beats) => {
-                self.origin_beats = beats;
-                self.origin_frame = self.frame;
+            EngineCommand::SetPlaying(playing) => self.set_playing(playing),
+            EngineCommand::SetPlayhead(beats) => self.jump_song(beats),
+            EngineCommand::PressClip {
+                track,
+                slot,
+                velocity,
+            } => self.press(track, slot, velocity),
+            EngineCommand::ReleaseClip { track, slot } => self.release(track, slot),
+            EngineCommand::NudgeClip { track, forward } => self.nudge(track, forward),
+            EngineCommand::BackToArrangement => self.back_to_arrangement(),
+            EngineCommand::JumpTo(beats) => {
+                if self.playing {
+                    let at = self.launch_time(LaunchQuantization::Global);
+                    self.pending_jump = Some((at, beats));
+                } else {
+                    self.jump_song(beats);
+                }
             }
+            EngineCommand::SetTransport(settings) => self.settings = settings,
+            EngineCommand::SetRecording(recording) => self.recording = recording,
             EngineCommand::SetTrackVolume { track, volume_db } => {
                 if let Some(node) = self.node(track) {
                     node.mixer.volume_db = volume_db;
@@ -520,10 +642,10 @@ impl Engine {
                     *level = amount;
                 }
             }
-            EngineCommand::TriggerClip { track, slot } => self.graph.launch_clip(track, slot),
-            EngineCommand::StopClip { track } => self.graph.stop_clip(track),
-            EngineCommand::TriggerScene { scene } => self.graph.launch_scene(scene),
-            EngineCommand::StopAll => self.graph.stop_all(),
+            EngineCommand::TriggerClip { track, slot } => self.press(track, slot, 127),
+            EngineCommand::StopClip { track } => self.stop_tracks(Some(track)),
+            EngineCommand::TriggerScene { scene } => self.launch_scene(scene),
+            EngineCommand::StopAll => self.stop_tracks(None),
             EngineCommand::SetDeviceParam {
                 track,
                 device,
@@ -598,7 +720,10 @@ impl Engine {
             return limit;
         }
         let position = self.playhead_at(self.frame);
-        let Some(boundary) = self.graph.next_boundary(position) else {
+        if !self.tempo_override && self.graph.timeline.tempo.ramps_at(Beats(position)) {
+            limit = limit.min(RAMP_STEP);
+        }
+        let Some(boundary) = self.next_song_event(position) else {
             return limit;
         };
         let estimate = ((boundary - position) / self.beats_per_frame()).ceil();
@@ -617,6 +742,368 @@ impl Engine {
         (frames as usize).min(limit)
     }
 
+    /// The first song position after `position` at which something must start on its sample: an
+    /// Arrangement clip boundary, a launch, stop, Follow Action, or Repeat, a scene's tempo, a jump, a tempo
+    /// change, the end of the Arrangement Loop, or the end of the count-in.
+    fn next_song_event(&self, position: f64) -> Option<f64> {
+        let clock = position + self.clock_offset;
+        let follow = self.settings.follow_actions_enabled;
+        let tracks = self.graph.track_count();
+        let launches = self.graph.nodes()[..tracks]
+            .iter()
+            .filter_map(|node| node.clips.launcher.next_event(clock, follow))
+            .chain(self.pending_scene.map(|(at, _)| at))
+            .chain(self.pending_jump.map(|(at, _)| at))
+            .filter(|at| *at > clock)
+            .map(|at| at - self.clock_offset);
+        let tempo = (!self.tempo_override)
+            .then(|| self.graph.timeline.tempo.next_change_after(Beats(position)))
+            .flatten()
+            .map(|beats| beats.0);
+        let loop_end = (self.settings.loop_enabled
+            && self.count_in_end.is_none()
+            && position < self.settings.loop_end())
+        .then(|| self.settings.loop_end());
+        launches
+            .chain(self.graph.next_boundary(position))
+            .chain(tempo)
+            .chain(loop_end)
+            .chain(self.count_in_end)
+            .filter(|at| *at > position)
+            .reduce(f64::min)
+    }
+
+    /// The time signature in effect: a launched scene's, or the Set's.
+    fn signature(&self) -> &TimeSignatureMap {
+        signature_of(&self.graph.timeline, self.scene_signature)
+    }
+
+    /// The launch clock time of the next step of `quantization` from now, with `Global` read from the
+    /// Control Bar (manual 16.4). While the transport is stopped, now.
+    fn launch_time(&self, quantization: LaunchQuantization) -> f64 {
+        let song = self.playhead_at(self.frame);
+        quantized_clock(
+            song,
+            song + self.clock_offset,
+            quantization,
+            self.settings.global_quantization,
+            self.signature(),
+            self.playing,
+        )
+    }
+
+    /// Moves the song position to `beats` now, keeping the launch clock running on.
+    fn jump_song(&mut self, beats: f64) {
+        let song = self.playhead_at(self.frame);
+        self.clock_offset += song - beats;
+        self.origin_beats = beats;
+        self.origin_frame = self.frame;
+        self.last_song = beats;
+    }
+
+    /// Starts or stops the transport (manual 6.3). Stopping stops every Session clip. Starting while the
+    /// Arrangement Record button is on, with a count-in set, first plays the count-in bars before the
+    /// start position (manual 19.6, page 420).
+    fn set_playing(&mut self, playing: bool) {
+        self.restart_playhead();
+        if playing && !self.playing {
+            let bars = self.settings.metronome.count_in_bars;
+            if self.recording && bars > 0 {
+                let start = self.playhead_at(self.frame);
+                let (numerator, denominator) = self.signature().signature_at(Beats(start));
+                let bar = 4.0 * f64::from(numerator) / f64::from(denominator.max(1));
+                self.jump_song(start - f64::from(bars) * bar);
+                self.count_in_end = Some(start);
+            }
+        }
+        if !playing {
+            for node in self.graph.tracks_mut() {
+                node.clips.launcher.halt();
+                node.clips.changed();
+            }
+            self.count_in_end = None;
+            self.pending_scene = None;
+            self.pending_jump = None;
+        }
+        self.playing = playing;
+    }
+
+    /// Starts the transport for a launch while it is stopped, so the clip starts now.
+    fn start_for_launch(&mut self) {
+        if !self.playing {
+            self.restart_playhead();
+            self.playing = true;
+        }
+    }
+
+    /// A down on a launch button (manual 16.2). An empty slot with a Clip Stop button stops the track.
+    fn press(&mut self, track: TrackId, slot: usize, velocity: u8) {
+        self.start_for_launch();
+        let song = self.playhead_at(self.frame);
+        let clock = song + self.clock_offset;
+        let global = self.settings.global_quantization;
+        let (timeline, tracks) = self.graph.split_timeline();
+        let signature = signature_of(timeline, self.scene_signature);
+        let Some(node) = tracks.iter_mut().find(|node| node.track == track) else {
+            return;
+        };
+        let Some(info) = node.clips.info(slot) else {
+            if node.clips.stop_buttons.get(slot).copied().unwrap_or(false) {
+                let at = quantized_clock(
+                    song,
+                    clock,
+                    LaunchQuantization::Global,
+                    global,
+                    signature,
+                    true,
+                );
+                node.clips.launcher.stop(at);
+            }
+            return;
+        };
+        let quantization = info.launch.quantization.to_launch();
+        let at = quantized_clock(song, clock, quantization, global, signature, true);
+        let grid = match quantization.resolve(global.grid()) {
+            LaunchQuantization::Grid(grid) => Some(grid),
+            _ => None,
+        };
+        let period = grid.and_then(|grid| grid_period(Beats(song), grid, signature));
+        node.clips.launcher.press(slot, &info, velocity, at, period);
+    }
+
+    /// An up on a launch button (manual 16.2).
+    fn release(&mut self, track: TrackId, slot: usize) {
+        let song = self.playhead_at(self.frame);
+        let clock = song + self.clock_offset;
+        let global = self.settings.global_quantization;
+        let playing = self.playing;
+        let (timeline, tracks) = self.graph.split_timeline();
+        let signature = signature_of(timeline, self.scene_signature);
+        let Some(node) = tracks.iter_mut().find(|node| node.track == track) else {
+            return;
+        };
+        let Some(info) = node.clips.info(slot) else {
+            return;
+        };
+        let quantization = info.launch.quantization.to_launch();
+        let at = quantized_clock(song, clock, quantization, global, signature, playing);
+        node.clips.launcher.release(slot, &info, at);
+    }
+
+    /// Stops one track's clip, or every track's, at the next global quantization step (the Clip Stop
+    /// buttons and Stop All Clips).
+    fn stop_tracks(&mut self, track: Option<TrackId>) {
+        let at = self.launch_time(LaunchQuantization::Global);
+        for node in self.graph.tracks_mut() {
+            if track.is_none_or(|track| node.track == track) {
+                node.clips.launcher.stop(at);
+            }
+        }
+    }
+
+    /// Launches every clip in a scene's row at the next global quantization step, presses the Clip Stop
+    /// button of each empty slot that has one, and applies the scene's tempo and time signature then.
+    fn launch_scene(&mut self, scene: SceneId) {
+        let Some(row) = self.graph.scene_row(scene) else {
+            return;
+        };
+        self.start_for_launch();
+        let at = self.launch_time(LaunchQuantization::Global);
+        for node in self.graph.tracks_mut() {
+            let lane = &mut node.clips;
+            if lane.info(row).is_some() {
+                lane.launcher.follow_launch(row, at);
+            } else if lane.stop_buttons.get(row).copied().unwrap_or(false) {
+                lane.launcher.stop(at);
+            }
+        }
+        self.pending_scene = Some((at, row));
+    }
+
+    /// Jumps within a track's playing clip by the global quantization period (manual 16.6).
+    fn nudge(&mut self, track: TrackId, forward: bool) {
+        let song = self.playhead_at(self.frame);
+        let grid = self.settings.global_quantization.grid();
+        let Some(period) = grid_period(Beats(song), grid, self.signature()) else {
+            return;
+        };
+        let Some(node) = self.graph.node_mut(track) else {
+            return;
+        };
+        let Some(info) = node
+            .clips
+            .active_slot()
+            .and_then(|slot| node.clips.info(slot))
+        else {
+            return;
+        };
+        node.clips
+            .launcher
+            .nudge(if forward { period } else { -period }, &info);
+        node.clips.changed();
+    }
+
+    /// Back to Arrangement: every track plays the Arrangement again, and the tempo and time signature
+    /// follow the Set again (manual 3.7, page 42).
+    fn back_to_arrangement(&mut self) {
+        for node in self.graph.tracks_mut() {
+            node.clips.launcher.halt();
+            node.clips.launcher.left_arrangement = false;
+            node.clips.changed();
+        }
+        self.tempo_override = false;
+        self.scene_signature = None;
+    }
+
+    /// Applies what the song position has reached: the end of the count-in, the end of the Arrangement
+    /// Loop, a quantized jump, a launched scene's tempo and signature, and the tempo map.
+    fn advance_transport(&mut self) {
+        if !self.playing {
+            return;
+        }
+        let epsilon = (0.5 * self.beats_per_frame()).max(1e-9);
+        let song = self.playhead_at(self.frame);
+        if let Some(end) = self.count_in_end
+            && song >= end - epsilon
+        {
+            self.count_in_end = None;
+        }
+        // "To repeatedly play a section of the Arrangement, activate the Arrangement Loop" (manual 6.6).
+        let end = self.settings.loop_end();
+        if self.settings.loop_enabled
+            && self.count_in_end.is_none()
+            && self.settings.loop_length > 0.0
+            && self.last_song < end - epsilon
+            && song >= end - epsilon
+        {
+            self.jump_song(self.settings.loop_start);
+        }
+        let clock = self.playhead_at(self.frame) + self.clock_offset;
+        if let Some((at, target)) = self.pending_jump
+            && at <= clock + epsilon
+        {
+            self.pending_jump = None;
+            self.jump_song(target);
+        }
+        if let Some((at, row)) = self.pending_scene
+            && at <= clock + epsilon
+        {
+            self.pending_scene = None;
+            let scene = self.graph.timeline.scenes.get(row);
+            let (tempo, signature) = scene.map_or((None, false), |scene| {
+                (scene.tempo, scene.signature.is_some())
+            });
+            if let Some(tempo) = tempo {
+                self.restart_playhead();
+                self.bpm = tempo;
+                self.tempo_override = true;
+            }
+            if signature {
+                self.scene_signature = Some(row);
+            }
+        }
+        if !self.tempo_override {
+            let song = self.playhead_at(self.frame);
+            let bpm = self.graph.timeline.tempo.bpm_at(Beats(song)) as f32;
+            if bpm != self.bpm {
+                self.restart_playhead();
+                self.bpm = bpm;
+            }
+        }
+    }
+
+    /// Does every launch, stop, Repeat, clip end, and Follow Action that is due now, on every track
+    /// (manual 16.2 to 16.7).
+    fn fire_launches(&mut self) {
+        if !self.playing || self.count_in_end.is_some() {
+            return;
+        }
+        let epsilon = (0.5 * self.beats_per_frame()).max(1e-9);
+        let song = self.playhead_at(self.frame);
+        let clock = song + self.clock_offset;
+        let follow_enabled = self.settings.follow_actions_enabled;
+        let global = self.settings.global_quantization;
+        let scene_signature = self.scene_signature;
+        let rng = &mut self.rng;
+        let (timeline, tracks) = self.graph.split_timeline();
+        let signature = signature_of(timeline, scene_signature);
+        for node in tracks.iter_mut() {
+            let lane = &mut node.clips;
+            loop {
+                let slots = &lane.slots;
+                let fired = lane.launcher.fire(clock, epsilon, follow_enabled, |slot| {
+                    slots
+                        .get(slot)
+                        .and_then(Option::as_ref)
+                        .map(PlayableClip::info)
+                });
+                match fired {
+                    None => break,
+                    Some(Fired::FollowDue(slot)) => {
+                        let Some(info) = lane.info(slot) else {
+                            continue;
+                        };
+                        let action = pick_action(&info.follow, rng);
+                        match follow_target(action, slot, &lane.filled, rng) {
+                            FollowTarget::Nothing => {}
+                            FollowTarget::Stop => lane.launcher.stop(clock),
+                            FollowTarget::Launch(target) => {
+                                // "Follow Actions circumvent global quantization but not clip quantization."
+                                // (manual 16.7, page 367)
+                                let quantization =
+                                    lane.info(target).map_or(Quantization::Global, |target| {
+                                        target.launch.quantization
+                                    });
+                                let at = match quantization {
+                                    Quantization::None | Quantization::Global => clock,
+                                    other => quantized_clock(
+                                        song,
+                                        clock,
+                                        other.to_launch(),
+                                        global,
+                                        signature,
+                                        true,
+                                    ),
+                                };
+                                lane.launcher.follow_launch(target, at);
+                            }
+                        }
+                    }
+                    Some(_) => lane.changed(),
+                }
+            }
+        }
+    }
+
+    /// Renders the metronome for a segment into the click buffers: while playing with the metronome on
+    /// (only while recording, after the punch-in point, when so set), and always during a count-in
+    /// (manual 19.4.1 and 19.6).
+    fn render_metronome(&mut self, song: f64, dt: f64, block: usize) {
+        let settings = self.settings;
+        let counting_in = self.count_in_end.is_some();
+        let audible = self.playing
+            && (counting_in
+                || (settings.metronome_enabled
+                    && (!settings.metronome.only_while_recording
+                        || (self.recording
+                            && !(settings.punch_in && song < settings.loop_start)))));
+        let left = &mut self.click_left[..block];
+        let right = &mut self.click_right[..block];
+        left.fill(0.0);
+        right.fill(0.0);
+        let signature = signature_of(&self.graph.timeline, self.scene_signature);
+        self.metronome.render(
+            &settings.metronome,
+            signature,
+            song,
+            dt,
+            self.sample_rate,
+            audible,
+            left,
+            right,
+        );
+    }
+
     fn beats_per_frame(&self) -> f64 {
         if self.playing {
             beats_per_sample(f64::from(self.bpm), f64::from(self.sample_rate))
@@ -629,6 +1116,31 @@ impl Engine {
     fn playhead_at(&self, frame: u64) -> f64 {
         self.origin_beats + (frame - self.origin_frame) as f64 * self.beats_per_frame()
     }
+}
+
+/// The time signature in effect: the launched scene's at `row`, or the Set's.
+fn signature_of(timeline: &Timeline, row: Option<usize>) -> &TimeSignatureMap {
+    row.and_then(|row| timeline.scenes.get(row))
+        .and_then(|scene| scene.signature.as_ref())
+        .unwrap_or(&timeline.signature)
+}
+
+/// The launch clock time of the next step of `quantization` after the song position `song`, whose
+/// launch clock time is `clock`. `Global` takes the Control Bar's setting. While stopped, `clock`.
+fn quantized_clock(
+    song: f64,
+    clock: f64,
+    quantization: LaunchQuantization,
+    global: Quantization,
+    signature: &TimeSignatureMap,
+    playing: bool,
+) -> f64 {
+    if !playing {
+        return clock;
+    }
+    let resolved = quantization.resolve(global.grid());
+    let target = livecraft_time::quantize_launch(Beats(song), resolved, signature).0;
+    clock + (target - song).max(0.0)
 }
 
 /// Replaces NaN and infinity with silence; finite samples pass through bit-exactly.

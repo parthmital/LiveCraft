@@ -4,6 +4,7 @@ pub mod color;
 pub mod device;
 pub mod edit;
 pub mod ids;
+pub mod launch;
 pub mod midi_tools_legacy;
 pub mod model;
 pub mod note;

@@ -158,6 +158,34 @@ impl TempoMap {
         }
     }
 
+    /// True when the map holds one tempo for the whole song.
+    pub fn is_constant(&self) -> bool {
+        self.points.len() == 1
+    }
+
+    /// Sets the tempo of a map that holds one tempo, in place, so the audio thread can do it without
+    /// allocating. Returns false, changing nothing, when the map has tempo changes.
+    pub fn set_constant_bpm(&mut self, bpm: f64) -> bool {
+        if !self.is_constant() {
+            return false;
+        }
+        self.points[0].bpm = bpm.max(MIN_BPM);
+        true
+    }
+
+    /// The first breakpoint after `at`, where the tempo starts to change, or None after the last one.
+    /// The engine ends a block there so each tempo starts on its sample (M07 item 2).
+    pub fn next_change_after(&self, at: Beats) -> Option<Beats> {
+        let reached = self.points.partition_point(|p| p.at.0 <= at.0);
+        self.points.get(reached).map(|point| point.at)
+    }
+
+    /// True when the tempo at `at` ramps toward the next breakpoint, so it changes every sample.
+    pub fn ramps_at(&self, at: Beats) -> bool {
+        let reached = self.points.partition_point(|p| p.at.0 <= at.0);
+        reached > 0 && reached < self.points.len() && self.points[reached - 1].ramp_to_next
+    }
+
     /// Seconds from the song start to `at`. Beats before zero count backwards.
     pub fn beats_to_seconds(&self, at: Beats) -> f64 {
         if at.0 >= 0.0 {
@@ -252,6 +280,31 @@ mod tests {
             sum += if i % 2 == 1 { 4.0 * f(x) } else { 2.0 * f(x) };
         }
         sum * h / 3.0
+    }
+
+    #[test]
+    fn a_constant_map_takes_a_new_tempo_in_place_and_a_changing_one_does_not() {
+        let mut map = TempoMap::constant(120.0);
+        assert!(map.is_constant());
+        assert!(map.set_constant_bpm(90.0));
+        assert_eq!(map.bpm_at(Beats(100.0)), 90.0);
+        map.insert(Beats(8.0), 140.0, false);
+        assert!(!map.is_constant());
+        assert!(!map.set_constant_bpm(60.0));
+        assert_eq!(map.bpm_at(Beats(0.0)), 90.0);
+    }
+
+    #[test]
+    fn the_next_change_is_the_first_breakpoint_after_a_position() {
+        let mut map = TempoMap::constant(120.0);
+        map.insert(Beats(8.0), 90.0, true);
+        map.insert(Beats(16.0), 140.0, false);
+        assert_eq!(map.next_change_after(Beats(0.0)), Some(Beats(8.0)));
+        assert_eq!(map.next_change_after(Beats(8.0)), Some(Beats(16.0)));
+        assert_eq!(map.next_change_after(Beats(16.0)), None);
+        assert!(!map.ramps_at(Beats(4.0)));
+        assert!(map.ramps_at(Beats(10.0)));
+        assert!(!map.ramps_at(Beats(20.0)));
     }
 
     #[test]

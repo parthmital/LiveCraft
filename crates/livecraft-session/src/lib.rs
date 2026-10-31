@@ -10,6 +10,7 @@ pub mod history;
 pub mod preferences;
 pub mod registry;
 pub mod session;
+pub mod transport;
 
 pub use command::{Command, CommandError, Operation};
 pub use history::{HistoryEntry, MERGE_GAP, OPENING_LABEL, Transaction, UndoHistory};

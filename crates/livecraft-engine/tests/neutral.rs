@@ -41,6 +41,8 @@ fn start(project: &Project, tracks: &[TrackId]) -> (Engine, EngineHandle) {
                     is_warped: false,
                     original_bpm: 120.0,
                 },
+                launch: Default::default(),
+                follow: Default::default(),
             },
         });
     }

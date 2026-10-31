@@ -7,7 +7,7 @@ mod meter;
 mod tempo;
 mod units;
 
-pub use grid::{Grid, LaunchQuantization, quantize_launch};
+pub use grid::{Grid, LaunchQuantization, grid_period, quantize_launch};
 pub use meter::{BarBeatSixteenth, TimeError, TimeSignatureMap};
 pub use tempo::{
     MAX_BPM, MIN_BPM, TempoMap, beats_per_sample, samples_per_beat, seconds_for_beats,

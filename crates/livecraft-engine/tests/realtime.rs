@@ -80,7 +80,7 @@ fn rendering_a_launched_clip_allocates_nothing() {
     let collector = basedrop::Collector::new();
     let mut compiler = GraphCompiler::new(44100.0, collector.handle());
     let mut graph = compiler.compile(&project);
-    graph.launch_clip(TrackId(1), 0);
+    graph.node_mut(TrackId(1)).expect("track 1").clips.launch(0);
     let ctx = ProcessContext {
         sample_rate: 44100.0,
         frames: MAX_BLOCK,

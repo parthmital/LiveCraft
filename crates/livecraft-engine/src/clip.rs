@@ -1,11 +1,14 @@
-//! Clip playback on the audio thread (M05 item 7). The session side prepares every clip the graph
+//! Clip playback on the audio thread (M05 item 7, M07). The session side prepares every clip the graph
 //! can play as shared, immutable data (`basedrop::Shared`): note lists with frequencies, and decoded
 //! audio. The audio thread reads that data and schedules note events at their sample offsets, so it
-//! never clones a clip, decodes a file, or allocates.
+//! never clones a clip, decodes a file, or allocates. A launched Session clip plays from its launch
+//! on the launch clock (`launch::Launcher`); the Arrangement plays from the song position.
 
 use crate::audio_clip::{DecodedAudio, hermite_interp};
+use crate::launch::{LaunchInfo, Launcher, Running};
 use basedrop::Shared;
 use livecraft_devices::{EventList, NoteEvent, ProcessContext};
+use livecraft_model::model::{ClipLaunch, FollowActions};
 use livecraft_time::samples_per_beat;
 
 /// A MIDI note as the scheduler reads it. Times are beats from the clip start, and the frequency is
@@ -31,11 +34,36 @@ pub enum PlayableSource {
     },
 }
 
-/// A clip ready to play: its length in beats, whether it loops, and its source.
+/// A clip ready to play: its length in beats, whether it loops, its source, and how it launches.
 pub struct PlayableClip {
     pub length_beats: f64,
     pub is_looping: bool,
     pub source: PlayableSource,
+    pub launch: ClipLaunch,
+    pub follow: FollowActions,
+}
+
+impl PlayableClip {
+    /// A clip with the default launch settings and no Follow Actions.
+    pub fn new(length_beats: f64, is_looping: bool, source: PlayableSource) -> Self {
+        Self {
+            length_beats,
+            is_looping,
+            source,
+            launch: ClipLaunch::default(),
+            follow: FollowActions::default(),
+        }
+    }
+
+    /// What the launcher needs to know about the clip.
+    pub fn info(&self) -> LaunchInfo {
+        LaunchInfo {
+            launch: self.launch,
+            follow: self.follow,
+            length_beats: self.length_beats.max(1.0),
+            is_looping: self.is_looping,
+        }
+    }
 }
 
 /// An arrangement clip, placed on the timeline.
@@ -45,15 +73,20 @@ pub struct ArrangedClip {
     pub clip: PlayableClip,
 }
 
-/// The clips of one track and the notes they have started. A track plays its launched session slot,
-/// else the arrangement clip under the playhead. A session clip that was not launched stays silent
-/// (see `schedule`).
+/// The clips of one track and the notes they have started. A track plays its launched Session clip,
+/// else the Arrangement clip under the playhead unless a Session clip took the track out of the
+/// Arrangement (manual 3.7, page 42). A Session clip that was not launched stays silent (see
+/// `schedule`).
 pub struct ClipLane {
     /// One entry per clip slot row; `None` for an empty slot.
     pub slots: Vec<Option<PlayableClip>>,
+    /// Whether each row holds a clip, for Follow Action groups.
+    pub filled: Vec<bool>,
+    /// Whether each row's slot has a Clip Stop button, which a scene launch presses on an empty slot.
+    pub stop_buttons: Vec<bool>,
     pub arranged: Vec<ArrangedClip>,
-    /// The slot a launch made active, if any.
-    pub active_slot: Option<usize>,
+    /// What plays and what is queued (M07).
+    pub launcher: Launcher,
     /// False while the track monitors its input rather than its clips (manual 18.4 monitoring).
     pub plays_clips: bool,
     /// The notes that started and have not ended: (note index, pitch).
@@ -71,10 +104,14 @@ impl ClipLane {
         plays_clips: bool,
         capacity: usize,
     ) -> Self {
+        let filled = slots.iter().map(Option::is_some).collect();
+        let stop_buttons = vec![true; slots.len()];
         Self {
             slots,
+            filled,
+            stop_buttons,
             arranged,
-            active_slot: None,
+            launcher: Launcher::default(),
             plays_clips,
             sounding: Vec::with_capacity(capacity),
             stop_pending: false,
@@ -82,23 +119,63 @@ impl ClipLane {
         }
     }
 
-    /// Launches a slot, or stops playback when the slot is empty.
+    /// The row of the clip the track plays, if any.
+    pub fn active_slot(&self) -> Option<usize> {
+        self.launcher.playing_slot()
+    }
+
+    /// The launch settings of the clip at `slot`, if the row holds one.
+    pub fn info(&self, slot: usize) -> Option<LaunchInfo> {
+        self.slots
+            .get(slot)
+            .and_then(Option::as_ref)
+            .map(PlayableClip::info)
+    }
+
+    /// Starts `slot` at once, from its start at launch clock time 0, as a launch at the song start does.
     pub fn launch(&mut self, slot: usize) {
-        self.active_slot = Some(slot);
+        let gain = 1.0;
+        self.launcher.running = Some(Running {
+            slot,
+            origin: 0.0,
+            gain,
+            follow_at: None,
+            end_at: None,
+        });
+        self.launcher.left_arrangement = true;
         self.stop_pending = true;
     }
 
-    /// Stops the clip the track is playing.
+    /// Stops the clip the track is playing, at once.
     pub fn stop(&mut self) {
-        self.active_slot = None;
+        self.launcher.halt();
         self.stop_pending = true;
+    }
+
+    /// Marks the notes that sound for note-offs at the start of the next segment, because the clip
+    /// changed or stopped.
+    pub fn changed(&mut self) {
+        self.stop_pending = true;
+    }
+
+    /// Takes over the launch state and the sounding notes of the same track in the graph this one
+    /// replaces, so a graph swap neither stops a launched clip nor leaves a note without its note-off.
+    /// It swaps vectors and copies plain data, so it does not allocate.
+    pub fn adopt(&mut self, previous: &mut ClipLane) {
+        self.launcher = previous.launcher;
+        std::mem::swap(&mut self.sounding, &mut previous.sounding);
+        self.stop_pending = previous.stop_pending;
     }
 
     /// Fills `events` with this block's note events and `left` and `right` with this block's audio,
     /// for the frames of `ctx`. The buffers must already be cleared.
+    ///
+    /// `clock` is the launch clock at the first frame, which places a launched clip; the Arrangement
+    /// plays from `ctx.playhead_beats`.
     pub fn schedule(
         &mut self,
         ctx: &ProcessContext,
+        clock: f64,
         events: &mut EventList,
         left: &mut [f32],
         right: &mut [f32],
@@ -112,16 +189,17 @@ impl ClipLane {
             return;
         }
         let position = ctx.playhead_beats;
-        if let Some(slot) = self.active_slot {
-            let clip = self.slots.get(slot).and_then(Option::as_ref);
+        if let Some(running) = self.launcher.running {
+            let clip = self.slots.get(running.slot).and_then(Option::as_ref);
             if let Some(clip) = clip {
                 self.playing = true;
-                let length = clip.length_beats.max(1.0);
+                let info = clip.info();
                 play(
                     PlayPass {
                         clip,
-                        loop_length: Some(length),
-                        position: position % length,
+                        loop_length: info.is_looping.then_some(info.length_beats),
+                        position: running.position(clock, &info),
+                        gain: running.gain,
                     },
                     ctx,
                     events,
@@ -131,7 +209,7 @@ impl ClipLane {
                 );
                 return;
             }
-        } else if !self.arranged.is_empty() {
+        } else if !self.arranged.is_empty() && !self.launcher.left_arrangement {
             let found = self.arranged.iter().find(|arranged| {
                 position >= arranged.start_beat
                     && position < arranged.start_beat + arranged.length_beats
@@ -150,6 +228,7 @@ impl ClipLane {
                         clip: &arranged.clip,
                         loop_length,
                         position: clip_position,
+                        gain: 1.0,
                     },
                     ctx,
                     events,
@@ -167,7 +246,7 @@ impl ClipLane {
     /// ends, or None when no arrangement clip starts or ends after it. A launched clip loops, so it
     /// has no boundary.
     pub fn next_boundary(&self, position: f64) -> Option<f64> {
-        if self.active_slot.is_some() || !self.plays_clips {
+        if self.launcher.running.is_some() || self.launcher.left_arrangement || !self.plays_clips {
             return None;
         }
         self.arranged
@@ -198,6 +277,8 @@ struct PlayPass<'a> {
     loop_length: Option<f64>,
     /// The clip position in beats at the first frame of the block.
     position: f64,
+    /// The launch velocity gain (manual 16.5).
+    gain: f32,
 }
 
 /// Plays a clip over the block, splitting it wherever the loop wraps so that every event lands on
@@ -223,7 +304,7 @@ fn play(
         };
         match &pass.clip.source {
             PlayableSource::Midi(notes) => {
-                schedule_notes(notes, base, dt, start, end, events, sounding);
+                schedule_notes(notes, base, dt, start..end, pass.gain, events, sounding);
             }
             PlayableSource::Audio {
                 data,
@@ -238,7 +319,7 @@ fn play(
                 };
                 render_audio(
                     data,
-                    *gain,
+                    *gain * pass.gain,
                     beats_to_samples,
                     base,
                     dt,
@@ -263,11 +344,12 @@ fn schedule_notes(
     notes: &[PlayNote],
     base: f64,
     dt: f64,
-    seg_start: usize,
-    seg_end: usize,
+    segment: std::ops::Range<usize>,
+    gain: f32,
     events: &mut EventList,
     sounding: &mut Vec<(usize, u8)>,
 ) {
+    let (seg_start, seg_end) = (segment.start, segment.end);
     let seg_len = (seg_end - seg_start) as f64;
     // A sounding note whose span no longer holds the segment's first frame ended at the segment
     // boundary: at a loop wrap, or at the last frame of the previous segment or block.
@@ -296,11 +378,14 @@ fn schedule_notes(
                 let (_, pitch) = sounding.swap_remove(at);
                 let _ = events.push(NoteEvent::Off { offset, pitch });
             }
-            if sounding.len() < sounding.capacity()
+            // A launch velocity gain of zero plays the clip silently, so its notes are not sent.
+            let velocity = (f32::from(note.velocity) * gain).round().min(127.0) as u8;
+            if velocity > 0
+                && sounding.len() < sounding.capacity()
                 && events.push(NoteEvent::On {
                     offset,
                     pitch: note.pitch,
-                    velocity: note.velocity,
+                    velocity,
                     freq_hz: note.freq_hz,
                 })
             {
@@ -397,11 +482,11 @@ mod tests {
     }
 
     fn midi_clip(collector: &Collector, length: f64, notes: Vec<PlayNote>) -> PlayableClip {
-        PlayableClip {
-            length_beats: length,
-            is_looping: false,
-            source: PlayableSource::Midi(Shared::new(&collector.handle(), notes)),
-        }
+        PlayableClip::new(
+            length,
+            true,
+            PlayableSource::Midi(Shared::new(&collector.handle(), notes)),
+        )
     }
 
     /// A lane with one launched slot holding `clip`.
@@ -415,7 +500,7 @@ mod tests {
         let mut events = EventList::with_capacity(32);
         let mut left = vec![0.0; ctx.frames];
         let mut right = vec![0.0; ctx.frames];
-        lane.schedule(ctx, &mut events, &mut left, &mut right);
+        lane.schedule(ctx, ctx.playhead_beats, &mut events, &mut left, &mut right);
         events
     }
 
@@ -573,14 +658,17 @@ mod tests {
                 is_warped: false,
                 original_bpm: 120.0,
             },
+            launch: Default::default(),
+            follow: Default::default(),
         };
         // At 120 BPM and 44.1 kHz one frame is one sample, so the file covers frames 0 to 99.
         let mut lane = lane_with(clip);
         let ctx = context(512, 0.0, 1.0 / 22050.0);
-        let mut left = vec![0.0; ctx.frames];
-        let mut right = vec![0.0; ctx.frames];
+        let mut left = vec![0.0f32; ctx.frames];
+        let mut right = vec![0.0f32; ctx.frames];
         lane.schedule(
             &ctx,
+            0.0,
             &mut EventList::with_capacity(4),
             &mut left,
             &mut right,

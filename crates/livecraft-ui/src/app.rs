@@ -104,10 +104,17 @@ impl LiveCraftApp {
             self.settings.show_window();
         }
 
-        // Spacebar -> Toggle Playback
+        // Space toggles playback from the insert marker; Shift + Space continues from where playback
+        // stopped (manual 6.3, page 169).
         if ctx.input(|i| i.key_pressed(Key::Space)) {
-            let playing = !self.session.project().transport.is_playing;
-            self.session.set_playing(playing);
+            let shift = ctx.input(|i| i.modifiers.shift);
+            if self.session.project().transport.is_playing {
+                self.session.stop();
+            } else if shift {
+                self.session.continue_play();
+            } else {
+                self.session.play();
+            }
         }
 
         // Tab -> Toggle Session / Arrangement View
@@ -279,7 +286,8 @@ impl eframe::App for LiveCraftApp {
                     self.session.set_playing(playing);
                 }
                 if t_resp.stop_clicked {
-                    self.session.stop_all();
+                    // Stop, and a second press while stopped returns the insert marker to the start.
+                    self.session.stop();
                 }
                 if t_resp.record_toggled {
                     let recording = !self.session.project().transport.is_recording;

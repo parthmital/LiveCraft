@@ -8,6 +8,7 @@ use crate::compiled::{
     CompiledGraph, DeviceSlot, InputRoute, MAX_NOTE_EVENTS, MidiOutRoute, Mixer, Node, NodeKind,
     Transfer, compensate_latency,
 };
+use crate::transport::Timeline;
 use basedrop::{Handle, Shared};
 use livecraft_devices::{DeviceProcessor, create_device_processor, is_instrument};
 use livecraft_model::device::param_table;
@@ -94,7 +95,7 @@ impl GraphCompiler {
             nodes,
             project.tracks.len(),
             project.return_tracks.len(),
-            project.scenes.iter().map(|scene| scene.id).collect(),
+            Timeline::of(project),
             transfers,
             note_frequencies,
         )
@@ -215,7 +216,13 @@ impl GraphCompiler {
             MonitoringMode::Auto => !track.is_armed,
             MonitoringMode::Off => true,
         };
-        ClipLane::new(slots, arranged, plays_clips, MAX_NOTE_EVENTS)
+        let mut lane = ClipLane::new(slots, arranged, plays_clips, MAX_NOTE_EVENTS);
+        lane.stop_buttons = track
+            .clip_slots
+            .iter()
+            .map(|slot| slot.has_stop_button)
+            .collect();
+        lane
     }
 
     /// A clip prepared for playback, or None when its audio cannot be read.
@@ -236,6 +243,8 @@ impl GraphCompiler {
             length_beats: clip.length_beats,
             is_looping: clip.is_looping,
             source,
+            launch: clip.launch,
+            follow: clip.follow,
         })
     }
 
@@ -375,7 +384,7 @@ mod tests {
         }
         project.tracks[0].clip_slots[0].clip = Some(clip);
         let (_collector, mut graph) = compile(&project);
-        graph.launch_clip(TrackId(1), 0);
+        graph.node_mut(TrackId(1)).expect("track 1").clips.launch(0);
         let mut playing = context(MAX_BLOCK);
         playing.beats_per_frame = 120.0 / 60.0 / 44100.0;
         graph.render(&playing);
@@ -442,7 +451,7 @@ mod tests {
         project.tracks[0].clip_slots[0].clip =
             Some(Clip::new_audio(901, "Missing", "does-not-exist.wav", 4.0));
         let (_collector, mut graph) = compile(&project);
-        graph.launch_clip(TrackId(1), 0);
+        graph.node_mut(TrackId(1)).expect("track 1").clips.launch(0);
         graph.render(&context(MAX_BLOCK));
         let (left, _) = graph.output(MAX_BLOCK);
         assert!(left.iter().all(|&sample| sample == 0.0));

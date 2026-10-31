@@ -7,6 +7,7 @@
 
 use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::output::Playback;
+use livecraft_engine::transport::TransportSettings;
 use livecraft_model::model::{Device, Project};
 use livecraft_model::param::ParamId;
 
@@ -21,7 +22,10 @@ pub(crate) enum Push {
 
 /// Pushes the difference between two states of the Set to the engine.
 pub(crate) fn push_changes(playback: &mut Playback, before: &Project, after: &Project) -> Push {
-    if !same_shape(before, after) || latency_changed(playback, before, after) {
+    if !same_shape(before, after)
+        || latency_changed(playback, before, after)
+        || timeline_changed(before, after)
+    {
         match playback
             .handle
             .submit_graph(playback.compiler.compile(after))
@@ -49,7 +53,11 @@ pub(crate) fn send_command(playback: &mut Playback, command: EngineCommand) {
 /// Sends the mixer levels, sends, tempo, and device parameters that changed.
 fn send_values(playback: &mut Playback, before: &Project, after: &Project) {
     if before.transport.bpm() != after.transport.bpm() {
-        send_command(playback, EngineCommand::SetTempo(after.transport.bpm()));
+        send_command(playback, EngineCommand::SetSongTempo(after.transport.bpm()));
+    }
+    let settings = TransportSettings::of(after);
+    if TransportSettings::of(before) != settings {
+        send_command(playback, EngineCommand::SetTransport(settings));
     }
     for (old, new) in before.all_tracks().zip(after.all_tracks()) {
         let track = new.id;
@@ -142,6 +150,14 @@ fn changed_parameters<'a>(
     new.parameters
         .iter()
         .filter(move |&(param, value)| old.parameters.get(param) != Some(value))
+}
+
+/// True when the tempo or time signature changed in a way only a new graph carries: a tempo map with
+/// tempo changes, or any time signature change. One tempo for the whole Set goes as a command.
+fn timeline_changed(before: &Project, after: &Project) -> bool {
+    let (old, new) = (&before.transport, &after.transport);
+    let tempo = old.tempo != new.tempo && !(old.tempo.is_constant() && new.tempo.is_constant());
+    tempo || old.time_signature != new.time_signature
 }
 
 /// True when two Sets differ only in values the engine takes as commands: mixer levels and sends,

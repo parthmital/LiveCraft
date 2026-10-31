@@ -165,6 +165,8 @@ fn an_arrangement_clip_starts_and_stops_on_its_exact_sample() {
                 is_warped: false,
                 original_bpm: 120.0,
             },
+            launch: Default::default(),
+            follow: Default::default(),
         },
     });
     let (mut engine, mut handle) = Engine::start(graph, RATE, collector).expect("start");
@@ -255,6 +257,8 @@ fn constant_on_tracks(
                     is_warped: false,
                     original_bpm: 120.0,
                 },
+                launch: Default::default(),
+                follow: Default::default(),
             },
         });
     }
@@ -449,6 +453,7 @@ fn the_snapshot_reports_the_launched_clip_of_a_track() {
         handle.snapshot().nodes[0].clip,
         ClipState {
             active_slot: Some(0),
+            queued_slot: None,
             playing: true,
         }
     );
@@ -479,7 +484,14 @@ fn a_graph_with_more_nodes_than_the_snapshot_holds_is_refused() {
             )
         })
         .collect();
-    let large = CompiledGraph::new(nodes, MAX_NODES + 1, 0, Vec::new(), Vec::new(), [0.0; 128]);
+    let large = CompiledGraph::new(
+        nodes,
+        MAX_NODES + 1,
+        0,
+        crate::transport::Timeline::default(),
+        Vec::new(),
+        [0.0; 128],
+    );
     assert_eq!(
         handle.submit_graph(large),
         Err(SubmitError::TooManyNodes {

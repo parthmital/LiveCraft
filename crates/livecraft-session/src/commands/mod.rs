@@ -4,6 +4,7 @@
 pub mod automation;
 pub mod clip;
 pub mod device;
+pub mod launch;
 pub mod note;
 pub mod scale;
 pub mod scene;
@@ -25,6 +26,7 @@ pub fn register(registry: &mut CommandRegistry) {
     automation::register(registry);
     clip::register(registry);
     device::register(registry);
+    launch::register(registry);
     note::register(registry);
     scale::register(registry);
     scene::register(registry);

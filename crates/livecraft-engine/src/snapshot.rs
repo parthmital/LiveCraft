@@ -51,9 +51,15 @@ impl TrackMeter {
 #[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct Transport {
     pub playing: bool,
-    /// The song position in beats.
+    /// The song position in beats. It is negative during a count-in from the song start.
     pub playhead_beats: f64,
     pub bpm: f32,
+    /// The Arrangement Record button.
+    pub recording: bool,
+    /// True while the count-in plays (manual 19.6).
+    pub counting_in: bool,
+    /// Lights the Back to Arrangement button: a track plays the Session instead of the Arrangement.
+    pub back_to_arrangement: bool,
 }
 
 /// What the clip lane of a node is doing.
@@ -61,6 +67,8 @@ pub struct Transport {
 pub struct ClipState {
     /// The launched session slot, if any.
     pub active_slot: Option<usize>,
+    /// The slot whose launch is queued, which blinks until it starts.
+    pub queued_slot: Option<usize>,
     /// True when a clip played in the last block.
     pub playing: bool,
 }
