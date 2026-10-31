@@ -1,6 +1,8 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 use std::f32::consts::FRAC_PI_2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,5 +98,61 @@ impl SaturatorEffect {
                 v
             }
         }
+    }
+}
+
+impl DeviceProcessor for SaturatorEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
+    }
+
+    /// Ids are positions in the Saturator table of `livecraft_model::device`. Id 4, the tone,
+    /// has no effect in this port, as before M05.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.drive_db = value,
+            1 => {
+                self.curve = match value.round() as i32 {
+                    1 => SaturatorCurve::HardClip,
+                    2 => SaturatorCurve::AnalogWarmth,
+                    3 => SaturatorCurve::Foldback,
+                    _ => SaturatorCurve::SoftSine,
+                };
+            }
+            2 => self.output_db = value,
+            3 => self.dry_wet = value.clamp(0.0, 1.0),
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {
+        self.tone_filter.reset_state();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn saturator_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || SaturatorEffect::new(44100.0),
+            &[(0, 12.0), (1, 2.0), (2, -3.0), (3, 0.5)],
+        );
+    }
+
+    #[test]
+    fn saturator_drive_changes_the_output() {
+        assert_parameter_changes_output(|| SaturatorEffect::new(44100.0), 0, 24.0);
     }
 }

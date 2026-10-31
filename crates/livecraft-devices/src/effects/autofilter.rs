@@ -1,6 +1,8 @@
 use crate::biquad::{BiquadFilter, FilterType};
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 use std::f32::consts::PI;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -111,5 +113,60 @@ impl AutoFilterEffect {
         let out_r = self.filter_r.process_stereo(in_r, in_r).1;
 
         (out_l, out_r)
+    }
+}
+
+impl DeviceProcessor for AutoFilterEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
+    }
+
+    /// Ids are positions in the Auto Filter table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => {
+                self.mode = match value.round() as i32 {
+                    1 => AutoFilterMode::HighPass,
+                    2 => AutoFilterMode::BandPass,
+                    3 => AutoFilterMode::Notch,
+                    _ => AutoFilterMode::LowPass,
+                };
+            }
+            1 => self.cutoff = value.clamp(20.0, 20000.0),
+            2 => self.resonance = value.clamp(0.1, 10.0),
+            3 => self.lfo_rate = value.clamp(0.01, 40.0),
+            4 => self.lfo_depth = value.clamp(0.0, 1.0),
+            5 => self.envelope_amount = value.clamp(0.0, 1.0),
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn auto_filter_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || AutoFilterEffect::new(44100.0),
+            &[(1, 800.0), (2, 2.0), (3, 2.0)],
+        );
+    }
+
+    #[test]
+    fn auto_filter_cutoff_changes_the_output() {
+        assert_parameter_changes_output(|| AutoFilterEffect::new(44100.0), 1, 200.0);
     }
 }
