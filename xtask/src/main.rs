@@ -44,6 +44,7 @@ const LAYERS: &[(&str, &[&str])] = &[
         "livecraft-testkit",
         &["livecraft-model", "livecraft-engine"],
     ),
+    ("livecraft-time", &[]),
     ("xtask", &[]),
 ];
 

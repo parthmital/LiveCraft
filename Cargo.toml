@@ -45,3 +45,4 @@ livecraft-devices = { path = "crates/livecraft-devices" }
 livecraft-engine = { path = "crates/livecraft-engine" }
 livecraft-dsp = { path = "crates/livecraft-dsp" }
 livecraft-ui = { path = "crates/livecraft-ui" }
+livecraft-time = { path = "crates/livecraft-time" }

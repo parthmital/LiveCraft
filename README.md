@@ -103,6 +103,7 @@ LiveCraft/
 |   |-- livecraft-formats/
 |   |-- livecraft-model/
 |   |-- livecraft-testkit/
+|   |-- livecraft-time/
 |   `-- livecraft-ui/
 |-- docs/
 |-- plans/

@@ -40,11 +40,12 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-ui/src/widgets.rs`, `style.rs`      | Knobs, faders, meters, LCD fields; palettes                                                  | `live_knob`, `live_fader`, `LivePalette`                                   | as above                             |
 | `apps/livecraft/src/main.rs`                          | `clap` subcommands, GUI launcher                                                             | `livecraft` binary                                                         | model, formats, engine, devices, ui  |
 | `crates/livecraft-testkit/src/lib.rs`                 | Test helpers shared across crates                                                            | `render_project_summary`, `RenderSummary`                                  | model, engine                        |
+| `crates/livecraft-time/src/units.rs`                  | Musical time units: beats and samples, with arithmetic (tempo, meter, grid in M02)           | `Beats`, `Samples`                                                         | none                                 |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules
 
-- `livecraft-model` and `livecraft-dsp` have no internal dependencies and no audio, UI, or OS dependencies.
+- `livecraft-model`, `livecraft-dsp`, and `livecraft-time` have no internal dependencies and no audio, UI, or OS dependencies.
 - `livecraft-formats` depends on model.
 - `livecraft-devices` depends on model and dsp.
 - `livecraft-engine` depends on model, dsp, devices, and formats.
