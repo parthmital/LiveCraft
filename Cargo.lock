@@ -1653,6 +1653,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "livecraft-session"
+version = "0.1.0"
+dependencies = [
+ "livecraft-model",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "livecraft-testkit"
 version = "0.1.0"
 dependencies = [

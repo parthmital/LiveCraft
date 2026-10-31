@@ -60,6 +60,8 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 | `crates/livecraft-time/src/tempo.rs`                  | Tempo map (step and linear ramp changes) and beat, second, and sample conversion             | `TempoMap`, `MIN_BPM`, `MAX_BPM`, `seconds_per_beat`, `samples_per_beat`, `beats_per_sample`, `seconds_for_beats` | none                                 |
 | `crates/livecraft-time/src/meter.rs`                  | Time signature map (changes at bar boundaries) and bar.beat.sixteenth conversion and display | `TimeSignatureMap`, `BarBeatSixteenth`, `TimeError`                        | none                                 |
 | `crates/livecraft-time/src/grid.rs`                   | Grid and clip launch quantization (Live's Quantize menu) and the next grid line at or after a position | `Grid`, `LaunchQuantization`, `quantize_launch`                            | none                                 |
+| `crates/livecraft-session/src/command.rs`             | `Operation` (a named, serialisable edit with undo), `Command` (its object-safe form), `CommandError` | `Operation`, `Command`, `CommandError`                          | model                                |
+| `crates/livecraft-session/src/history.rs`             | `UndoHistory`: apply, undo, redo, gesture merge within 500 ms, and a step limit (default 1000) | `UndoHistory`, `MERGE_GAP`                                                 | model                                |
 | `xtask/src/main.rs`                                   | `cargo xtask ci`, layering check, docs link check                                            | `cargo xtask <ci,layering,docs>`                                           | none                                 |
 
 ## Dependency Rules
@@ -68,7 +70,8 @@ GUI --try_lock--> AudioGraph (reads playhead and meters)
 - `livecraft-formats` depends on model.
 - `livecraft-devices` depends on model, dsp, and time.
 - `livecraft-engine` depends on model, dsp, devices, formats, and time.
-- `livecraft-ui` depends on model, formats, engine, and time. The engine edge is temporary and is removed when M04 adds `livecraft-session`.
+- `livecraft-session` depends on model today. The 1.0 layout adds time, formats, and engine when its session and registry use them (M04 items 3 to 9); `LAYERS` already allows them.
+- `livecraft-ui` depends on model, formats, engine, and time. The engine edge is temporary and is removed when M04 moves every view onto `livecraft-session`.
 - `livecraft` (`apps/livecraft`) depends on model, formats, engine, devices, and ui.
 - `livecraft-testkit` is a dev-only dependency and may use model and engine.
 - Never add a reverse edge. A new crate needs a `LAYERS` entry, or `cargo xtask layering` fails.
