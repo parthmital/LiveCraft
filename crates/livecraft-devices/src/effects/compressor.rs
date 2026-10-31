@@ -1,5 +1,7 @@
+use crate::device_processor::{AudioIo, DeviceProcessor, EventList, EventSink, ProcessContext};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::Device;
+use livecraft_model::param::ParamId;
 
 #[derive(Debug, Clone)]
 pub struct CompressorEffect {
@@ -77,5 +79,54 @@ impl CompressorEffect {
         let gain_lin = 10.0f32.powf((self.envelope + self.makeup_gain_db) / 20.0);
 
         (in_l * gain_lin, in_r * gain_lin)
+    }
+}
+
+impl DeviceProcessor for CompressorEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
+    }
+
+    /// Ids are positions in the Compressor table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.threshold_db = value,
+            1 => self.ratio = value.max(1.0),
+            2 => self.attack_ms = value.max(0.1),
+            3 => self.release_ms = value.max(1.0),
+            4 => self.makeup_gain_db = value,
+            _ => {}
+        }
+    }
+
+    fn reset(&mut self) {
+        self.gain_reduction_db = 0.0;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn compressor_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || CompressorEffect::new(44100.0),
+            &[(0, -30.0), (1, 4.0)],
+        );
+    }
+
+    #[test]
+    fn compressor_threshold_changes_the_output() {
+        assert_parameter_changes_output(|| CompressorEffect::new(44100.0), 0, -50.0);
     }
 }

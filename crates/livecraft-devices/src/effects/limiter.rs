@@ -59,6 +59,33 @@ impl LimiterEffect {
     }
 }
 
+impl DeviceProcessor for LimiterEffect {
+    fn process(
+        &mut self,
+        _ctx: &ProcessContext,
+        io: &mut AudioIo<'_>,
+        _events: &EventList,
+        _out_events: &mut EventSink,
+    ) {
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
+    }
+
+    /// Ids are positions in the Limiter table of `livecraft_model::device`.
+    fn set_param(&mut self, id: ParamId, value: f32, _offset: u32) {
+        match id.0 {
+            0 => self.ceiling_db = value,
+            1 => self.gain_db = value,
+            2 => self.release_ms = value.clamp(1.0, 1000.0),
+            _ => {}
+        }
+    }
+
+    /// Returns the envelope to its starting value, as `new` sets it.
+    fn reset(&mut self) {
+        self.envelope = 1.0;
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct UtilityEffect {
     pub device_id: DeviceId,
@@ -133,11 +160,7 @@ impl DeviceProcessor for UtilityEffect {
         _events: &EventList,
         _out_events: &mut EventSink,
     ) {
-        for frame in 0..io.frames() {
-            let (l, r) = self.process_stereo(io.left[frame], io.right[frame]);
-            io.left[frame] = l;
-            io.right[frame] = r;
-        }
+        io.for_each_frame(|l, r| self.process_stereo(l, r));
     }
 
     /// Ids are positions in the Utility table of `livecraft_model::device`.
@@ -152,4 +175,25 @@ impl DeviceProcessor for UtilityEffect {
     }
 
     fn reset(&mut self) {}
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test_support::{
+        assert_block_size_does_not_change_output, assert_parameter_changes_output,
+    };
+
+    #[test]
+    fn limiter_output_does_not_depend_on_the_block_size() {
+        assert_block_size_does_not_change_output(
+            || LimiterEffect::new(44100.0),
+            &[(0, -6.0), (1, 3.0)],
+        );
+    }
+
+    #[test]
+    fn limiter_ceiling_changes_the_output() {
+        assert_parameter_changes_output(|| LimiterEffect::new(44100.0), 0, -20.0);
+    }
 }

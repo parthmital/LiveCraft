@@ -31,6 +31,13 @@ impl AudioIo<'_> {
     pub fn frames(&self) -> usize {
         self.left.len().min(self.right.len())
     }
+
+    /// Replaces each frame with `f(left, right)`, which is how a per-sample effect runs on a block.
+    pub fn for_each_frame(&mut self, mut f: impl FnMut(f32, f32) -> (f32, f32)) {
+        for (left, right) in self.left.iter_mut().zip(self.right.iter_mut()) {
+            (*left, *right) = f(*left, *right);
+        }
+    }
 }
 
 /// A note event at a sample offset inside the block. `pitch` follows Live's naming (60 is C3).
@@ -128,6 +135,8 @@ pub trait DeviceProcessor: Send {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::effects::{EqThreeEffect, UtilityEffect};
+    use crate::test_support::{bits, run, signal};
 
     #[test]
     fn a_list_refuses_events_beyond_its_capacity_without_growing() {
@@ -143,54 +152,6 @@ mod tests {
         events.clear();
         assert!(events.is_empty());
         assert!(events.push(off));
-    }
-
-    use crate::effects::{EqThreeEffect, UtilityEffect};
-
-    fn context(frames: usize) -> ProcessContext {
-        ProcessContext {
-            sample_rate: 44100.0,
-            frames,
-            bpm: 120.0,
-            playhead_beats: 0.0,
-            beats_per_frame: 0.0,
-        }
-    }
-
-    /// A fixed pseudo-random test signal in -1 to 1, so every run sees the same samples.
-    fn signal(frames: usize, seed: u32) -> (Vec<f32>, Vec<f32>) {
-        let mut state = seed;
-        let mut next = move || {
-            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
-            (state >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0
-        };
-        let left = (0..frames).map(|_| next()).collect();
-        let right = (0..frames).map(|_| next()).collect();
-        (left, right)
-    }
-
-    /// Runs `processor` over the signal in blocks of `block` frames and returns the output.
-    fn run(
-        processor: &mut dyn DeviceProcessor,
-        input: &(Vec<f32>, Vec<f32>),
-        block: usize,
-    ) -> (Vec<f32>, Vec<f32>) {
-        let (mut left, mut right) = input.clone();
-        let events = EventList::default();
-        let mut sink = EventSink::default();
-        for start in (0..left.len()).step_by(block) {
-            let end = (start + block).min(left.len());
-            let mut io = AudioIo {
-                left: &mut left[start..end],
-                right: &mut right[start..end],
-            };
-            processor.process(&context(end - start), &mut io, &events, &mut sink);
-        }
-        (left, right)
-    }
-
-    fn bits(samples: &[f32]) -> Vec<u32> {
-        samples.iter().map(|s| s.to_bits()).collect()
     }
 
     #[test]
