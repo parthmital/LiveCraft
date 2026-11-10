@@ -4119,9 +4119,9 @@ dependencies = [
 
 [[package]]
 name = "triple_buffer"
-version = "9.0.0"
+version = "9.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e875ab7068a75b74f419da453927e05527c36f0001b3c7aad3ce443640683487"
+checksum = "5ebd806b3ef7a896384cf1e718e7c010e49a80394df74f94a67f6a3037a5749c"
 dependencies = [
  "crossbeam-utils",
 ]

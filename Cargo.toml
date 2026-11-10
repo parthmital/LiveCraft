@@ -41,7 +41,7 @@ insta = { version = "1.49.0", features = ["json"] }
 proptest = "1.12.0"
 rtrb = "=0.4.1"
 basedrop = "=0.1.3"
-triple_buffer = "=9.0.0"
+triple_buffer = "=9.0.1"
 assert_no_alloc = "=1.1.2"
 toml = "=1.1.8"
 directories = "=6.0.0"
