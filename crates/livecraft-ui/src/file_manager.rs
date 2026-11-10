@@ -1003,8 +1003,11 @@ impl FileManagerWindow {
                     self.unused_error = None;
                     self.last_unused_report = session.find_unused_files().ok();
                     action.files_modified_on_disk = true;
-                    action.status_message =
-                        Some(format!("Deleted unused file: {}", path.display()));
+                    let file_name = path
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| path.display().to_string());
+                    action.status_message = Some(format!("Deleted unused file: {file_name}"));
                 }
                 Err(err) => {
                     self.pending_delete_unused = None;
