@@ -5,6 +5,8 @@
 
 use super::{AudioDriver, DriverError, DriverStatus, Latency};
 use crate::executor::Engine;
+use crate::streamer::DiskStreamer;
+use std::sync::Arc;
 
 /// Renders the engine on demand, in steps of `buffer_frames` frames.
 pub struct VirtualDriver {
@@ -12,6 +14,7 @@ pub struct VirtualDriver {
     buffer_frames: u32,
     channels: usize,
     engine: Option<Engine>,
+    streamer: Option<Arc<DiskStreamer>>,
 }
 
 impl VirtualDriver {
@@ -23,7 +26,14 @@ impl VirtualDriver {
             buffer_frames: buffer_frames.max(1),
             channels: channels.max(1),
             engine: None,
+            streamer: None,
         }
+    }
+
+    /// Attaches a [`DiskStreamer`] (typically [`Manual`](crate::streamer::StreamerMode::Manual))
+    /// that is pumped synchronously before every block rendered or skipped.
+    pub fn set_streamer(&mut self, streamer: Arc<DiskStreamer>) {
+        self.streamer = Some(streamer);
     }
 
     /// Fills `out` with the next interleaved samples. The engine is driven in steps of
@@ -35,6 +45,9 @@ impl VirtualDriver {
         };
         let step = self.buffer_frames as usize * self.channels;
         for chunk in out.chunks_mut(step) {
+            if let Some(streamer) = &self.streamer {
+                streamer.pump_sync();
+            }
             engine.process_offline(chunk, self.channels);
         }
     }
@@ -51,6 +64,9 @@ impl VirtualDriver {
         let mut scratch = vec![0.0f32; frames.min(step_frames) * self.channels];
         let mut remaining = frames;
         while remaining > 0 {
+            if let Some(streamer) = &self.streamer {
+                streamer.pump_sync();
+            }
             let chunk_frames = remaining.min(step_frames);
             let slice = &mut scratch[..chunk_frames * self.channels];
             engine.process_offline(slice, self.channels);

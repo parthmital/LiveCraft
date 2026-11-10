@@ -88,6 +88,7 @@ pub(super) fn read_audio_clip(
     let original_bpm = meta
         .and_then(|m| parse_child_f64(tree, m, "OriginalBpm"))
         .unwrap_or(120.0);
+    let ram_mode = parse_child_bool(tree, node, "Ram").unwrap_or(false);
 
     let automation_lanes = automation::read_clip_automation(tree, node, track_id, entities, ids);
 
@@ -112,6 +113,7 @@ pub(super) fn read_audio_clip(
             warp_markers,
             gain_db,
             pitch_cents,
+            ram_mode,
         }),
         automation_lanes,
         launch: f.launch,
@@ -239,6 +241,12 @@ pub(super) fn patch_audio_clip_payload(
         && let Some(sr) = tree.ensure_child(clip_node, "SampleRef")
     {
         set_child_value(tree, sr, "DefaultSampleRate", cur.sample_rate.to_string());
+    }
+
+    if prev.is_none_or(|p| p.ram_mode != cur.ram_mode)
+        && (cur.ram_mode || tree.child(clip_node, "Ram").is_some())
+    {
+        set_child_value(tree, clip_node, "Ram", bool_str(cur.ram_mode));
     }
 
     let needs_meta = cur.channels != 2 || !f64_eq(cur.original_bpm, 120.0);

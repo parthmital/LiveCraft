@@ -6,6 +6,7 @@
 
 use crate::audio_clip::{DecodedAudio, hermite_interp};
 use crate::launch::{LaunchInfo, Launcher, Running};
+use crate::streamer::StreamAudioPlayer;
 use basedrop::Shared;
 use livecraft_devices::{EventList, NoteEvent, ProcessContext};
 use livecraft_model::model::{ClipLaunch, FollowActions};
@@ -31,6 +32,15 @@ pub enum PlayableSource {
         /// True when the clip follows the Set's tempo, as a warped clip does.
         is_warped: bool,
         original_bpm: f64,
+    },
+    Streamed {
+        player: Box<StreamAudioPlayer>,
+        gain: f32,
+        /// True when the clip follows the Set's tempo, as a warped clip does.
+        is_warped: bool,
+        original_bpm: f64,
+        sample_rate: u32,
+        total_frames: u64,
     },
 }
 
@@ -160,11 +170,40 @@ impl ClipLane {
 
     /// Takes over the launch state and the sounding notes of the same track in the graph this one
     /// replaces, so a graph swap neither stops a launched clip nor leaves a note without its note-off.
-    /// It swaps vectors and copies plain data, so it does not allocate.
+    /// It swaps vectors and pointers only, so it does not allocate or drop on the audio thread.
     pub fn adopt(&mut self, previous: &mut ClipLane) {
         self.launcher = previous.launcher;
         std::mem::swap(&mut self.sounding, &mut previous.sounding);
         self.stop_pending = previous.stop_pending;
+        for (new_slot, old_slot) in self.slots.iter_mut().zip(previous.slots.iter_mut()) {
+            if let (Some(new_clip), Some(old_clip)) = (new_slot.as_mut(), old_slot.as_mut()) {
+                adopt_stream_player(&mut new_clip.source, &mut old_clip.source);
+            }
+        }
+        for (new_arr, old_arr) in self.arranged.iter_mut().zip(previous.arranged.iter_mut()) {
+            if (new_arr.start_beat - old_arr.start_beat).abs() < 1e-9 {
+                adopt_stream_player(&mut new_arr.clip.source, &mut old_arr.clip.source);
+            }
+        }
+    }
+
+    /// Lock-free disk streaming telemetry `(disk_load, total_underruns)` across this lane's
+    /// streamed clips.
+    pub fn stream_telemetry(&self) -> (f32, u64) {
+        let mut load = 0.0f32;
+        let mut underruns = 0u64;
+        for clip in self
+            .slots
+            .iter()
+            .flatten()
+            .chain(self.arranged.iter().map(|a| &a.clip))
+        {
+            if let PlayableSource::Streamed { player, .. } = &clip.source {
+                load += player.disk_load();
+                underruns = underruns.saturating_add(player.underruns());
+            }
+        }
+        (load, underruns)
     }
 
     /// Fills `events` with this block's note events and `left` and `right` with this block's audio,
@@ -180,6 +219,16 @@ impl ClipLane {
         left: &mut [f32],
         right: &mut [f32],
     ) {
+        for clip in self
+            .slots
+            .iter_mut()
+            .flatten()
+            .chain(self.arranged.iter_mut().map(|a| &mut a.clip))
+        {
+            if let PlayableSource::Streamed { player, .. } = &mut clip.source {
+                player.begin_block();
+            }
+        }
         let beats_per_frame = ctx.beats_per_frame;
         self.playing = false;
         if self.stop_pending || !self.plays_clips || beats_per_frame == 0.0 {
@@ -190,8 +239,7 @@ impl ClipLane {
         }
         let position = ctx.playhead_beats;
         if let Some(running) = self.launcher.running {
-            let clip = self.slots.get(running.slot).and_then(Option::as_ref);
-            if let Some(clip) = clip {
+            if let Some(clip) = self.slots.get_mut(running.slot).and_then(Option::as_mut) {
                 self.playing = true;
                 let info = clip.info();
                 play(
@@ -210,7 +258,7 @@ impl ClipLane {
                 return;
             }
         } else if !self.arranged.is_empty() && !self.launcher.left_arrangement {
-            let found = self.arranged.iter().find(|arranged| {
+            let found = self.arranged.iter_mut().find(|arranged| {
                 position >= arranged.start_beat
                     && position < arranged.start_beat + arranged.length_beats
             });
@@ -225,7 +273,7 @@ impl ClipLane {
                 };
                 play(
                     PlayPass {
-                        clip: &arranged.clip,
+                        clip: &mut arranged.clip,
                         loop_length,
                         position: clip_position,
                         gain: 1.0,
@@ -270,9 +318,24 @@ impl ClipLane {
     }
 }
 
+fn adopt_stream_player(new: &mut PlayableSource, old: &mut PlayableSource) {
+    if let (
+        PlayableSource::Streamed {
+            player: new_player, ..
+        },
+        PlayableSource::Streamed {
+            player: old_player, ..
+        },
+    ) = (new, old)
+        && new_player.stream_key() == old_player.stream_key()
+    {
+        std::mem::swap(new_player, old_player);
+    }
+}
+
 /// One clip for one block: where it starts and how it loops.
 struct PlayPass<'a> {
-    clip: &'a PlayableClip,
+    clip: &'a mut PlayableClip,
     /// The loop length in beats, when the clip wraps back to its start.
     loop_length: Option<f64>,
     /// The clip position in beats at the first frame of the block.
@@ -302,7 +365,7 @@ fn play(
             }
             None => ctx.frames,
         };
-        match &pass.clip.source {
+        match &mut pass.clip.source {
             PlayableSource::Midi(notes) => {
                 schedule_notes(notes, base, dt, start..end, pass.gain, events, sounding);
             }
@@ -319,6 +382,30 @@ fn play(
                 };
                 render_audio(
                     data,
+                    *gain * pass.gain,
+                    beats_to_samples,
+                    base,
+                    dt,
+                    &mut left[start..end],
+                    &mut right[start..end],
+                );
+            }
+            PlayableSource::Streamed {
+                player,
+                gain,
+                is_warped,
+                original_bpm,
+                sample_rate,
+                total_frames,
+            } => {
+                let beats_to_samples = if *is_warped {
+                    samples_per_beat(f64::from(ctx.bpm), f64::from(*sample_rate))
+                } else {
+                    samples_per_beat(*original_bpm, f64::from(*sample_rate))
+                };
+                render_streamed(
+                    player,
+                    *total_frames,
                     *gain * pass.gain,
                     beats_to_samples,
                     base,
@@ -451,6 +538,39 @@ fn render_audio(
             data.samples_r[i3],
             mu,
         ) * gain;
+    }
+}
+
+/// Writes the audio of a disk-streamed clip over one segment using Hermite interpolation.
+#[allow(clippy::too_many_arguments)]
+fn render_streamed(
+    player: &mut StreamAudioPlayer,
+    total_frames: u64,
+    gain: f32,
+    beats_to_samples: f64,
+    base: f64,
+    dt: f64,
+    left: &mut [f32],
+    right: &mut [f32],
+) {
+    let effective_total = player.effective_total_frames(total_frames);
+    if effective_total == 0 {
+        return;
+    }
+    for (frame, (out_l, out_r)) in left.iter_mut().zip(right.iter_mut()).enumerate() {
+        let position = base + frame as f64 * dt;
+        let sample_position = position * beats_to_samples;
+        if position < 0.0 || sample_position < 0.0 {
+            continue;
+        }
+        let index = sample_position.floor() as u64;
+        if index >= effective_total {
+            continue;
+        }
+        let mu = (sample_position - sample_position.floor()) as f32;
+        let [l, r] = player.read_interpolated(index, mu, effective_total);
+        *out_l = l * gain;
+        *out_r = r * gain;
     }
 }
 

@@ -419,6 +419,7 @@ fn collect_all_and_save_and_unused_files_dialogs_work_end_to_end() {
             user_library: Some(user_lib),
             factory_packs_roots: Vec::new(),
             collect_files_on_export: CollectFilesOnExport::Always,
+            ..LibraryPreferences::default()
         })
         .expect("set lib prefs");
 
@@ -858,6 +859,7 @@ fn collect_files_on_export_ask_modal_and_view_buttons_work() {
             user_library: Some(user_lib),
             factory_packs_roots: vec![packs_dir],
             collect_files_on_export: CollectFilesOnExport::Ask,
+            ..LibraryPreferences::default()
         })
         .expect("update user lib");
     app.selected_track = TrackId(2);

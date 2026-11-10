@@ -210,7 +210,8 @@ pub fn format_health_report(report: &ProjectHealthReport) -> String {
     out.trim_end().to_owned()
 }
 
-/// Strictly read-only sample-rate probe supporting WAV (`hound`), AIFF/AIFF-C, FLAC, and MP3 headers.
+/// Strictly read-only sample-rate probe supporting WAV (`hound`), AIFF/AIFF-C, FLAC, MP3,
+/// and other `symphonia`-supported containers (OGG, M4A/AAC, ALAC).
 pub fn probe_audio_sample_rate(path: &Path) -> Result<u32, HealthError> {
     let mut file = File::open(path)?;
     let file_len = file.metadata()?.len();
@@ -250,10 +251,12 @@ pub fn probe_audio_sample_rate(path: &Path) -> Result<u32, HealthError> {
     if is_mp3 {
         return probe_mp3_rate(&mut file, &hdr, file_len, path);
     }
-    Err(HealthError::AudioProbe {
-        path: path.to_path_buf(),
-        reason: "unrecognized audio container".into(),
-    })
+    crate::audio_decode::probe_audio_info(path)
+        .map(|info| info.sample_rate)
+        .map_err(|e| HealthError::AudioProbe {
+            path: path.to_path_buf(),
+            reason: e.to_string(),
+        })
 }
 
 fn run_health_check(

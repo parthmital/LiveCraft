@@ -48,8 +48,8 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 
 - [~] M09 Lossless Live Set I/O ([milestone](milestones/M09-lossless-live-set-io.md)). Owner input queued: Q13 (open 5 LiveCraft .als sets in Live 12.4)
 - [~] M10 Live Projects and file management ([milestone](milestones/M10-projects-and-file-management.md)). Owner input queued: Q14 (collected project opens in Live 12.4 without missing files)
-- [ ] M11 Audio files, sample cache, disk streaming ([milestone](milestones/M11-audio-files-and-streaming.md))
-- [ ] Owner review after Phase 2
+- [x] M11 Audio files, sample cache, disk streaming ([milestone](milestones/M11-audio-files-and-streaming.md))
+- [~] Owner review after Phase 2 (no `Arrived` rows in `OWNER-QUEUE.md` yet; `Q13` and `Q14` remain `Open`, so `M09` and `M10` stay `[~]` and `M11` is `[x]`)
 
 ## Phase 3: UI foundation
 

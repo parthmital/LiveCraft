@@ -68,6 +68,8 @@ enum Commands {
         #[arg(long)]
         project: bool,
     },
+    /// Analyze an audio file and build or inspect its .lcanalysis waveform pyramid cache
+    Analyze(cli::project::AnalyzeArgs),
     /// Inspect project health (missing/unused files, missing plug-ins, sample-rate mismatches, external files)
     Health(cli::project::HealthArgs),
     /// Collect external samples into the Live Project folder and save the Set
@@ -284,6 +286,9 @@ fn main() -> anyhow::Result<()> {
         },
         Some(Commands::New { path, bpm, project }) => {
             cli::project::run_new(&path, bpm, project)?;
+        }
+        Some(Commands::Analyze(args)) => {
+            cli::project::run_analyze(args)?;
         }
         Some(Commands::Health(args)) => {
             cli::project::run_health(args)?;

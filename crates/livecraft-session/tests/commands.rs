@@ -324,6 +324,17 @@ fn every_registered_command_round_trips_its_arguments() {
         ("clip.move", json!({ "clip": 9, "track": 1, "slot": 2 })),
         ("clip.rename", json!({ "clip": 9, "name": "Verse" })),
         (
+            "clip.replace_sample",
+            json!({
+                "clip": 9,
+                "new_path": "D:/Samples/kick_v2.wav",
+                "new_relative_path": "Samples/Imported/kick_v2.wav",
+                "sample_rate": 48000,
+                "channels": 2,
+                "keep_warp_markers": true
+            }),
+        ),
+        (
             "clip.set_follow_actions",
             json!({ "clip": 9, "follow": { "enabled": true, "action_a": "Next", "action_b": { "Jump": 2 }, "chance_a": 1.0, "chance_b": 0.5, "linked": false, "multiplier": 1, "time_beats": 4.0 } }),
         ),
@@ -339,6 +350,7 @@ fn every_registered_command_round_trips_its_arguments() {
             "clip.set_markers",
             json!({ "clip": 9, "start_marker_beat": 0.0, "end_marker_beat": 4.0 }),
         ),
+        ("clip.set_ram_mode", json!({ "clip": 9, "enabled": true })),
         (
             "device.insert",
             json!({ "track": 3, "device_type": "Compressor", "name": "Compressor" }),

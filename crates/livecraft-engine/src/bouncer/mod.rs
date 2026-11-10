@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Frames the bouncer asks `VirtualDriver` for at a time (fixed for determinism).
 const BLOCK_FRAMES: usize = 512;
@@ -116,7 +117,7 @@ pub fn start_render_in_context(
     sample_rate: f32,
     context: ProjectContext,
 ) -> anyhow::Result<(Playback, Engine)> {
-    let (mut playback, engine) = Playback::start_in_context(project, sample_rate, context)?;
+    let (mut playback, engine) = Playback::start_render_in_context(project, sample_rate, context)?;
     for trk in project.tracks.iter() {
         if let Some(slot) = trk.clip_slots.first()
             && slot.clip.is_some()
@@ -438,6 +439,7 @@ fn render_stem_f32(
         start_render_in_context(project, render_rate as f32, project_context.clone())?;
     engine.set_stem_target(Some(stem_target));
     let mut driver = VirtualDriver::new(render_rate, BLOCK_FRAMES as u32, 2);
+    driver.set_streamer(Arc::clone(playback.streamer()));
     driver.start(engine).map_err(|e| anyhow::anyhow!("{e}"))?;
 
     if start_frames > 0 {
@@ -459,10 +461,11 @@ fn render_stem_f32(
             drop(driver);
             drop(playback);
 
-            let (_playback2, mut engine2) =
+            let (playback2, mut engine2) =
                 start_render_in_context(project, render_rate as f32, project_context.clone())?;
             engine2.set_stem_target(Some(stem_target));
             let mut driver2 = VirtualDriver::new(render_rate, BLOCK_FRAMES as u32, 2);
+            driver2.set_streamer(Arc::clone(playback2.streamer()));
             driver2.start(engine2).map_err(|e| anyhow::anyhow!("{e}"))?;
             if start_frames > 0 {
                 driver2.skip_frames(start_frames);

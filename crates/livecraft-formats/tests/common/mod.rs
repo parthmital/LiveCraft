@@ -89,6 +89,7 @@ pub fn assert_clips_equivalent(a: &Clip, b: &Clip) {
             assert_approx_f64(aa.original_bpm, ab.original_bpm, 1e-6, "orig bpm");
             assert_approx_f32(aa.gain_db, ab.gain_db, 1e-3, "gain db");
             assert_eq!(aa.pitch_cents, ab.pitch_cents);
+            assert_eq!(aa.ram_mode, ab.ram_mode);
             assert_eq!(aa.warp_markers.len(), ab.warp_markers.len());
             for (x, y) in aa.warp_markers.iter().zip(&ab.warp_markers) {
                 assert_approx_f64(x.sample_time_sec, y.sample_time_sec, 1e-6, "wm sec");

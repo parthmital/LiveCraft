@@ -5,11 +5,16 @@
 //! so a file written by another build still loads.
 
 use livecraft_engine::driver::DriverConfig;
+use livecraft_formats::analysis_cache::AnalysisCacheLocation;
 use livecraft_formats::project_dir::CollectFilesOnExport;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
+
+fn default_true() -> bool {
+    true
+}
 
 /// The settings that survive a restart.
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Default)]
@@ -23,8 +28,8 @@ pub struct Preferences {
     pub library: LibraryPreferences,
 }
 
-/// User Library, Factory Packs roots, and Live Clip export sample-copying policy (manual 5.7.1).
-#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+/// User Library, Factory Packs roots, analysis cache, and Live Clip export sample-copying policy (manual 5.1.2, 5.7.1).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(default)]
 pub struct LibraryPreferences {
     /// Custom User Library folder. `None` uses the Documents/LiveCraft/User Library default.
@@ -33,6 +38,24 @@ pub struct LibraryPreferences {
     pub factory_packs_roots: Vec<PathBuf>,
     /// Whether exporting a `.alc` copies dependent audio files into the destination folder.
     pub collect_files_on_export: CollectFilesOnExport,
+    /// Whether `.lcanalysis` waveform overview sidecar files are written automatically (manual 5.1.2).
+    #[serde(default = "default_true")]
+    pub create_analysis_files: bool,
+    /// Optional central folder for `.lcanalysis` files. `None` writes beside each sample.
+    #[serde(default)]
+    pub analysis_cache_folder: Option<PathBuf>,
+}
+
+impl Default for LibraryPreferences {
+    fn default() -> Self {
+        Self {
+            user_library: None,
+            factory_packs_roots: Vec::new(),
+            collect_files_on_export: CollectFilesOnExport::default(),
+            create_analysis_files: true,
+            analysis_cache_folder: None,
+        }
+    }
 }
 
 impl LibraryPreferences {
@@ -50,6 +73,19 @@ impl LibraryPreferences {
                         .map(|d| d.join("LiveCraft").join("User Library"))
                 })
             })
+    }
+
+    /// Returns where `.lcanalysis` waveform overview caches are stored (manual 5.1.2).
+    #[must_use]
+    pub fn analysis_cache_location(&self) -> AnalysisCacheLocation {
+        match self
+            .analysis_cache_folder
+            .as_ref()
+            .filter(|path| !path.as_os_str().is_empty())
+        {
+            Some(dir) => AnalysisCacheLocation::Folder(dir.clone()),
+            None => AnalysisCacheLocation::BesideSample,
+        }
     }
 }
 
@@ -242,6 +278,8 @@ mod tests {
                 user_library: Some(PathBuf::from("D:/Samples/User Library")),
                 factory_packs_roots: vec![PathBuf::from("D:/Packs")],
                 collect_files_on_export: CollectFilesOnExport::Ask,
+                create_analysis_files: false,
+                analysis_cache_folder: Some(PathBuf::from("D:/AnalysisCache")),
             },
         }
     }
@@ -401,5 +439,51 @@ mod tests {
                 .map(|d| d.join("LiveCraft").join("User Library"))
         });
         assert_eq!(default_lib.effective_user_library(), expected_fallback);
+    }
+
+    #[test]
+    fn library_section_omitting_analysis_fields_defaults_create_analysis_files_to_true() {
+        let dir = ScratchDir::new("library-partial");
+        let path = dir.write(
+            "Preferences.toml",
+            "[library]\nuser_library = \"D:/Samples\"\ncollect_files_on_export = \"Never\"\n",
+        );
+        let loaded = Preferences::load(&path).expect("load partial [library]");
+        assert_eq!(
+            loaded.library.user_library,
+            Some(PathBuf::from("D:/Samples"))
+        );
+        assert_eq!(
+            loaded.library.collect_files_on_export,
+            CollectFilesOnExport::Never
+        );
+        assert!(loaded.library.create_analysis_files);
+        assert_eq!(loaded.library.analysis_cache_folder, None);
+        assert_eq!(
+            loaded.library.analysis_cache_location(),
+            AnalysisCacheLocation::BesideSample
+        );
+    }
+
+    #[test]
+    fn analysis_cache_location_uses_folder_when_non_empty_or_falls_back_beside_sample() {
+        let folder_prefs = LibraryPreferences {
+            create_analysis_files: false,
+            analysis_cache_folder: Some(PathBuf::from("E:/Cache")),
+            ..LibraryPreferences::default()
+        };
+        assert_eq!(
+            folder_prefs.analysis_cache_location(),
+            AnalysisCacheLocation::Folder(PathBuf::from("E:/Cache"))
+        );
+
+        let empty_folder_prefs = LibraryPreferences {
+            analysis_cache_folder: Some(PathBuf::new()),
+            ..LibraryPreferences::default()
+        };
+        assert_eq!(
+            empty_folder_prefs.analysis_cache_location(),
+            AnalysisCacheLocation::BesideSample
+        );
     }
 }

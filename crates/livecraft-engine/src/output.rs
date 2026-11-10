@@ -9,10 +9,13 @@ use crate::compiler::{GraphCompiler, ProcessorFactory};
 use crate::driver::{AudioDriver, CpalDriver, DriverConfig, DriverStatus, Latency};
 use crate::executor::{Engine, EngineHandle};
 use crate::midi_io::{MidiInputs, MidiOutputs, MidiPorts};
+use crate::streamer::DiskStreamer;
 use basedrop::Collector;
 use livecraft_devices::create_device_processor;
 use livecraft_formats::project_dir::ProjectContext;
 use livecraft_model::model::Project;
+use std::path::PathBuf;
+use std::sync::Arc;
 
 /// The session side of a running engine, and the driver that plays it when there is one.
 pub struct Playback {
@@ -115,6 +118,16 @@ impl Playback {
         Self::start_with_context(project, sample_rate, create_device_processor, context)
     }
 
+    /// Starts an offline-render engine with a deterministic [`Manual`](crate::streamer::StreamerMode::Manual)
+    /// [`DiskStreamer`], using `context` to resolve relative audio clip references.
+    pub fn start_render_in_context(
+        project: &Project,
+        sample_rate: f32,
+        context: ProjectContext,
+    ) -> anyhow::Result<(Self, Engine)> {
+        Self::start_with_mode(project, sample_rate, create_device_processor, context, true)
+    }
+
     /// As `start`, with each device's processor built by `factory`.
     pub fn start_with(
         project: &Project,
@@ -129,15 +142,48 @@ impl Playback {
         self.compiler.set_project_context(context);
     }
 
+    /// Enqueues a RAM-mode audio clip reference for background decoding and resampling.
+    pub fn enqueue_ram_decode(
+        &mut self,
+        file_path: &str,
+        relative_path: Option<&str>,
+    ) -> Option<PathBuf> {
+        self.compiler.enqueue_ram_decode(file_path, relative_path)
+    }
+
+    /// Polls background RAM decodes into the compiler's cache, returning how many completed.
+    pub fn poll_decoded(&mut self) -> usize {
+        self.compiler.poll_decoded()
+    }
+
+    /// Returns the compiler's [`DiskStreamer`].
+    #[must_use]
+    pub fn streamer(&self) -> &Arc<DiskStreamer> {
+        self.compiler.streamer()
+    }
+
     fn start_with_context(
         project: &Project,
         sample_rate: f32,
         factory: ProcessorFactory,
         context: ProjectContext,
     ) -> anyhow::Result<(Self, Engine)> {
+        Self::start_with_mode(project, sample_rate, factory, context, false)
+    }
+
+    fn start_with_mode(
+        project: &Project,
+        sample_rate: f32,
+        factory: ProcessorFactory,
+        context: ProjectContext,
+        manual_streamer: bool,
+    ) -> anyhow::Result<(Self, Engine)> {
         let collector = Collector::new();
         let mut compiler = GraphCompiler::with_factory(sample_rate, collector.handle(), factory)
             .with_project_context(context);
+        if manual_streamer {
+            compiler = compiler.with_manual_streamer();
+        }
         let graph = compiler.compile(project);
         let (engine, handle) = Engine::start(graph, sample_rate, collector)?;
         let playback = Self {

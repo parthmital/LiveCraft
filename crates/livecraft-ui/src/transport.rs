@@ -25,12 +25,21 @@ pub struct TransportBarResponse {
     pub playhead_set: Option<f64>,
 }
 
+/// Returns `true` when the engine reports disk streaming starvation or overload (manual 38.3, p. 988).
+#[must_use]
+pub fn is_disk_overloaded(disk_load: f32, disk_underruns: u64) -> bool {
+    disk_underruns > 0 || (disk_load.is_finite() && disk_load >= 1.0)
+}
+
+#[allow(clippy::too_many_arguments)]
 pub fn render_transport_bar(
     ui: &mut Ui,
     project: &Project,
     current_view: ViewMode,
     palette: &LivePalette,
     cpu_percent: f32,
+    disk_load: f32,
+    disk_underruns: u64,
     browser_visible: bool,
 ) -> TransportBarResponse {
     let mut resp = TransportBarResponse {
@@ -629,6 +638,60 @@ pub fn render_transport_bar(
                 egui::FontId::monospace(9.5),
                 palette.control_foreground,
             );
+        }
+
+        // Disk Overload indicator (manual 38.3, p. 988)
+        let disk_overloaded = is_disk_overloaded(disk_load, disk_underruns);
+        if disk_overloaded {
+            let (disk_rect, disk_resp) =
+                ui.allocate_exact_size(Vec2::new(38.0, 24.0), Sense::hover());
+            if ui.is_rect_visible(disk_rect) {
+                let painter = ui.painter();
+                painter.rect_filled(disk_rect, CornerRadius::same(2), palette.record_red);
+                painter.rect_stroke(
+                    disk_rect,
+                    CornerRadius::same(2),
+                    Stroke::new(1.0_f32, palette.amber),
+                    eframe::egui::StrokeKind::Middle,
+                );
+                painter.text(
+                    disk_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "Disk",
+                    egui::FontId::monospace(10.0),
+                    Color32::WHITE,
+                );
+            }
+            disk_resp.on_hover_text(format!(
+                "Disk Overload (load: {:.0}%, underruns: {})",
+                disk_load * 100.0,
+                disk_underruns
+            ));
+        } else {
+            let (disk_rect, disk_resp) =
+                ui.allocate_exact_size(Vec2::new(22.0, 24.0), Sense::hover());
+            if ui.is_rect_visible(disk_rect) {
+                let painter = ui.painter();
+                painter.rect_filled(disk_rect, CornerRadius::same(2), palette.lcd_bg);
+                painter.rect_stroke(
+                    disk_rect,
+                    CornerRadius::same(2),
+                    Stroke::new(1.0_f32, Color32::from_rgb(0x35, 0x35, 0x35)),
+                    eframe::egui::StrokeKind::Middle,
+                );
+                painter.text(
+                    disk_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    "D",
+                    egui::FontId::monospace(9.5),
+                    palette.control_disabled,
+                );
+            }
+            disk_resp.on_hover_text(format!(
+                "Disk Load: {:.0}% (underruns: {})",
+                disk_load.max(0.0) * 100.0,
+                disk_underruns
+            ));
         }
 
         // View Selectors pushed to right

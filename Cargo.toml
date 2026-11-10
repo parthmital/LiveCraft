@@ -51,7 +51,7 @@ realfft = "=3.5.1"
 rubato = "=5.0.1"
 flacenc = { version = "=0.5.1", default-features = false, features = ["log"] }
 rusty_mp3 = "=1.0.5"
-symphonia = { version = "=0.6.1", default-features = false, features = ["wav", "aiff", "flac", "mp3", "pcm"] }
+symphonia = { version = "=0.6.1", default-features = false, features = ["wav", "aiff", "flac", "mp3", "isomp4", "aac", "alac", "ogg", "vorbis", "pcm"] }
 zip = { version = "=9.1.2", default-features = false, features = ["deflate-flate2"] }
 livecraft-testkit = { path = "crates/livecraft-testkit" }
 livecraft-model = { path = "crates/livecraft-model" }

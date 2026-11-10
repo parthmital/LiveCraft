@@ -8,6 +8,9 @@ use crate::compiled::{
     CompiledGraph, DeviceSlot, InputRoute, MAX_NOTE_EVENTS, MidiOutRoute, Mixer, Node, NodeKind,
     Transfer, compensate_latency,
 };
+use crate::decode_queue::DecodeQueue;
+use crate::resample::resample_decoded_audio;
+use crate::streamer::DiskStreamer;
 use crate::transport::Timeline;
 use basedrop::{Handle, Shared};
 use livecraft_devices::{DeviceProcessor, create_device_processor, is_instrument};
@@ -23,6 +26,7 @@ use livecraft_model::model::{
 use livecraft_model::param::ParamId;
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 /// Builds the processor of a device, or None when the device has no native processor.
 pub type ProcessorFactory = fn(&Device, f32) -> Option<Box<dyn DeviceProcessor>>;
@@ -45,6 +49,12 @@ pub struct GraphCompiler {
     audio: HashMap<PathBuf, Shared<DecodedAudio>>,
     /// Missing sample references already logged, so repeated compiles do not spam warnings.
     warned_missing: HashSet<SampleReference>,
+    /// Disk streaming manager for `ram_mode == false` audio clips.
+    streamer: Arc<DiskStreamer>,
+    /// Background RAM-mode decode queue feeding `self.audio`.
+    decode_queue: DecodeQueue,
+    /// Canonical paths currently queued for background RAM decoding.
+    pending_decodes: HashSet<PathBuf>,
 }
 
 impl GraphCompiler {
@@ -55,6 +65,7 @@ impl GraphCompiler {
 
     /// As `new`, with each device's processor built by `factory`.
     pub fn with_factory(sample_rate: f32, handle: Handle, factory: ProcessorFactory) -> Self {
+        let decode_queue = DecodeQueue::new(handle.clone());
         Self {
             sample_rate,
             handle,
@@ -64,7 +75,88 @@ impl GraphCompiler {
             latencies: HashMap::new(),
             audio: HashMap::new(),
             warned_missing: HashSet::new(),
+            streamer: DiskStreamer::new_async(),
+            decode_queue,
+            pending_decodes: HashSet::new(),
         }
+    }
+
+    /// Switches this compiler to a deterministic [`Manual`](crate::streamer::StreamerMode::Manual)
+    /// [`DiskStreamer`] suitable for offline rendering (`VirtualDriver` / `OfflineBouncer`).
+    #[must_use]
+    pub fn with_manual_streamer(mut self) -> Self {
+        self.streamer = DiskStreamer::new_manual();
+        self
+    }
+
+    /// Replaces the [`DiskStreamer`] used when opening streamed (`ram_mode == false`) audio clips.
+    #[must_use]
+    pub fn with_streamer(mut self, streamer: Arc<DiskStreamer>) -> Self {
+        self.streamer = streamer;
+        self
+    }
+
+    /// Returns the [`DiskStreamer`] used by this compiler.
+    #[must_use]
+    pub fn streamer(&self) -> &Arc<DiskStreamer> {
+        &self.streamer
+    }
+
+    /// Returns the background [`DecodeQueue`] for RAM-mode clips.
+    #[must_use]
+    pub fn decode_queue(&self) -> &DecodeQueue {
+        &self.decode_queue
+    }
+
+    /// Enqueues a RAM-mode audio clip reference for off-thread decoding and resampling.
+    pub fn enqueue_ram_decode(
+        &mut self,
+        file_path: &str,
+        relative_path: Option<&str>,
+    ) -> Option<PathBuf> {
+        let resolved = self.resolve_audio_path(file_path, relative_path)?;
+        Some(self.enqueue_ram_decode_path(&resolved))
+    }
+
+    /// Enqueues a resolved filesystem path for off-thread RAM decoding and resampling.
+    pub fn enqueue_ram_decode_path(&mut self, path: &Path) -> PathBuf {
+        let cache_key = canonical_cache_key(path);
+        if !self.audio.contains_key(&cache_key) && self.pending_decodes.insert(cache_key.clone()) {
+            let target_rate = self.engine_sample_rate();
+            self.decode_queue.submit(path.to_path_buf(), target_rate);
+        }
+        cache_key
+    }
+
+    /// Ingests any finished background RAM decodes into the compiler's decoded-audio cache.
+    /// Returns the number of newly cached clips.
+    pub fn poll_decoded(&mut self) -> usize {
+        let target_rate = self.engine_sample_rate();
+        let mut ingested = 0usize;
+        while let Some(ready) = self.decode_queue.try_recv_ready() {
+            let cache_key = canonical_cache_key(&ready.path);
+            self.pending_decodes.remove(&cache_key);
+            if ready.target_sample_rate != target_rate {
+                continue;
+            }
+            match ready.result {
+                Ok(shared) => {
+                    self.audio.insert(cache_key, shared);
+                    ingested += 1;
+                }
+                Err(error) => {
+                    log::warn!(
+                        "Audio clip file {} cannot be read, so the clip is silent: {error}",
+                        ready.path.display()
+                    );
+                }
+            }
+        }
+        ingested
+    }
+
+    fn engine_sample_rate(&self) -> u32 {
+        self.sample_rate.max(1.0).round() as u32
     }
 
     /// Sets the `ProjectContext` used to resolve sample references on subsequent compiles.
@@ -91,6 +183,7 @@ impl GraphCompiler {
     /// Compiles the Set into the nodes the renderer runs. A device without a native processor makes
     /// no sound, so it is left out of the chain. A clip whose audio file cannot be read plays nothing.
     pub fn compile(&mut self, project: &Project) -> CompiledGraph {
+        let _ = self.poll_decoded();
         let tuning = project.tuning.as_ref();
         let mut nodes = Vec::with_capacity(project.all_tracks().count());
         for track in &project.tracks {
@@ -274,12 +367,38 @@ impl GraphCompiler {
                 let notes = play_notes(midi, tuning);
                 PlayableSource::Midi(Shared::new(&self.handle, notes))
             }
-            ClipPayload::Audio(audio) => PlayableSource::Audio {
-                data: self.decoded(&audio.file_path, audio.relative_path.as_deref())?,
-                gain: 10.0f32.powf(audio.gain_db / 20.0),
-                is_warped: audio.is_warped,
-                original_bpm: audio.original_bpm,
-            },
+            ClipPayload::Audio(audio) => {
+                let gain = 10.0f32.powf(audio.gain_db / 20.0);
+                if audio.ram_mode {
+                    PlayableSource::Audio {
+                        data: self.decoded(&audio.file_path, audio.relative_path.as_deref())?,
+                        gain,
+                        is_warped: audio.is_warped,
+                        original_bpm: audio.original_bpm,
+                    }
+                } else {
+                    let resolved_path =
+                        self.resolve_audio_path(&audio.file_path, audio.relative_path.as_deref())?;
+                    let target_rate = self.engine_sample_rate();
+                    match self.streamer.open_stream(&resolved_path, target_rate) {
+                        Ok((player, total_frames, sample_rate)) => PlayableSource::Streamed {
+                            player: Box::new(player),
+                            gain,
+                            is_warped: audio.is_warped,
+                            original_bpm: audio.original_bpm,
+                            sample_rate,
+                            total_frames,
+                        },
+                        Err(error) => {
+                            log::warn!(
+                                "Audio clip file {} cannot be streamed, so the clip is silent: {error}",
+                                resolved_path.display()
+                            );
+                            return None;
+                        }
+                    }
+                }
+            }
         };
         Some(PlayableClip {
             length_beats: clip.length_beats,
@@ -290,12 +409,11 @@ impl GraphCompiler {
         })
     }
 
-    /// The decoded audio of a file, resolved with `project_context`, read once and shared.
-    fn decoded(
+    fn resolve_audio_path(
         &mut self,
         file_path: &str,
         relative_path: Option<&str>,
-    ) -> Option<Shared<DecodedAudio>> {
+    ) -> Option<PathBuf> {
         if file_path.trim().is_empty() && relative_path.is_none_or(|rel| rel.trim().is_empty()) {
             return None;
         }
@@ -303,10 +421,10 @@ impl GraphCompiler {
             path: file_path.to_owned(),
             relative_path: relative_path.map(str::to_owned),
         };
-        let resolved_path = match resolve_sample_reference(&reference, &self.project_context) {
+        match resolve_sample_reference(&reference, &self.project_context) {
             SampleResolution::Resolved { resolved_path, .. } => {
                 self.warned_missing.remove(&reference);
-                resolved_path
+                Some(resolved_path)
             }
             SampleResolution::Missing { .. } => {
                 if self.warned_missing.insert(reference.clone()) {
@@ -315,14 +433,32 @@ impl GraphCompiler {
                         reference.display_ref()
                     );
                 }
-                return None;
+                None
             }
-        };
+        }
+    }
+
+    /// The decoded audio of a file, resolved with `project_context`, resampled to engine rate if
+    /// needed, read once and shared.
+    fn decoded(
+        &mut self,
+        file_path: &str,
+        relative_path: Option<&str>,
+    ) -> Option<Shared<DecodedAudio>> {
+        let resolved_path = self.resolve_audio_path(file_path, relative_path)?;
         let cache_key = canonical_cache_key(&resolved_path);
+        let _ = self.poll_decoded();
         if let Some(data) = self.audio.get(&cache_key) {
             return Some(data.clone());
         }
-        match load_file(&resolved_path) {
+        let target_rate = self.engine_sample_rate();
+        match load_file(&resolved_path).and_then(|decoded| {
+            if decoded.sample_rate != target_rate {
+                resample_decoded_audio(&decoded, target_rate)
+            } else {
+                Ok(decoded)
+            }
+        }) {
             Ok(decoded) => {
                 let data = Shared::new(&self.handle, decoded);
                 self.audio.insert(cache_key, data.clone());

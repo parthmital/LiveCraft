@@ -5,7 +5,7 @@
 use crate::command::{CommandError, Operation};
 use crate::commands::finite;
 use crate::registry::CommandRegistry;
-use livecraft_model::clip::{Clip, ClipSlot};
+use livecraft_model::clip::{Clip, ClipPayload, ClipSlot, WarpMarker};
 use livecraft_model::edit::EditError;
 use livecraft_model::ids::{ClipId, IdAllocator, LaneId, TrackId};
 use livecraft_model::model::{Project, TrackType};
@@ -18,8 +18,10 @@ pub fn register(registry: &mut CommandRegistry) {
     registry.register::<DuplicateClip>();
     registry.register::<MoveClip>();
     registry.register::<RenameClip>();
+    registry.register::<ReplaceClipSample>();
     registry.register::<SetClipLoop>();
     registry.register::<SetClipMarkers>();
+    registry.register::<SetClipRamMode>();
 }
 
 /// The track and row of a clip in the Session View.
@@ -36,14 +38,20 @@ pub(crate) fn locate(project: &Project, clip: ClipId) -> Result<(TrackId, usize)
         .ok_or(CommandError::NoSuchClip(clip))
 }
 
-/// The clip with this id, for editing.
+/// The clip with this id (in Session slots or Arrangement), for editing.
 pub(crate) fn clip_mut(project: &mut Project, clip: ClipId) -> Result<&mut Clip, CommandError> {
-    let (track, row) = locate(project, clip)?;
-    project
-        .track_mut(track)
-        .and_then(|track| track.clip_slots.get_mut(row))
-        .and_then(|slot| slot.clip.as_mut())
-        .ok_or(CommandError::NoSuchClip(clip))
+    for track in project.all_tracks_mut() {
+        if let Some(found) = track
+            .clip_slots
+            .iter_mut()
+            .filter_map(|slot| slot.clip.as_mut())
+            .chain(track.arrangement_clips.iter_mut().map(|arr| &mut arr.clip))
+            .find(|known| known.id == clip)
+        {
+            return Ok(found);
+        }
+    }
+    Err(CommandError::NoSuchClip(clip))
 }
 
 /// The slot at a track and row, which must exist.
@@ -491,6 +499,158 @@ impl Operation for SetClipMarkers {
         {
             clip.start_marker_beat = start;
             clip.end_marker_beat = end;
+        }
+    }
+}
+
+/// Toggles an audio clip between RAM memory (`true`) and disk streaming (`false`) (manual 8.4.5).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetClipRamMode {
+    pub clip: ClipId,
+    pub enabled: bool,
+    #[serde(skip)]
+    prev: Option<bool>,
+}
+
+impl SetClipRamMode {
+    pub fn new(clip: ClipId, enabled: bool) -> Self {
+        Self {
+            clip,
+            enabled,
+            prev: None,
+        }
+    }
+}
+
+impl Operation for SetClipRamMode {
+    const NAME: &'static str = "clip.set_ram_mode";
+    const LABEL: &'static str = "Set Clip RAM Mode";
+
+    fn perform(
+        &mut self,
+        project: &mut Project,
+        _ids: &mut IdAllocator,
+    ) -> Result<(), CommandError> {
+        let clip_id = self.clip;
+        let clip = clip_mut(project, clip_id)?;
+        let ClipPayload::Audio(ref mut audio) = clip.payload else {
+            return Err(CommandError::NotAudioClip(clip_id));
+        };
+        self.prev = Some(std::mem::replace(&mut audio.ram_mode, self.enabled));
+        Ok(())
+    }
+
+    fn revert(&mut self, project: &mut Project) {
+        if let (Some(previous), Ok(clip)) = (self.prev.take(), clip_mut(project, self.clip))
+            && let ClipPayload::Audio(ref mut audio) = clip.payload
+        {
+            audio.ram_mode = previous;
+        }
+    }
+}
+
+#[derive(Debug)]
+struct PreviousClipSample {
+    file_path: String,
+    relative_path: Option<String>,
+    sample_rate: u32,
+    channels: u16,
+    warp_markers: Option<Vec<WarpMarker>>,
+}
+
+/// Replaces the sample file referenced by an audio clip while preserving clip settings
+/// (`gain_db`, `pitch_cents`, `warp_mode`, `is_warped`, `ram_mode`, loop, and clip markers),
+/// optionally retaining warp markers when the replacement sample has the exact same frame length
+/// (manual 8.12).
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ReplaceClipSample {
+    pub clip: ClipId,
+    pub new_path: String,
+    #[serde(default)]
+    pub new_relative_path: Option<String>,
+    pub sample_rate: u32,
+    pub channels: u16,
+    pub keep_warp_markers: bool,
+    #[serde(skip)]
+    previous: Option<PreviousClipSample>,
+}
+
+impl ReplaceClipSample {
+    pub fn new(
+        clip: ClipId,
+        new_path: impl Into<String>,
+        new_relative_path: Option<String>,
+        sample_rate: u32,
+        channels: u16,
+        keep_warp_markers: bool,
+    ) -> Self {
+        Self {
+            clip,
+            new_path: new_path.into(),
+            new_relative_path,
+            sample_rate,
+            channels,
+            keep_warp_markers,
+            previous: None,
+        }
+    }
+}
+
+impl Operation for ReplaceClipSample {
+    const NAME: &'static str = "clip.replace_sample";
+    const LABEL: &'static str = "Replace Clip Sample";
+
+    fn perform(
+        &mut self,
+        project: &mut Project,
+        _ids: &mut IdAllocator,
+    ) -> Result<(), CommandError> {
+        if self.sample_rate == 0 {
+            return Err(CommandError::NotPositive {
+                what: "sample rate",
+                value: 0.0,
+            });
+        }
+        if self.channels == 0 {
+            return Err(CommandError::NotPositive {
+                what: "channels",
+                value: 0.0,
+            });
+        }
+        let clip_id = self.clip;
+        let clip = clip_mut(project, clip_id)?;
+        let ClipPayload::Audio(ref mut audio) = clip.payload else {
+            return Err(CommandError::NotAudioClip(clip_id));
+        };
+        let old_markers = if self.keep_warp_markers {
+            None
+        } else {
+            Some(std::mem::take(&mut audio.warp_markers))
+        };
+        self.previous = Some(PreviousClipSample {
+            file_path: std::mem::replace(&mut audio.file_path, self.new_path.clone()),
+            relative_path: std::mem::replace(
+                &mut audio.relative_path,
+                self.new_relative_path.clone(),
+            ),
+            sample_rate: std::mem::replace(&mut audio.sample_rate, self.sample_rate),
+            channels: std::mem::replace(&mut audio.channels, self.channels),
+            warp_markers: old_markers,
+        });
+        Ok(())
+    }
+
+    fn revert(&mut self, project: &mut Project) {
+        if let (Some(previous), Ok(clip)) = (self.previous.take(), clip_mut(project, self.clip))
+            && let ClipPayload::Audio(ref mut audio) = clip.payload
+        {
+            audio.file_path = previous.file_path;
+            audio.relative_path = previous.relative_path;
+            audio.sample_rate = previous.sample_rate;
+            audio.channels = previous.channels;
+            if let Some(markers) = previous.warp_markers {
+                audio.warp_markers = markers;
+            }
         }
     }
 }

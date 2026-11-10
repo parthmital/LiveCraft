@@ -351,3 +351,37 @@ fn test_device_json_writes_names_and_leaves_out_unset_parameters() {
     assert_eq!(back.get_param("filter_cutoff"), 2400.0);
     assert_eq!(back.param("algorithm"), None);
 }
+
+#[test]
+fn test_audio_clip_ram_mode_defaults_and_serde() {
+    let mut clip = Clip::new_audio(ClipId(99), "Loop", "samples/loop.wav", 4.0);
+    {
+        let ClipPayload::Audio(ref audio) = clip.payload else {
+            panic!("expected audio clip");
+        };
+        assert!(!audio.ram_mode);
+    }
+
+    let json = serde_json::to_value(&clip).expect("serialize default audio clip");
+    assert!(
+        json["payload"]["Audio"].get("ram_mode").is_none(),
+        "false ram_mode must be skipped during serialization"
+    );
+
+    let without_ram: Clip = serde_json::from_value(json).expect("deserialize without ram_mode");
+    let ClipPayload::Audio(ref decoded) = without_ram.payload else {
+        panic!("expected audio clip");
+    };
+    assert!(!decoded.ram_mode);
+
+    if let ClipPayload::Audio(ref mut audio) = clip.payload {
+        audio.ram_mode = true;
+    }
+    let json_true = serde_json::to_value(&clip).expect("serialize ram_mode=true");
+    assert_eq!(json_true["payload"]["Audio"]["ram_mode"], true);
+    let with_ram: Clip = serde_json::from_value(json_true).expect("deserialize ram_mode=true");
+    let ClipPayload::Audio(ref decoded_true) = with_ram.payload else {
+        panic!("expected audio clip");
+    };
+    assert!(decoded_true.ram_mode);
+}

@@ -54,6 +54,9 @@ pub enum PathPromptKind {
     LoadAdg {
         track_id: TrackId,
     },
+    ReplaceSample {
+        clip_id: ClipId,
+    },
 }
 
 /// State for a single path-prompt modal.
@@ -82,6 +85,8 @@ pub struct FileManagerAction {
     pub updated_project_path: Option<PathBuf>,
     pub open_set_path: Option<PathBuf>,
     pub files_modified_on_disk: bool,
+    pub replaced_clip_sample: Option<ClipId>,
+    pub analysis_invalidated: bool,
 }
 
 /// Manages all M10 project/file management dialogs and flows.
@@ -107,6 +112,8 @@ pub struct FileManagerWindow {
     user_library_input: String,
     factory_packs_input: String,
     collect_on_export: CollectFilesOnExport,
+    create_analysis_files: bool,
+    analysis_cache_folder_input: String,
     library_prefs_synced: bool,
     library_error: Option<String>,
 
@@ -158,6 +165,8 @@ impl Default for FileManagerWindow {
             user_library_input: String::new(),
             factory_packs_input: String::new(),
             collect_on_export: CollectFilesOnExport::default(),
+            create_analysis_files: true,
+            analysis_cache_folder_input: String::new(),
             library_prefs_synced: false,
             library_error: None,
             last_unused_report: None,
@@ -363,6 +372,17 @@ impl FileManagerWindow {
         });
     }
 
+    /// Opens the Replace Sample... path prompt for `clip_id` (manual 8.12).
+    pub fn open_replace_sample(&mut self, clip_id: ClipId) {
+        self.prompt = Some(PathPromptState {
+            kind: PathPromptKind::ReplaceSample { clip_id },
+            path: String::new(),
+            rack_name: String::new(),
+            create_new_track: false,
+            error: None,
+        });
+    }
+
     /// Renders any open M10 windows and modals, returning actions for the app shell.
     pub fn ui(&mut self, ctx: &egui::Context, session: &mut Session) -> FileManagerAction {
         let mut action = FileManagerAction::default();
@@ -530,6 +550,9 @@ impl FileManagerWindow {
                                     report.repaired.len(),
                                     report.unresolved.len()
                                 );
+                                if !report.repaired.is_empty() {
+                                    action.analysis_invalidated = true;
+                                }
                                 self.last_auto_report = Some(report);
                                 self.missing_error = None;
                                 action.status_message = Some(msg);
@@ -638,6 +661,7 @@ impl FileManagerWindow {
                             .push((missing_ref.to_owned(), replacement.to_path_buf()));
                     }
                 }
+                action.analysis_invalidated = true;
                 action.status_message = Some(format!(
                     "Replaced '{file_name}' ({count} reference(s)) with {}",
                     replacement.display()
@@ -783,6 +807,12 @@ impl FileManagerWindow {
                 .collect::<Vec<_>>()
                 .join("; ");
             self.collect_on_export = lib.collect_files_on_export;
+            self.create_analysis_files = lib.create_analysis_files;
+            self.analysis_cache_folder_input = lib
+                .analysis_cache_folder
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default();
             self.library_prefs_synced = true;
         }
 
@@ -827,6 +857,18 @@ impl FileManagerWindow {
                             );
                         });
                 });
+                ui.checkbox(
+                    &mut self.create_analysis_files,
+                    "Create Analysis Files (.lcanalysis)",
+                );
+                ui.horizontal(|ui| {
+                    ui.label("Analysis Cache Folder:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.analysis_cache_folder_input)
+                            .hint_text("Blank = beside each sample")
+                            .desired_width(290.0),
+                    );
+                });
                 if ui.button("Apply Library Preferences").clicked() {
                     let user_library = (!self.user_library_input.trim().is_empty())
                         .then(|| PathBuf::from(self.user_library_input.trim()));
@@ -837,16 +879,22 @@ impl FileManagerWindow {
                         .filter(|s| !s.is_empty())
                         .map(PathBuf::from)
                         .collect();
+                    let analysis_cache_folder =
+                        (!self.analysis_cache_folder_input.trim().is_empty())
+                            .then(|| PathBuf::from(self.analysis_cache_folder_input.trim()));
                     let next = LibraryPreferences {
                         user_library,
                         factory_packs_roots,
                         collect_files_on_export: self.collect_on_export,
+                        create_analysis_files: self.create_analysis_files,
+                        analysis_cache_folder,
                     };
                     match session.set_library_preferences(next) {
                         Ok(()) => {
                             self.library_error = None;
                             action.status_message = Some("Library preferences updated".to_owned());
                             action.files_modified_on_disk = true;
+                            action.analysis_invalidated = true;
                         }
                         Err(err) => {
                             let msg = format!("Failed to save library preferences: {err}");
@@ -1312,12 +1360,14 @@ impl FileManagerWindow {
             PathPromptKind::LoadAdv { .. } => "Load Device Preset (.adv)",
             PathPromptKind::SaveAdg { .. } => "Save Rack Preset (.adg)",
             PathPromptKind::LoadAdg { .. } => "Load Rack Preset (.adg)",
+            PathPromptKind::ReplaceSample { .. } => "Replace Sample...",
         };
         let submit_label = match &state.kind {
             PathPromptKind::ImportMidi { .. } | PathPromptKind::ImportAlc { .. } => "Import",
             PathPromptKind::ExportMidi { .. } | PathPromptKind::ExportAlc { .. } => "Export",
             PathPromptKind::SaveAdv { .. } | PathPromptKind::SaveAdg { .. } => "Save",
             PathPromptKind::LoadAdv { .. } | PathPromptKind::LoadAdg { .. } => "Load",
+            PathPromptKind::ReplaceSample { .. } => "Replace",
         };
 
         let mut open = true;
@@ -1351,6 +1401,20 @@ impl FileManagerWindow {
                             &mut state.create_new_track,
                             "Import onto a new track (unchecked = selected track)",
                         );
+                    }
+                    PathPromptKind::ReplaceSample { clip_id } => {
+                        let clip_label = session
+                            .project()
+                            .all_tracks()
+                            .flat_map(|t| {
+                                t.clip_slots
+                                    .iter()
+                                    .filter_map(|s| s.clip.as_ref())
+                                    .chain(t.arrangement_clips.iter().map(|a| &a.clip))
+                            })
+                            .find(|c| c.id == *clip_id)
+                            .map_or_else(|| format!("Clip #{}", clip_id.0), |c| c.name.clone());
+                        ui.label(format!("Clip: {clip_label}"));
                     }
                     PathPromptKind::LoadAdv { .. } | PathPromptKind::LoadAdg { .. } => {}
                 }
@@ -1560,6 +1624,26 @@ impl FileManagerWindow {
                     }
                     Err(err) => {
                         let msg = format!("Load .adg failed: {err}");
+                        state.error = Some(msg.clone());
+                        action.status_message = Some(msg);
+                        false
+                    }
+                }
+            }
+            PathPromptKind::ReplaceSample { clip_id } => {
+                match session.replace_clip_sample(*clip_id, target) {
+                    Ok(()) => {
+                        action.replaced_clip_sample = Some(*clip_id);
+                        action.analysis_invalidated = true;
+                        action.status_message = Some(format!(
+                            "Replaced sample for clip #{} with {}",
+                            clip_id.0,
+                            target.display()
+                        ));
+                        true
+                    }
+                    Err(err) => {
+                        let msg = format!("Replace Sample failed: {err}");
                         state.error = Some(msg.clone());
                         action.status_message = Some(msg);
                         false

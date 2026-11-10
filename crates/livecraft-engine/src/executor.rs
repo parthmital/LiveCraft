@@ -556,6 +556,7 @@ impl Engine {
     /// allocates or locks here.
     fn publish(&mut self, frames: usize, elapsed_seconds: f32, anchor: (u64, u64)) {
         let playhead_beats = self.playhead_at(self.frame);
+        let (disk_load, disk_underruns) = self.graph.stream_telemetry();
         let snapshot = self.snapshots.input_buffer_mut();
         let tracks = self.graph.track_count();
         snapshot.transport = Transport {
@@ -580,6 +581,8 @@ impl Engine {
         }
         snapshot.output = self.graph.output_meter;
         snapshot.cpu_load = cpu_load(elapsed_seconds, frames, self.sample_rate);
+        snapshot.disk_load = disk_load;
+        snapshot.disk_underruns = disk_underruns;
         snapshot.frames = self.frame;
         self.snapshots.publish();
         if let Some(midi) = self.midi_out.as_mut() {

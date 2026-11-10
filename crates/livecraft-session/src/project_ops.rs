@@ -2,6 +2,7 @@
 //! `.alc`/`.adv`/`.adg`, SMF `.mid`, Pack `.alp`, and B11 health report methods on [`Session`].
 
 use crate::command::CommandError;
+use crate::commands::clip::{ReplaceClipSample, clip_mut};
 use crate::commands::project::{
     InsertPreparedArrangementClip, InsertPreparedClip, InsertPreparedDevice, ReplaceSampleReference,
 };
@@ -13,6 +14,11 @@ use livecraft_formats::als::map::AlsDocument;
 use livecraft_formats::als::read::read_xml_tree;
 use livecraft_formats::als::tree::XmlTree;
 use livecraft_formats::als::write::{XmlFormatMode, write_xml_tree};
+use livecraft_formats::analysis_cache::{
+    CachedSampleAnalysis, analysis_cache_path, build_waveform_pyramid_streaming,
+    load_or_build_analysis,
+};
+use livecraft_formats::audio_decode::{AudioDecodeError, probe_audio_info};
 use livecraft_formats::health::{
     HealthCheckOptions, HealthError, ProjectHealthReport, check_document_health,
     check_project_health,
@@ -64,6 +70,8 @@ pub enum SessionFormatError {
     Command(#[from] CommandError),
     #[error(transparent)]
     Edit(#[from] EditError),
+    #[error(transparent)]
+    AudioDecode(#[from] AudioDecodeError),
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error("cannot place clip: {0}")]
@@ -303,6 +311,25 @@ fn find_clip_in_project(project: &Project, clip_id: ClipId) -> Option<&Clip> {
     project
         .all_tracks()
         .find_map(|track| find_clip_on_track(track, clip_id))
+}
+
+fn resolve_clip_sample_path(audio: &AudioClipData, ctx: &ProjectContext) -> Option<PathBuf> {
+    if audio.file_path.trim().is_empty()
+        && audio
+            .relative_path
+            .as_deref()
+            .is_none_or(|r| r.trim().is_empty())
+    {
+        return None;
+    }
+    let reference = SampleReference {
+        path: audio.file_path.clone(),
+        relative_path: audio.relative_path.clone(),
+    };
+    match resolve_sample_reference(&reference, ctx) {
+        SampleResolution::Resolved { resolved_path, .. } => Some(resolved_path),
+        SampleResolution::Missing { .. } => None,
+    }
 }
 
 fn resolve_placement(
@@ -1145,6 +1172,162 @@ impl Session {
                 check_document_health(&synced, &opts)
             }
             None => check_project_health(&self.project, &opts),
+        }
+    }
+
+    /// Replaces the audio sample of `clip_id` with `new_sample` (manual 8.12).
+    ///
+    /// Preserves clip settings (`gain_db`, `pitch_cents`, `warp_mode`, `is_warped`, `ram_mode`,
+    /// loop, and clip markers) via [`ReplaceClipSample`], retains warp markers only when the old
+    /// sample exists on disk and has the exact same frame length as `new_sample`, builds
+    /// `.lcanalysis` when `create_analysis_files` is enabled, and refreshes [`Self::missing_files`].
+    pub fn replace_clip_sample(
+        &mut self,
+        clip_id: ClipId,
+        new_sample: &Path,
+    ) -> Result<(), SessionFormatError> {
+        let old_frames = {
+            let clip = find_clip_in_project(&self.project, clip_id)
+                .ok_or(CommandError::NoSuchClip(clip_id))?;
+            let ClipPayload::Audio(ref audio) = clip.payload else {
+                return Err(CommandError::NotAudioClip(clip_id).into());
+            };
+            resolve_clip_sample_path(audio, &self.project_context)
+                .and_then(|old_path| probe_audio_info(&old_path).ok())
+                .and_then(|info| info.total_frames)
+        };
+
+        let new_info = probe_audio_info(new_sample)?;
+        let keep_warp_markers = old_frames.is_some() && old_frames == new_info.total_frames;
+
+        let abs_new = std::path::absolute(new_sample).unwrap_or_else(|_| new_sample.to_path_buf());
+        let new_path = normalize_stored_path(&abs_new);
+        let new_relative_path = project_relative_path(&abs_new, &self.project_context);
+
+        self.execute(ReplaceClipSample::new(
+            clip_id,
+            new_path,
+            new_relative_path,
+            new_info.sample_rate,
+            new_info.channels,
+            keep_warp_markers,
+        ))?;
+
+        if self.preferences.library.create_analysis_files {
+            let loc = self.preferences.library.analysis_cache_location();
+            if let Err(err) = load_or_build_analysis(&abs_new, &loc, true) {
+                log::warn!(
+                    "Failed to build .lcanalysis cache for {}: {err}",
+                    abs_new.display()
+                );
+            }
+        }
+
+        self.refresh_missing_files();
+        Ok(())
+    }
+
+    /// Reloads an audio clip's sample after external modification on disk (manual 8.12):
+    /// recomputes `.lcanalysis` (when enabled), updates `sample_rate` and `channels`, and refreshes
+    /// the running audio engine graph.
+    pub fn refresh_clip_sample(&mut self, clip_id: ClipId) -> Result<(), SessionFormatError> {
+        let (resolved, is_ram_mode) = {
+            let clip = find_clip_in_project(&self.project, clip_id)
+                .ok_or(CommandError::NoSuchClip(clip_id))?;
+            let ClipPayload::Audio(ref audio) = clip.payload else {
+                return Err(CommandError::NotAudioClip(clip_id).into());
+            };
+            let path = resolve_clip_sample_path(audio, &self.project_context).ok_or_else(|| {
+                std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("sample file for clip {} could not be resolved", clip_id.0),
+                )
+            })?;
+            (path, audio.ram_mode)
+        };
+
+        let info = probe_audio_info(&resolved)?;
+        if self.preferences.library.create_analysis_files {
+            let loc = self.preferences.library.analysis_cache_location();
+            let cache_path = analysis_cache_path(&resolved, &loc);
+            if cache_path.is_file() {
+                let _ = fs::remove_file(&cache_path);
+            }
+            load_or_build_analysis(&resolved, &loc, true)?;
+        } else {
+            let _ = build_waveform_pyramid_streaming(&resolved)?;
+        }
+
+        let mut meta_changed = false;
+        if let Ok(clip_ref) = clip_mut(&mut self.project, clip_id)
+            && let ClipPayload::Audio(ref mut audio_mut) = clip_ref.payload
+            && (audio_mut.sample_rate != info.sample_rate || audio_mut.channels != info.channels)
+        {
+            audio_mut.sample_rate = info.sample_rate;
+            audio_mut.channels = info.channels;
+            meta_changed = true;
+        }
+        if meta_changed {
+            self.dirty = true;
+        }
+
+        if let Some(engine) = self.engine.as_mut() {
+            if is_ram_mode {
+                let target_rate = engine.sample_rate.max(1.0).round() as u32;
+                engine
+                    .compiler
+                    .decode_queue()
+                    .submit(&resolved, target_rate);
+            } else {
+                // GraphCompiler/ClipLane retains an existing StreamAudioPlayer when stream_key
+                // (path + engine rate) matches, so submit an intermediate graph without this
+                // clip's stream first so the audio thread drops the stale reader before opening
+                // the updated file.
+                let mut flush_project = self.project.clone();
+                if let Ok(flush_clip) = clip_mut(&mut flush_project, clip_id)
+                    && let ClipPayload::Audio(ref mut audio_mut) = flush_clip.payload
+                {
+                    audio_mut.file_path.clear();
+                    audio_mut.relative_path = None;
+                }
+                let flush_graph = engine.compiler.compile(&flush_project);
+                if let Err(err) = engine.handle.submit_graph(flush_graph) {
+                    log::warn!("Failed to submit stream-flush graph on sample reload: {err}");
+                }
+            }
+            let graph = engine.compiler.compile(&self.project);
+            if let Err(err) = engine.handle.submit_graph(graph) {
+                log::warn!("Failed to refresh audio graph after clip sample reload: {err}");
+            }
+        }
+        self.sent = self.project.clone();
+        self.refresh_missing_files();
+        Ok(())
+    }
+
+    /// Resolves an audio clip's sample via [`ProjectContext`] and returns its cached or freshly
+    /// computed `.lcanalysis` waveform pyramid (writing the sidecar only when
+    /// `preferences.library.create_analysis_files` is `true`).
+    #[must_use]
+    pub fn sample_analysis(&self, clip: &Clip) -> Option<CachedSampleAnalysis> {
+        let ClipPayload::Audio(ref audio) = clip.payload else {
+            return None;
+        };
+        let resolved = resolve_clip_sample_path(audio, &self.project_context)?;
+        let loc = self.preferences.library.analysis_cache_location();
+        match load_or_build_analysis(
+            &resolved,
+            &loc,
+            self.preferences.library.create_analysis_files,
+        ) {
+            Ok(analysis) => Some(analysis),
+            Err(err) => {
+                log::warn!(
+                    "Failed to load or build .lcanalysis for {}: {err}",
+                    resolved.display()
+                );
+                None
+            }
         }
     }
 }

@@ -599,3 +599,101 @@ fn audio_clip_relative_path_lossless_als_roundtrip() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn audio_clip_ram_mode_lossless_als_roundtrip_and_toggle() {
+    let tmp = std::env::temp_dir().join(format!(
+        "livecraft_audio_ram_roundtrip_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("mkdir");
+
+    // 1. Existing XML without <Ram> stays without <Ram> when ram_mode stays false.
+    let no_ram_xml = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<Ableton MajorVersion=\"5\" MinorVersion=\"12.0_12117\">\n",
+        "\t<LiveSet>\n",
+        "\t\t<Tracks>\n",
+        "\t\t\t<AudioTrack Id=\"1\">\n",
+        "\t\t\t\t<Name><EffectiveName Value=\"Audio\" /></Name>\n",
+        "\t\t\t\t<DeviceChain><MainSequencer><ClipSlotList>\n",
+        "\t\t\t\t\t<ClipSlot Id=\"0\"><ClipSlot><Value>\n",
+        "\t\t\t\t\t\t<AudioClip Id=\"10\">\n",
+        "\t\t\t\t\t\t\t<Name Value=\"Dry\" />\n",
+        "\t\t\t\t\t\t\t<SampleRef><FileRef><Path Value=\"D:/Audio/Dry.wav\" /></FileRef></SampleRef>\n",
+        "\t\t\t\t\t\t</AudioClip>\n",
+        "\t\t\t\t\t</Value></ClipSlot></ClipSlot>\n",
+        "\t\t\t\t</ClipSlotList></MainSequencer></DeviceChain>\n",
+        "\t\t\t</AudioTrack>\n",
+        "\t\t</Tracks>\n",
+        "\t</LiveSet>\n",
+        "</Ableton>\n"
+    );
+    let mut doc = AlsDocument::from_xml(no_ram_xml).expect("parse no_ram_xml");
+    let proj = doc.project().clone();
+    let Some(ClipPayload::Audio(a)) = proj.tracks[0].clip_slots[0]
+        .clip
+        .as_ref()
+        .map(|c| &c.payload)
+    else {
+        panic!("expected audio clip");
+    };
+    assert!(!a.ram_mode);
+
+    doc.apply_project(&proj).expect("apply unchanged");
+    let unchanged_xml = doc.to_xml().expect("to_xml unchanged");
+    assert!(
+        !unchanged_xml.contains("<Ram"),
+        "unchanged XML without <Ram> must not gain <Ram> tags:\n{unchanged_xml}"
+    );
+
+    // 2. Enabling ram_mode patches <Ram Value="true" /> and round-trips through gzip .als.
+    let mut enabled_proj = proj;
+    if let Some(ref mut clip) = enabled_proj.tracks[0].clip_slots[0].clip
+        && let ClipPayload::Audio(ref mut a) = clip.payload
+    {
+        a.ram_mode = true;
+    }
+    doc.apply_project(&enabled_proj)
+        .expect("apply ram_mode=true");
+    let enabled_xml = doc.to_xml().expect("to_xml enabled");
+    assert!(enabled_xml.contains("<Ram Value=\"true\""));
+
+    let als_path = tmp.join("ram_mode.als");
+    doc.save_als(&als_path).expect("save enabled .als");
+    let mut reopened = AlsDocument::open(&als_path).expect("reopen enabled .als");
+    let saved_xml = reopened.to_xml().expect("to_xml saved");
+    let unchanged_on = reopened.project().clone();
+    reopened
+        .apply_project(&unchanged_on)
+        .expect("apply unchanged ram_mode=true");
+    assert_eq!(
+        reopened.to_xml().expect("to_xml zero diff"),
+        saved_xml,
+        "unmodified set with <Ram Value=\"true\" /> must round-trip with zero XML diff"
+    );
+    let Some(ClipPayload::Audio(a_on)) = reopened.project().tracks[0].clip_slots[0]
+        .clip
+        .as_ref()
+        .map(|c| &c.payload)
+    else {
+        panic!("expected audio clip on reopen");
+    };
+    assert!(a_on.ram_mode);
+
+    // 3. Toggling back to false updates existing <Ram> to <Ram Value="false" />.
+    let mut disabled_proj = reopened.project().clone();
+    if let Some(ref mut clip) = disabled_proj.tracks[0].clip_slots[0].clip
+        && let ClipPayload::Audio(ref mut a) = clip.payload
+    {
+        a.ram_mode = false;
+    }
+    reopened
+        .apply_project(&disabled_proj)
+        .expect("apply ram_mode=false");
+    let disabled_xml = reopened.to_xml().expect("to_xml disabled");
+    assert!(disabled_xml.contains("<Ram Value=\"false\""));
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}

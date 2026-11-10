@@ -11,13 +11,31 @@ use crate::transport::{ViewMode, render_transport_bar};
 use eframe::egui::{self, Color32, Key, Vec2};
 use livecraft_model::edit::EditError;
 use livecraft_model::ids::{ClipId, TrackId};
-use livecraft_model::model::{ClipPayload, Project, TrackType};
+use livecraft_model::model::{Clip, ClipPayload, Project, TrackType};
 use livecraft_session::commands::device::InsertDevice;
+use livecraft_session::commands::project::InsertPreparedClip;
 use livecraft_session::commands::track::{
     CreateAudioTrack, CreateMidiTrack, SetTrackArmed, SetTrackMuted, SetTrackSoloed,
 };
-use livecraft_session::{Command, Session, SessionFormatError, demo_set};
+use livecraft_session::{
+    CachedSampleAnalysis, Command, Session, SessionFormatError, demo_set, probe_audio_info,
+};
 use std::path::{Path, PathBuf};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SampleAnalysisCacheKey {
+    clip_id: ClipId,
+    file_path: String,
+    relative_path: Option<String>,
+    create_analysis_files: bool,
+    analysis_cache_folder: Option<PathBuf>,
+    project_root: Option<PathBuf>,
+}
+
+struct SampleAnalysisCacheEntry {
+    key: SampleAnalysisCacheKey,
+    analysis: Option<CachedSampleAnalysis>,
+}
 
 pub struct LiveCraftApp {
     /// The open Set, its undo history, and its audio engine. Every change goes through it.
@@ -37,6 +55,8 @@ pub struct LiveCraftApp {
     pub settings: SettingsWindow,
     /// M10 File Manager, Save As, Health Report, Pack Install, and export dialogs.
     pub file_manager: FileManagerWindow,
+    /// Cached `.lcanalysis` waveform pyramid for the active Audio Clip View selection.
+    sample_analysis_cache: Option<SampleAnalysisCacheEntry>,
 }
 
 impl LiveCraftApp {
@@ -69,6 +89,7 @@ impl LiveCraftApp {
             browser_visible: true,
             settings: SettingsWindow::default(),
             file_manager: FileManagerWindow::default(),
+            sample_analysis_cache: None,
         }
     }
 
@@ -125,6 +146,7 @@ impl LiveCraftApp {
             browser_visible: true,
             settings,
             file_manager: FileManagerWindow::default(),
+            sample_analysis_cache: None,
         }
     }
 
@@ -161,6 +183,7 @@ impl LiveCraftApp {
             .map_or(TrackId(0), |t| t.id);
         self.selected_clip = Some((self.selected_track, 0));
         self.browser.invalidate();
+        self.sample_analysis_cache = None;
         self.status_message = "Created new Live Set".to_string();
     }
 
@@ -177,6 +200,7 @@ impl LiveCraftApp {
                     .map_or(TrackId(0), |t| t.id);
                 self.selected_clip = Some((self.selected_track, 0));
                 self.browser.invalidate();
+                self.sample_analysis_cache = None;
                 let missing = self.session.missing_files().len();
                 self.status_message = if missing > 0 {
                     format!("Opened {} ({missing} missing file(s))", path.display())
@@ -385,6 +409,175 @@ impl LiveCraftApp {
         }
     }
 
+    fn selected_audio_clip_id(&self) -> Option<ClipId> {
+        let (t_id, s_idx) = self.selected_clip?;
+        self.session
+            .project()
+            .track(t_id)
+            .and_then(|trk| trk.clip_slots.get(s_idx))
+            .and_then(|slot| slot.clip.as_ref())
+            .filter(|clip| matches!(clip.payload, ClipPayload::Audio(_)))
+            .map(|clip| clip.id)
+    }
+
+    fn find_audio_drop_slot(&self) -> Option<(TrackId, usize)> {
+        let project = self.session.project();
+        if let Some(trk) = project.track(self.selected_track)
+            && trk.track_type == TrackType::Audio
+        {
+            if let Some((sel_t, sel_s)) = self.selected_clip
+                && sel_t == self.selected_track
+                && trk
+                    .clip_slots
+                    .get(sel_s)
+                    .is_some_and(|slot| slot.clip.is_none())
+            {
+                return Some((self.selected_track, sel_s));
+            }
+            if let Some(slot_idx) = trk.clip_slots.iter().position(|slot| slot.clip.is_none()) {
+                return Some((self.selected_track, slot_idx));
+            }
+        }
+        for trk in &project.tracks {
+            if trk.track_type == TrackType::Audio
+                && let Some(slot_idx) = trk.clip_slots.iter().position(|slot| slot.clip.is_none())
+            {
+                return Some((trk.id, slot_idx));
+            }
+        }
+        None
+    }
+
+    fn refresh_selected_clip_analysis(&mut self, track_id: TrackId, slot_idx: usize) {
+        let Some(clip) = self
+            .session
+            .project()
+            .track(track_id)
+            .and_then(|trk| trk.clip_slots.get(slot_idx))
+            .and_then(|slot| slot.clip.as_ref())
+        else {
+            return;
+        };
+        let ClipPayload::Audio(ref audio) = clip.payload else {
+            return;
+        };
+        let lib = &self.session.preferences().library;
+        let key = SampleAnalysisCacheKey {
+            clip_id: clip.id,
+            file_path: audio.file_path.clone(),
+            relative_path: audio.relative_path.clone(),
+            create_analysis_files: lib.create_analysis_files,
+            analysis_cache_folder: lib.analysis_cache_folder.clone(),
+            project_root: self.session.project_context().project_root.clone(),
+        };
+        let needs_load = self
+            .sample_analysis_cache
+            .as_ref()
+            .is_none_or(|entry| entry.key != key);
+        if needs_load {
+            let analysis = self.session.sample_analysis(clip);
+            self.sample_analysis_cache = Some(SampleAnalysisCacheEntry { key, analysis });
+        }
+    }
+
+    fn drop_audio_path(&mut self, path: &Path) {
+        if let Some(clip_id) = self.selected_audio_clip_id() {
+            match self.session.replace_clip_sample(clip_id, path) {
+                Ok(()) => {
+                    self.sample_analysis_cache = None;
+                    self.bottom_tab = 1;
+                    self.status_message = format!(
+                        "Replaced sample for clip #{} with {}",
+                        clip_id.0,
+                        path.display()
+                    );
+                }
+                Err(err) => {
+                    self.status_message = format!("Replace sample failed: {err}");
+                }
+            }
+            return;
+        }
+
+        let info = match probe_audio_info(path) {
+            Ok(info) => info,
+            Err(err) => {
+                self.status_message =
+                    format!("Failed to read audio file {}: {err}", path.display());
+                return;
+            }
+        };
+
+        let bpm = f64::from(self.session.project().transport.bpm()).max(1.0);
+        let length_beats = match info.total_frames {
+            Some(frames) if frames > 0 && info.sample_rate > 0 => {
+                let secs = frames as f64 / f64::from(info.sample_rate);
+                (secs * (bpm / 60.0)).max(0.25)
+            }
+            _ => 4.0,
+        };
+        let clip_name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or("Audio Clip")
+            .to_owned();
+
+        let abs_path = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+        let stored_path = abs_path.to_string_lossy().replace('\\', "/");
+        let relative_path = self
+            .session
+            .project_context()
+            .project_root
+            .as_deref()
+            .and_then(|root| abs_path.strip_prefix(root).ok())
+            .map(|rel| rel.to_string_lossy().replace('\\', "/"));
+
+        let mut clip = Clip::new_audio(ClipId(0), &clip_name, stored_path, length_beats);
+        if let ClipPayload::Audio(ref mut audio) = clip.payload {
+            audio.relative_path = relative_path;
+            audio.sample_rate = info.sample_rate;
+            audio.channels = info.channels;
+        }
+
+        let target = self.find_audio_drop_slot();
+        let new_track_name = format!("{}-Audio", self.session.project().tracks.len() + 1);
+        let mut placed: Option<(TrackId, usize)> = None;
+        let tx_res = self.session.transaction("Import Audio File", |tx| {
+            let (track_id, slot_idx) = match target {
+                Some((tid, slot)) => (tid, slot),
+                None => {
+                    tx.run(CreateAudioTrack::new(new_track_name))?;
+                    let tid = tx
+                        .project()
+                        .tracks
+                        .last()
+                        .map(|t| t.id)
+                        .ok_or(EditError::NoSuchTrack(TrackId(0)))?;
+                    (tid, 0)
+                }
+            };
+            tx.run(InsertPreparedClip::new(track_id, slot_idx, clip))?;
+            placed = Some((track_id, slot_idx));
+            Ok(())
+        });
+
+        match tx_res {
+            Ok(()) => {
+                if let Some((tid, slot_idx)) = placed {
+                    self.selected_track = tid;
+                    self.selected_clip = Some((tid, slot_idx));
+                    self.sample_analysis_cache = None;
+                    self.bottom_tab = 1;
+                }
+                self.status_message = format!("Inserted audio clip: {}", path.display());
+            }
+            Err(err) => {
+                self.status_message = format!("Audio import failed: {err}");
+            }
+        }
+    }
+
     fn handle_dropped_files(&mut self, ctx: &egui::Context) {
         let dropped = ctx.input(|i| i.raw.dropped_files.clone());
         for file in dropped {
@@ -399,6 +592,10 @@ impl LiveCraftApp {
             match ext.as_deref() {
                 Some("mid" | "midi") => self.import_mid_path(path),
                 Some("alc") => self.import_alc_path(path),
+                Some(
+                    "wav" | "aif" | "aiff" | "aifc" | "flac" | "mp3" | "ogg" | "oga" | "opus"
+                    | "m4a" | "aac",
+                ) => self.drop_audio_path(path),
                 Some("adv") => self.load_adv_path(path),
                 Some("adg") => self.load_adg_path(path),
                 Some("alp") => {
@@ -652,6 +849,7 @@ impl LiveCraftApp {
         // A lost audio device moves the Set to a silent driver, and the session retries the device
         // (M06 item 8). Repaint while it is lost, so the retries run without input.
         self.session.poll_audio();
+        self.session.poll_background();
         if self.session.audio_error().is_some() {
             ctx.request_repaint_after(livecraft_session::AUDIO_RETRY);
         }
@@ -667,8 +865,12 @@ impl LiveCraftApp {
         if let Some(new_path) = fm_action.updated_project_path {
             self.project_path = Some(new_path);
         }
-        if fm_action.files_modified_on_disk {
+        if fm_action.files_modified_on_disk
+            || fm_action.analysis_invalidated
+            || fm_action.replaced_clip_sample.is_some()
+        {
             self.browser.invalidate();
+            self.sample_analysis_cache = None;
         }
         if let Some(set_path) = fm_action.open_set_path {
             self.open_set_from_path(&set_path);
@@ -695,6 +897,8 @@ impl LiveCraftApp {
                     self.view_mode,
                     &self.palette,
                     2.5, // CPU percent
+                    status.disk_load,
+                    status.disk_underruns,
                     self.browser_visible,
                 );
 
@@ -787,6 +991,8 @@ impl LiveCraftApp {
         let mut save_adg_req = None;
         let mut export_midi_req = None;
         let mut save_alc_req = None;
+        let mut replace_sample_req = None;
+        let mut refresh_sample_req = None;
 
         egui::Panel::bottom("detail_panel")
             .exact_size(185.0)
@@ -832,32 +1038,41 @@ impl LiveCraftApp {
 
                 ui.add_space(2.0);
 
-                let project = self.session.project();
                 if self.bottom_tab == 0 {
                     // Device Chain View
-                    if let Some(trk) = project.track(self.selected_track) {
+                    if let Some(trk) = self.session.project().track(self.selected_track) {
                         let dev_action =
                             render_device_chain(ui, trk, &self.palette, &mut detail_edits);
                         save_adv_req = dev_action.save_device_preset;
                         save_adg_req = dev_action.save_rack_preset;
                     }
                 } else if let Some((t_id, s_idx)) = self.selected_clip {
-                    // Clip View / Piano Roll
+                    // Clip View / Piano Roll / Audio Clip View
+                    self.refresh_selected_clip_analysis(t_id, s_idx);
+                    let project = self.session.project();
                     let slot_clip = project
                         .track(t_id)
                         .and_then(|trk| trk.clip_slots.get(s_idx))
                         .and_then(|slot| slot.clip.as_ref());
                     if let Some(clip) = slot_clip {
+                        let cached_analysis = self
+                            .sample_analysis_cache
+                            .as_ref()
+                            .filter(|entry| entry.key.clip_id == clip.id)
+                            .and_then(|entry| entry.analysis.as_ref());
                         let pr_action = render_piano_roll(
                             ui,
                             clip,
                             &project.scale,
                             playhead_beats,
                             &self.palette,
+                            cached_analysis,
                             &mut detail_edits,
                         );
                         export_midi_req = pr_action.export_midi;
                         save_alc_req = pr_action.save_live_clip;
+                        replace_sample_req = pr_action.replace_sample_requested;
+                        refresh_sample_req = pr_action.refresh_sample_requested;
                     } else {
                         ui.label("Empty slot. Double-click in Session View to create a clip.");
                     }
@@ -883,6 +1098,20 @@ impl LiveCraftApp {
         }
         if let Some(cid) = save_alc_req {
             self.open_export_alc_prompt(Some(cid));
+        }
+        if let Some(cid) = replace_sample_req {
+            self.file_manager.open_replace_sample(cid);
+        }
+        if let Some(cid) = refresh_sample_req {
+            match self.session.refresh_clip_sample(cid) {
+                Ok(()) => {
+                    self.sample_analysis_cache = None;
+                    self.status_message = format!("Reloaded sample for clip #{}", cid.0);
+                }
+                Err(err) => {
+                    self.status_message = format!("Reload sample failed: {err}");
+                }
+            }
         }
 
         // Left Browser Sidebar (toggleable)

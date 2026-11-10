@@ -6,7 +6,7 @@
 
 use crate::audio_setup::{Carried, cpal_driver, load_preferences, midi_ports, open_engine};
 use crate::command::{Command, CommandError, Operation};
-use crate::commands::clip::CreateMidiClip;
+use crate::commands::clip::{CreateMidiClip, SetClipRamMode};
 use crate::commands::note::AddNote;
 use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
@@ -22,7 +22,7 @@ use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::{AlsDocument, AlsError, AlsParser};
 use livecraft_formats::project_dir::{MissingFile, ProjectContext};
-use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
+use livecraft_model::ids::{ClipId, IdAllocator, SceneId, TrackId};
 use livecraft_model::model::{MidiNote, Project};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -80,6 +80,10 @@ pub struct EngineStatus {
     /// The clip slot each track is playing, by track position.
     pub active_slots: Vec<Option<usize>>,
     pub sample_rate: Option<f32>,
+    /// Estimated disk streaming load across active streamed clips (`0.0` when idle, `>= 1.0` on starvation).
+    pub disk_load: f32,
+    /// Total frame underruns observed across active streamed clips.
+    pub disk_underruns: u64,
 }
 
 /// Builds the audio driver for a configuration. `Session::open` builds a `CpalDriver`, and tests
@@ -107,7 +111,7 @@ pub struct Session {
     pub(crate) engine: Option<Playback>,
     pub(crate) dirty: bool,
     /// The Set as the engine last received it, so each change sends only what differs.
-    sent: Project,
+    pub(crate) sent: Project,
     /// The preferences the Set was opened with, and the audio/library settings changed since.
     pub(crate) preferences: Preferences,
     /// Builds the driver for each audio output the session opens.
@@ -376,6 +380,20 @@ impl Session {
         self.poll_audio_at(Instant::now());
     }
 
+    /// Polls background engine work (such as finished RAM-mode clip decodes) and submits a
+    /// recompiled graph when new decoded audio is ready.
+    pub fn poll_background(&mut self) {
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
+        if engine.poll_decoded() > 0 {
+            let graph = engine.compiler.compile(&self.project);
+            if let Err(err) = engine.handle.submit_graph(graph) {
+                log::warn!("Failed to submit graph after background RAM decode: {err}");
+            }
+        }
+    }
+
     /// As `poll_audio`, at the time `now`. Tests pass the time, so they need not wait for a retry.
     pub fn poll_audio_at(&mut self, now: Instant) {
         if let Some(engine) = self.engine.as_ref()
@@ -493,6 +511,15 @@ impl Session {
     /// The Undo History, newest first (manual 5.4.2).
     pub fn entries(&self) -> Vec<HistoryEntry> {
         self.history.entries()
+    }
+
+    /// Toggles RAM Mode on an audio clip (`true` = RAM memory, `false` = disk streaming, manual 8.4.5).
+    pub fn set_clip_ram_mode(
+        &mut self,
+        clip_id: ClipId,
+        ram_mode: bool,
+    ) -> Result<(), CommandError> {
+        self.execute(SetClipRamMode::new(clip_id, ram_mode))
     }
 
     /// Applies a command, records it for undo, and updates the engine.
@@ -617,6 +644,8 @@ impl Session {
             master_meter: snapshot.output,
             active_slots: nodes.iter().map(|node| node.clip.active_slot).collect(),
             sample_rate: Some(engine.sample_rate),
+            disk_load: snapshot.disk_load,
+            disk_underruns: snapshot.disk_underruns,
         }
     }
 

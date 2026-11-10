@@ -21,6 +21,10 @@ pub struct WarpMarker {
     pub beat_time: f64,
 }
 
+fn is_false(v: &bool) -> bool {
+    !*v
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioClipData {
     pub file_path: String,
@@ -34,6 +38,8 @@ pub struct AudioClipData {
     pub warp_markers: Vec<WarpMarker>,
     pub gain_db: f32,
     pub pitch_cents: i32,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub ram_mode: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -115,6 +121,7 @@ impl Clip {
                 warp_markers: Vec::new(),
                 gain_db: 0.0,
                 pitch_cents: 0,
+                ram_mode: false,
             }),
             automation_lanes: Vec::new(),
             launch: ClipLaunch::default(),

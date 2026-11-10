@@ -798,6 +798,19 @@ impl CompiledGraph {
         self.track_count
     }
 
+    /// Lock-free disk streaming telemetry `(disk_load, total_underruns)` aggregated across all
+    /// track clip lanes.
+    pub fn stream_telemetry(&self) -> (f32, u64) {
+        let mut load = 0.0f32;
+        let mut underruns = 0u64;
+        for node in &self.nodes[..self.track_count] {
+            let (lane_load, lane_underruns) = node.clips.stream_telemetry();
+            load += lane_load;
+            underruns = underruns.saturating_add(lane_underruns);
+        }
+        (load, underruns)
+    }
+
     /// The timeline, and the track nodes to change while reading it.
     pub fn split_timeline(&mut self) -> (&Timeline, &mut [Node]) {
         (&self.timeline, &mut self.nodes[..self.track_count])

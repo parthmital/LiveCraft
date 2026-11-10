@@ -46,6 +46,8 @@ pub enum CommandError {
     NoSuchClip(ClipId),
     #[error("clip {0} is not a MIDI clip, so it has no notes")]
     NotMidiClip(ClipId),
+    #[error("clip {0} is not an audio clip")]
+    NotAudioClip(ClipId),
     #[error("clip {clip} has no note at index {index}")]
     NoSuchNote { clip: ClipId, index: usize },
     #[error("device {device} has no parameter named `{name}`")]

@@ -1,4 +1,6 @@
 pub mod als;
+pub mod analysis_cache;
+pub mod audio_decode;
 pub mod audio_encode;
 pub mod health;
 pub mod live_clip;

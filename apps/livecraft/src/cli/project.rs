@@ -3,6 +3,9 @@ use std::path::{Path, PathBuf};
 
 use clap::{Args, Subcommand};
 use livecraft_formats::als::{AlsDocument, AlsParser};
+use livecraft_formats::analysis_cache::{
+    AnalysisCacheLocation, analysis_cache_path, load_or_build_analysis,
+};
 use livecraft_formats::health::{
     HealthCheckOptions, check_project_health, format_health_report, inspect_set_health,
 };
@@ -17,6 +20,22 @@ use livecraft_session::Session;
 
 use super::convert::{is_json_path, load_project_from_path};
 use super::render::resolve_single_track;
+
+#[derive(Args, Debug)]
+pub struct AnalyzeArgs {
+    /// Path to an audio file (WAV, AIFF, FLAC, MP3, Ogg Vorbis, AAC/ALAC M4A)
+    #[arg(value_name = "AUDIO_FILE")]
+    pub audio_file: PathBuf,
+    /// Directory where .lcanalysis cache files are stored (defaults to beside the sample)
+    #[arg(long, value_name = "DIR")]
+    pub cache_dir: Option<PathBuf>,
+    /// Build analysis in memory without writing a .lcanalysis cache file to disk
+    #[arg(long)]
+    pub no_write: bool,
+    /// Print the analysis summary as JSON
+    #[arg(long)]
+    pub json: bool,
+}
 
 #[derive(Args, Debug)]
 pub struct HealthArgs {
@@ -202,6 +221,61 @@ pub fn run_new(path: &Path, bpm: f32, as_project: bool) -> anyhow::Result<()> {
 
     AlsParser::save_project_to_als(&proj, path)?;
     println!("Created new Ableton Live set: {}", path.display());
+    Ok(())
+}
+
+/// Builds or loads a 3-level waveform peak pyramid (`.lcanalysis`) for an audio file.
+pub fn run_analyze(args: AnalyzeArgs) -> anyhow::Result<()> {
+    if !args.audio_file.exists() {
+        anyhow::bail!("File not found: {}", args.audio_file.display());
+    }
+    let location = match args.cache_dir {
+        Some(ref dir) => AnalysisCacheLocation::Folder(dir.clone()),
+        None => AnalysisCacheLocation::BesideSample,
+    };
+    let cache_path = analysis_cache_path(&args.audio_file, &location);
+    let analysis = load_or_build_analysis(&args.audio_file, &location, !args.no_write)
+        .map_err(|e| anyhow::anyhow!("Audio analysis error: {e}"))?;
+    let cache_exists = cache_path.is_file();
+
+    let blocks_256 = analysis.peak_overview.len();
+    let blocks_4096 = analysis.overview_4096.len();
+    let blocks_65536 = analysis.overview_65536.len();
+
+    if args.json {
+        let payload = serde_json::json!({
+            "file": args.audio_file,
+            "version": analysis.version,
+            "sample_rate": analysis.sample_rate,
+            "channels": analysis.channels,
+            "frames": analysis.frames,
+            "overview_block_frames": analysis.overview_block_frames,
+            "pyramid_blocks": {
+                "256": blocks_256,
+                "4096": blocks_4096,
+                "65536": blocks_65536,
+            },
+            "cache_path": cache_path,
+            "cache_exists": cache_exists,
+            "write_cache": !args.no_write,
+        });
+        println!("{}", serde_json::to_string_pretty(&payload)?);
+    } else {
+        println!("Audio Analysis: {}", args.audio_file.display());
+        println!("  Sample Rate  : {} Hz", analysis.sample_rate);
+        println!("  Channels     : {}", analysis.channels);
+        println!("  Frames       : {}", analysis.frames);
+        println!(
+            "  Pyramid      : 256 -> {} block(s), 4096 -> {} block(s), 65536 -> {} block(s)",
+            blocks_256, blocks_4096, blocks_65536
+        );
+        if cache_exists {
+            println!("  Cache Path   : {}", cache_path.display());
+        } else {
+            println!("  Cache Path   : {} (not written)", cache_path.display());
+        }
+    }
+
     Ok(())
 }
 

@@ -291,6 +291,7 @@ fn save_into_project_and_library_preferences_update_context_and_persist() {
         user_library: Some(user_lib.clone()),
         factory_packs_roots: vec![pack_root.clone()],
         collect_files_on_export: CollectFilesOnExport::Ask,
+        ..LibraryPreferences::default()
     };
     session
         .set_library_preferences(lib_prefs.clone())
@@ -453,6 +454,7 @@ fn collect_all_and_save_copies_never_moves_and_unused_file_deletion_enforces_saf
             user_library: Some(user_lib.clone()),
             factory_packs_roots: vec![pack_root.clone()],
             collect_files_on_export: CollectFilesOnExport::Always,
+            ..LibraryPreferences::default()
         })
         .expect("set library prefs");
 

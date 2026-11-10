@@ -711,6 +711,7 @@ fn payloads_equal(
                 && f64_eq(aa.original_bpm, ab.original_bpm)
                 && f32_eq(aa.gain_db, ab.gain_db)
                 && aa.pitch_cents == ab.pitch_cents
+                && aa.ram_mode == ab.ram_mode
                 && aa.warp_markers.len() == ab.warp_markers.len()
                 && aa.warp_markers.iter().zip(&ab.warp_markers).all(|(x, y)| {
                     f64_eq(x.sample_time_sec, y.sample_time_sec) && f64_eq(x.beat_time, y.beat_time)

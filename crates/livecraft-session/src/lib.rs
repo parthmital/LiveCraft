@@ -15,11 +15,16 @@ pub mod session;
 pub mod transport;
 
 pub use command::{Command, CommandError, Operation};
+pub use commands::clip::{ReplaceClipSample, SetClipRamMode};
 pub use commands::project::ReplaceSampleReference;
 pub use history::{HistoryEntry, MERGE_GAP, OPENING_LABEL, Transaction, UndoHistory};
 pub use livecraft_engine::driver::{DeviceInfo, DeviceList, HostInfo, Latency};
 pub use livecraft_engine::midi_io::MidiPorts;
 pub use livecraft_formats::als::{AlsDocument, AlsError};
+pub use livecraft_formats::analysis_cache::{
+    AnalysisCacheLocation, CachedSampleAnalysis, PeakFrame, WaveformPyramid,
+};
+pub use livecraft_formats::audio_decode::{AudioDecodeError, AudioInfo, probe_audio_info};
 pub use livecraft_formats::health::{
     ExternalFile, HealthCheckOptions, HealthError, MissingPlugin, ProjectHealthReport,
     SampleRateMismatch,

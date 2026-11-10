@@ -19,9 +19,10 @@ hound.workspace = true
 flacenc.workspace = true
 rusty_mp3.workspace = true
 zip.workspace = true
+symphonia.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
-symphonia.workspace = true
 proptest.workspace = true
 
 [lints]
