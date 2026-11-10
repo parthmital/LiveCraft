@@ -510,3 +510,43 @@ fn sanitize_replaces_non_finite_samples_and_keeps_finite_ones_bit_exact() {
         assert_eq!(sanitize_output_sample(value).to_bits(), value.to_bits());
     }
 }
+
+#[test]
+fn process_offline_suppresses_metronome_and_is_deterministic_without_allocating() {
+    let mut project = Project::new_default("Offline");
+    project.transport.metronome_enabled = true;
+    let collector = Collector::new();
+    let mut compiler = GraphCompiler::new(RATE, collector.handle());
+    let graph = compiler.compile(&project);
+    let (mut engine, mut handle) = Engine::start(graph, RATE, collector).expect("start");
+    handle.send(EngineCommand::SetPlaying(true)).expect("play");
+
+    let mut out = vec![0.0f32; MAX_BLOCK * 2];
+    for _ in 0..4 {
+        crate::rt::checked(|| engine.process_offline(&mut out, 2));
+        assert!(
+            out.iter().all(|&s| s == 0.0),
+            "metronome must stay silent during offline render"
+        );
+    }
+}
+
+#[test]
+fn engine_set_stem_target_and_tail_samples_reflect_graph() {
+    let project = Project::new_default("Tail");
+    let collector = Collector::new();
+    let mut compiler = GraphCompiler::new(RATE, collector.handle());
+    let graph = compiler.compile(&project);
+    let (mut engine, _handle) = Engine::start(graph, RATE, collector).expect("start");
+    assert!(engine.tail_samples() > 0, "returns have reverb/delay tail");
+
+    engine.set_stem_target(Some(StemTarget::DryNode(project.tracks[0].id)));
+    assert_eq!(
+        engine.tail_samples(),
+        0,
+        "dry track without tail effects has zero tail"
+    );
+
+    engine.set_stem_target(None);
+    assert!(engine.tail_samples() > 0);
+}

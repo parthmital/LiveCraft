@@ -112,3 +112,16 @@ Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superse
 **Decision:** Adopt both, pinned exactly in `[workspace.dependencies]` (`toml = "=1.1.8"`, `directories = "=6.0.0"`). TOML because the milestone fixes it. Runner-up: JSON through `serde_json`, already a workspace dependency and needing no new crate, not chosen because the milestone fixes TOML.
 
 **Sources:** [toml on crates.io](https://crates.io/crates/toml) and its JSON API `https://crates.io/api/v1/crates/toml`; [directories on crates.io](https://crates.io/crates/directories) and its JSON API `https://crates.io/api/v1/crates/directories`. Both read on 2026-10-31.
+
+## Audio Encoders And Analysis (2026-11-10)
+
+**Tier:** Quick. One bounded choice (AIFF, FLAC, and LGPL-free MP3 writers) for M08. WAV (`hound` 3.5.1), resampling (`rubato` 5.0.1), FFT (`realfft` 3.5.1), decoding (`symphonia` 0.6.1), and hashing (`sha2` 0.11.1) are already decided in `DECISIONS.md` D17 and D27.
+
+**Findings:**
+- `flacenc` 0.5.1 (created `2025-12-18`, Apache-2.0, 876,456 downloads, pure Rust) encodes 16- and 24-bit mono/stereo FLAC with `default-features = false, features = ["log"]`. Alternative `flac-bound` wraps C `libflac` (build dependency, FFI).
+- `rusty_mp3` 1.0.5 (created `2026-10-24`, Apache-2.0, zero normal dependencies, 65,715 downloads, pure Rust) encodes CBR 320 kbps MP3 without C/FFI or LGPL `libmp3lame` (`mp3lame-encoder` rejected due to LGPL-2.0+ dependency failing `deny.toml`).
+- AIFF (16/24-bit big-endian PCM `FORM`/`AIFF`) and AIFF-C (`FORM`/`AIFC` `fl32` big-endian 32-bit float) require only ~100 lines of safe pure Rust (`livecraft-formats/src/audio_encode.rs`) with zero extra dependencies and unclamped float writes.
+
+**Decision:** Adopt `flacenc = "=0.5.1"` and `rusty_mp3 = "=1.0.5"`, and build the AIFF/AIFC writer in-house. All added crates pass `cargo-deny check` (`advisories ok, bans ok, licenses ok, sources ok`).
+
+**Sources:** crates.io JSON API read on 2026-11-10 for `flacenc` (`https://crates.io/api/v1/crates/flacenc`), `rusty_mp3` (`https://crates.io/api/v1/crates/rusty_mp3`), `sha2` (`https://crates.io/api/v1/crates/sha2`), `realfft` (`https://crates.io/api/v1/crates/realfft`), `rubato` (`https://crates.io/api/v1/crates/rubato`), and `symphonia` (`https://crates.io/api/v1/crates/symphonia`).

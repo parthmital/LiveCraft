@@ -127,6 +127,40 @@ impl DeviceProcessor for ChorusEffect {
     }
 
     fn reset(&mut self) {}
+
+    fn tail_samples(&self) -> Option<u64> {
+        if !self.is_enabled
+            || !self.dry_wet.is_finite()
+            || self.dry_wet <= 0.0
+            || !self.sample_rate.is_finite()
+            || self.sample_rate <= 0.0
+            || !self.depth.is_finite()
+        {
+            return None;
+        }
+        let max_delay_cap = self.buffer_l.len().saturating_sub(2);
+        if max_delay_cap == 0 {
+            return None;
+        }
+        let depth = f64::from(self.depth).clamp(0.0, 1.0);
+        // Maximum modulated delay is base (7 ms) + modulation swing (5 ms * depth).
+        let max_delay_ms = 7.0 + 5.0 * depth;
+        let max_delay_samples =
+            (max_delay_ms * 0.001 * f64::from(self.sample_rate)).clamp(1.0, max_delay_cap as f64);
+        let fb = if self.feedback.is_finite() {
+            f64::from(self.feedback).clamp(0.0, 0.75)
+        } else {
+            0.0
+        };
+        let repeats = if fb <= 0.0 {
+            1.0
+        } else {
+            (1e-4_f64.ln() / fb.ln()).ceil().max(1.0)
+        };
+        let max_tail = (30.0 * f64::from(self.sample_rate)).ceil();
+        let tail = (repeats * max_delay_samples).ceil().min(max_tail);
+        Some(tail as u64)
+    }
 }
 
 #[cfg(test)]
@@ -147,5 +181,49 @@ mod tests {
     #[test]
     fn chorus_depth_changes_the_output() {
         assert_parameter_changes_output(|| ChorusEffect::new(44100.0), 1, 0.0);
+    }
+
+    #[test]
+    fn chorus_tail_samples_is_none_when_dry_or_bypassed() {
+        let mut chorus = ChorusEffect::new(44100.0);
+        chorus.dry_wet = 0.0;
+        assert_eq!(chorus.tail_samples(), None);
+
+        chorus.dry_wet = 0.5;
+        chorus.is_enabled = false;
+        assert_eq!(chorus.tail_samples(), None);
+    }
+
+    #[test]
+    fn chorus_tail_samples_zero_feedback_matches_max_modulation_delay() {
+        let mut chorus = ChorusEffect::new(48000.0);
+        chorus.depth = 1.0;
+        chorus.feedback = 0.0;
+        chorus.dry_wet = 0.5;
+        // 7 ms + 5 ms = 12 ms at 48 kHz = 576 samples.
+        assert_eq!(chorus.tail_samples(), Some(576));
+    }
+
+    #[test]
+    fn chorus_tail_samples_scales_with_sample_rate_depth_and_feedback() {
+        let chorus_44k = ChorusEffect::new(44100.0);
+        let chorus_88k = ChorusEffect::new(88200.0);
+        let tail_44k = chorus_44k.tail_samples().expect("wet chorus has tail");
+        let tail_88k = chorus_88k.tail_samples().expect("wet chorus has tail");
+        assert_eq!(tail_88k, tail_44k * 2);
+
+        let mut min_depth = chorus_44k.clone();
+        min_depth.depth = 0.0;
+        let mut max_depth = chorus_44k.clone();
+        max_depth.depth = 1.0;
+        assert!(min_depth.tail_samples().expect("tail") < tail_44k);
+        assert!(max_depth.tail_samples().expect("tail") > tail_44k);
+
+        let mut no_fb = chorus_44k.clone();
+        no_fb.feedback = 0.0;
+        let mut high_fb = chorus_44k;
+        high_fb.feedback = 0.75;
+        assert!(no_fb.tail_samples().expect("tail") < tail_44k);
+        assert!(high_fb.tail_samples().expect("tail") > tail_44k);
     }
 }

@@ -66,6 +66,16 @@ impl GraphCompiler {
         for track in &project.tracks {
             nodes.push(self.node(track, NodeKind::Track, tuning));
         }
+        for (i, track) in project.tracks.iter().enumerate() {
+            if let Some(parent_id) = track.parent
+                && parent_id != track.id
+            {
+                nodes[i].parent_idx = project
+                    .tracks
+                    .iter()
+                    .position(|t| t.id == parent_id && t.track_type == TrackType::Group);
+            }
+        }
         for track in &project.return_tracks {
             nodes.push(self.node(track, NodeKind::Return, tuning));
         }
@@ -164,8 +174,10 @@ impl GraphCompiler {
             },
         };
         let clips = match kind {
-            NodeKind::Track => self.lane(track, tuning),
-            NodeKind::Return | NodeKind::Main => ClipLane::new(Vec::new(), Vec::new(), false, 0),
+            NodeKind::Track if track.track_type != TrackType::Group => self.lane(track, tuning),
+            NodeKind::Track | NodeKind::Return | NodeKind::Main => {
+                ClipLane::new(Vec::new(), Vec::new(), false, 0)
+            }
         };
         let input = InputRoute {
             channel: match (kind, track.routing.audio_from) {

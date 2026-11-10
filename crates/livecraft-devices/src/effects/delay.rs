@@ -125,6 +125,39 @@ impl DeviceProcessor for DelayEffect {
     }
 
     fn reset(&mut self) {}
+
+    fn tail_samples(&self) -> Option<u64> {
+        if !self.is_enabled
+            || !self.dry_wet.is_finite()
+            || self.dry_wet <= 0.0
+            || !self.sample_rate.is_finite()
+            || self.sample_rate <= 0.0
+            || !self.delay_time_ms.is_finite()
+        {
+            return None;
+        }
+        let max_delay = self.buffer_l.len().saturating_sub(1);
+        if max_delay == 0 {
+            return None;
+        }
+        let delay_samples = ((f64::from(self.delay_time_ms) / 1000.0)
+            * f64::from(self.sample_rate))
+        .clamp(1.0, max_delay as f64);
+        let fb = if self.feedback.is_finite() {
+            f64::from(self.feedback).clamp(0.0, 0.98)
+        } else {
+            0.0
+        };
+        let repeats = if fb <= 0.0 {
+            1.0
+        } else {
+            // Repeats until feedback^n <= 1e-4 (-80 dB).
+            (1e-4_f64.ln() / fb.ln()).ceil().max(1.0)
+        };
+        let max_tail = (30.0 * f64::from(self.sample_rate)).ceil();
+        let tail = (repeats * delay_samples).ceil().min(max_tail);
+        Some(tail as u64)
+    }
 }
 
 #[cfg(test)]
@@ -145,5 +178,58 @@ mod tests {
     #[test]
     fn delay_dry_wet_changes_the_output() {
         assert_parameter_changes_output(|| DelayEffect::new(44100.0), 2, 0.0);
+    }
+
+    #[test]
+    fn delay_tail_samples_is_none_when_dry_or_bypassed() {
+        let mut delay = DelayEffect::new(44100.0);
+        delay.dry_wet = 0.0;
+        assert_eq!(delay.tail_samples(), None);
+
+        delay.dry_wet = 0.5;
+        delay.is_enabled = false;
+        assert_eq!(delay.tail_samples(), None);
+    }
+
+    #[test]
+    fn delay_tail_samples_zero_feedback_returns_single_delay() {
+        let mut delay = DelayEffect::new(44100.0);
+        delay.delay_time_ms = 500.0;
+        delay.feedback = 0.0;
+        delay.dry_wet = 0.5;
+        assert_eq!(delay.tail_samples(), Some(22_050));
+    }
+
+    #[test]
+    fn delay_tail_samples_scales_with_sample_rate_delay_and_feedback() {
+        let mut delay_44k = DelayEffect::new(44100.0);
+        delay_44k.delay_time_ms = 100.0;
+        delay_44k.feedback = 0.5;
+        delay_44k.dry_wet = 0.5;
+
+        let mut delay_88k = DelayEffect::new(88200.0);
+        delay_88k.delay_time_ms = 100.0;
+        delay_88k.feedback = 0.5;
+        delay_88k.dry_wet = 0.5;
+
+        let tail_44k = delay_44k.tail_samples().expect("wet delay has tail");
+        let tail_88k = delay_88k.tail_samples().expect("wet delay has tail");
+        assert_eq!(tail_88k, tail_44k * 2);
+
+        let mut longer_delay = delay_44k.clone();
+        longer_delay.delay_time_ms = 200.0;
+        assert_eq!(longer_delay.tail_samples(), Some(tail_44k * 2));
+
+        let mut low_fb = delay_44k.clone();
+        low_fb.feedback = 0.0;
+        let mut high_fb = delay_44k.clone();
+        high_fb.feedback = 0.8;
+        assert!(low_fb.tail_samples().expect("tail") < tail_44k);
+        assert!(high_fb.tail_samples().expect("tail") > tail_44k);
+
+        let mut extreme = delay_44k;
+        extreme.delay_time_ms = 1900.0;
+        extreme.feedback = 0.98;
+        assert_eq!(extreme.tail_samples(), Some(30 * 44_100));
     }
 }

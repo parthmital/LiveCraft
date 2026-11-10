@@ -1,11 +1,12 @@
 use flate2::Compression;
 use flate2::read::GzDecoder;
 use flate2::write::GzEncoder;
-use livecraft_model::ids::{DeviceId, SceneId, TrackId};
+use livecraft_model::ids::{ClipId, DeviceId, SceneId, TrackId};
 use livecraft_model::model::*;
-use quick_xml::events::{BytesStart, Event};
+use quick_xml::events::{BytesEnd, BytesStart, Event};
 use quick_xml::reader::Reader;
 use quick_xml::writer::Writer;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{Cursor, Read, Write};
 use std::path::Path;
@@ -65,6 +66,104 @@ pub fn default_device_name_for_type(dtype: &DeviceType) -> &'static str {
         DeviceType::Redux => "Redux",
         DeviceType::Limiter => "Limiter",
         DeviceType::Custom(_) => "Custom Device",
+    }
+}
+
+fn attr_value_string(e: &BytesStart<'_>, key: &str) -> Option<String> {
+    for attr in e.attributes().flatten() {
+        if attr.key.as_ref() == key {
+            let val = match attr.normalized_value(quick_xml::XmlVersion::Explicit1_0) {
+                Ok(s) => s.into_owned(),
+                Err(_) => String::from_utf8_lossy(attr.value.as_bytes()).into_owned(),
+            };
+            return Some(val);
+        }
+    }
+    None
+}
+
+fn allocate_track_id(e: &BytesStart<'_>, fallback: u64, used: &mut HashSet<u64>) -> TrackId {
+    let parsed = attr_value_string(e, "Id").and_then(|s| s.parse::<u64>().ok());
+    let id = match parsed {
+        Some(id) if !used.contains(&id) => id,
+        _ => {
+            let mut candidate = fallback;
+            while used.contains(&candidate) {
+                candidate += 1;
+            }
+            candidate
+        }
+    };
+    used.insert(id);
+    TrackId(id)
+}
+
+fn allocate_clip_id(e: &BytesStart<'_>, fallback: u64, used: &mut HashSet<u64>) -> ClipId {
+    let parsed = attr_value_string(e, "Id").and_then(|s| s.parse::<u64>().ok());
+    let id = match parsed {
+        Some(id) if id > 0 && !used.contains(&id) => id,
+        _ => {
+            let mut candidate = fallback;
+            while used.contains(&candidate) {
+                candidate += 1;
+            }
+            candidate
+        }
+    };
+    used.insert(id);
+    ClipId(id)
+}
+
+fn handle_audio_clip_tag(
+    tag_name: &str,
+    parent_tag: &str,
+    grandparent_tag: &str,
+    e: &BytesStart<'_>,
+    current_clip: &mut Option<Clip>,
+    clip_has_current_end: &mut bool,
+    clip_has_loop_end: &mut bool,
+) {
+    let Some(clip) = current_clip.as_mut() else {
+        return;
+    };
+    let ClipPayload::Audio(ref mut adata) = clip.payload else {
+        return;
+    };
+    let Some(val) = attr_value_string(e, "Value") else {
+        return;
+    };
+
+    if tag_name == "Path" && parent_tag == "FileRef" {
+        adata.file_path = val;
+    } else if tag_name == "RelativePath" && parent_tag == "FileRef" {
+        if adata.file_path.is_empty() && !val.is_empty() {
+            adata.file_path = val;
+        }
+    } else if tag_name == "CurrentEnd" && parent_tag == "AudioClip" {
+        if let Ok(len) = val.parse::<f64>()
+            && len.is_finite()
+            && len > 0.0
+        {
+            clip.length_beats = len;
+            clip.end_marker_beat = len;
+            if !*clip_has_loop_end {
+                clip.loop_end_beat = len;
+            }
+            *clip_has_current_end = true;
+        }
+    } else if tag_name == "LoopEnd"
+        && parent_tag == "Loop"
+        && grandparent_tag == "AudioClip"
+        && let Ok(len) = val.parse::<f64>()
+        && len.is_finite()
+        && len > 0.0
+    {
+        clip.loop_end_beat = len;
+        *clip_has_loop_end = true;
+        if !*clip_has_current_end {
+            clip.length_beats = len;
+            clip.end_marker_beat = len;
+        }
     }
 }
 
@@ -193,9 +292,18 @@ impl AlsParser {
         let mut current_device_tag: Option<String> = None;
         let mut current_tag_stack: Vec<String> = Vec::new();
         let mut in_tempo = false;
+        let mut in_mixer = false;
+        let mut in_sends = false;
+        let mut in_freeze_sequencer = false;
+        let mut current_send_idx: Option<usize> = None;
         let mut current_midi_key: u8 = 60;
         let mut current_clip: Option<Clip> = None;
+        let mut clip_has_current_end = false;
+        let mut clip_has_loop_end = false;
         let mut current_clip_slot_idx: usize = 0;
+        let mut used_track_ids: HashSet<u64> = HashSet::new();
+        let mut used_clip_ids: HashSet<u64> = HashSet::new();
+        let mut tracks_with_explicit_sends: HashSet<TrackId> = HashSet::new();
 
         loop {
             match reader.read_event_into(&mut buf) {
@@ -203,6 +311,16 @@ impl AlsParser {
                     let tag_name =
                         String::from_utf8_lossy(e.name().as_ref().as_bytes()).to_string();
                     current_tag_stack.push(tag_name.clone());
+                    let parent_tag = if current_tag_stack.len() >= 2 {
+                        current_tag_stack[current_tag_stack.len() - 2].as_str()
+                    } else {
+                        ""
+                    };
+                    let grandparent_tag = if current_tag_stack.len() >= 3 {
+                        current_tag_stack[current_tag_stack.len() - 3].as_str()
+                    } else {
+                        ""
+                    };
 
                     match tag_name.as_str() {
                         "Ableton" => {
@@ -217,32 +335,80 @@ impl AlsParser {
                             }
                         }
                         "MidiTrack" => {
-                            let track_id = tracks.len() as u64 + 1;
+                            let fallback = tracks.len() as u64 + 1;
+                            let track_id = allocate_track_id(e, fallback, &mut used_track_ids);
                             current_track = Some(Track::new(
-                                TrackId(track_id),
-                                format!("{}-MIDI", track_id),
+                                track_id,
+                                format!("{}-MIDI", track_id.0),
                                 TrackType::Midi,
                                 8,
                             ));
+                            in_mixer = false;
+                            in_sends = false;
+                            in_freeze_sequencer = false;
+                            current_send_idx = None;
+                            current_clip_slot_idx = 0;
                         }
                         "AudioTrack" => {
-                            let track_id = tracks.len() as u64 + 1;
+                            let fallback = tracks.len() as u64 + 1;
+                            let track_id = allocate_track_id(e, fallback, &mut used_track_ids);
                             current_track = Some(Track::new(
-                                TrackId(track_id),
-                                format!("{}-Audio", track_id),
+                                track_id,
+                                format!("{}-Audio", track_id.0),
                                 TrackType::Audio,
                                 8,
                             ));
+                            in_mixer = false;
+                            in_sends = false;
+                            in_freeze_sequencer = false;
+                            current_send_idx = None;
+                            current_clip_slot_idx = 0;
                         }
                         "ReturnTrack" => {
-                            let track_id = return_tracks.len() as u64 + 1;
-                            let letter = (b'A' + return_tracks.len() as u8) as char;
+                            let fallback = return_tracks.len() as u64 + 101;
+                            let track_id = allocate_track_id(e, fallback, &mut used_track_ids);
+                            let letter = (b'A' + (return_tracks.len() as u8 % 26)) as char;
                             current_track = Some(Track::new(
-                                TrackId(track_id + 100),
+                                track_id,
                                 format!("{}-Return", letter),
                                 TrackType::Return,
                                 0,
                             ));
+                            in_mixer = false;
+                            in_sends = false;
+                            in_freeze_sequencer = false;
+                            current_send_idx = None;
+                            current_clip_slot_idx = 0;
+                        }
+                        "FreezeSequencer" => {
+                            in_freeze_sequencer = true;
+                        }
+                        "Mixer" => {
+                            if current_device.is_none() && current_track.is_some() {
+                                in_mixer = true;
+                            }
+                        }
+                        "Sends" => {
+                            if in_mixer
+                                && current_device.is_none()
+                                && let Some(ref mut trk) = current_track
+                            {
+                                trk.sends.clear();
+                                tracks_with_explicit_sends.insert(trk.id);
+                                in_sends = true;
+                                current_send_idx = None;
+                            }
+                        }
+                        "TrackSendHolder" => {
+                            if in_sends && let Some(ref mut trk) = current_track {
+                                let idx = attr_value_string(e, "Id")
+                                    .and_then(|s| s.parse::<usize>().ok())
+                                    .unwrap_or(trk.sends.len());
+                                if trk.sends.len() <= idx {
+                                    trk.sends.resize(idx + 1, 0.0);
+                                }
+                                current_send_idx = Some(idx);
+                            }
                         }
                         "Tempo" => {
                             in_tempo = true;
@@ -251,47 +417,60 @@ impl AlsParser {
                             scale.is_active = true;
                         }
                         "Name" | "UserName" | "EffectiveName" => {
-                            if current_tag_stack.len() >= 2
-                                && current_tag_stack[current_tag_stack.len() - 2]
-                                    == "ScaleInformation"
-                            {
-                                for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == "Value" {
-                                        let s = String::from_utf8_lossy(attr.value.as_bytes());
-                                        for st in ScaleType::ALL {
-                                            if st.name().eq_ignore_ascii_case(&s) {
-                                                scale.scale_type = *st;
-                                                scale.is_active = true;
-                                                break;
-                                            }
+                            if parent_tag == "ScaleInformation" {
+                                if let Some(s) = attr_value_string(e, "Value") {
+                                    for st in ScaleType::ALL {
+                                        if st.name().eq_ignore_ascii_case(&s) {
+                                            scale.scale_type = *st;
+                                            scale.is_active = true;
+                                            break;
                                         }
                                     }
                                 }
-                            } else {
-                                for attr in e.attributes().flatten() {
-                                    if attr.key.as_ref() == "Value" {
-                                        let val = String::from_utf8_lossy(attr.value.as_bytes())
-                                            .to_string();
-                                        if !val.is_empty() {
-                                            if let Some(ref mut dev) = current_device {
-                                                dev.name = val;
-                                            } else if let Some(ref mut clip) = current_clip {
-                                                clip.name = val;
-                                            } else if let Some(ref mut trk) = current_track {
-                                                trk.name = val;
-                                            }
-                                        }
+                            } else if let Some(val) = attr_value_string(e, "Value")
+                                && !val.is_empty()
+                            {
+                                if let Some(ref mut dev) = current_device {
+                                    dev.name = val;
+                                } else if let Some(ref mut clip) = current_clip {
+                                    if parent_tag != "FileRef" && parent_tag != "SampleRef" {
+                                        clip.name = val;
                                     }
+                                } else if let Some(ref mut trk) = current_track {
+                                    trk.name = val;
                                 }
                             }
                         }
                         "MidiClip" => {
-                            let clip_id = 1000 + current_clip_slot_idx as u64;
-                            current_clip = Some(Clip::new_midi(clip_id, "Clip", 4.0));
+                            if !in_freeze_sequencer {
+                                let fallback = 1000 + current_clip_slot_idx as u64;
+                                let clip_id = allocate_clip_id(e, fallback, &mut used_clip_ids);
+                                current_clip = Some(Clip::new_midi(clip_id, "Clip", 4.0));
+                                clip_has_current_end = false;
+                                clip_has_loop_end = false;
+                            }
                         }
                         "AudioClip" => {
-                            let clip_id = 2000 + current_clip_slot_idx as u64;
-                            current_clip = Some(Clip::new_audio(clip_id, "Audio", "", 4.0));
+                            if !in_freeze_sequencer {
+                                let fallback = 2000 + current_clip_slot_idx as u64;
+                                let clip_id = allocate_clip_id(e, fallback, &mut used_clip_ids);
+                                current_clip = Some(Clip::new_audio(clip_id, "Audio", "", 4.0));
+                                clip_has_current_end = false;
+                                clip_has_loop_end = false;
+                            }
+                        }
+                        "Path" | "RelativePath" | "CurrentEnd" | "LoopEnd" => {
+                            if current_device.is_none() {
+                                handle_audio_clip_tag(
+                                    tag_name.as_str(),
+                                    parent_tag,
+                                    grandparent_tag,
+                                    e,
+                                    &mut current_clip,
+                                    &mut clip_has_current_end,
+                                    &mut clip_has_loop_end,
+                                );
+                            }
                         }
                         "Operator" | "OriginalSimpler" | "Simpler" | "Eq8" | "EqEight"
                         | "Compressor2" | "Compressor" | "StereoGain" | "Utility" | "Reverb"
@@ -317,18 +496,19 @@ impl AlsParser {
                             }
                         }
                         "Manual" | "Value" => {
-                            let parent_tag = if current_tag_stack.len() >= 2 {
-                                current_tag_stack[current_tag_stack.len() - 2].as_str()
-                            } else {
-                                ""
-                            };
-                            for attr in e.attributes().flatten() {
-                                if attr.key.as_ref() == "Value"
-                                    && let Ok(val_str) = std::str::from_utf8(attr.value.as_bytes())
-                                {
+                            if let Some(val_str) = attr_value_string(e, "Value") {
+                                if in_sends && parent_tag == "Send" {
+                                    if let (Some(idx), Some(trk)) =
+                                        (current_send_idx, current_track.as_mut())
+                                        && let Ok(val) = val_str.parse::<f32>()
+                                        && val.is_finite()
+                                    {
+                                        trk.sends[idx] = val.clamp(0.0, 1.0);
+                                    }
+                                } else {
                                     handle_value_element(
                                         parent_tag,
-                                        val_str,
+                                        &val_str,
                                         in_tempo,
                                         &mut bpm,
                                         &mut current_device,
@@ -439,16 +619,27 @@ impl AlsParser {
                 Ok(Event::Empty(ref e)) => {
                     let tag_name =
                         String::from_utf8_lossy(e.name().as_ref().as_bytes()).to_string();
+                    let parent_tag = current_tag_stack.last().map(|s| s.as_str()).unwrap_or("");
+                    let grandparent_tag = if current_tag_stack.len() >= 2 {
+                        current_tag_stack[current_tag_stack.len() - 2].as_str()
+                    } else {
+                        ""
+                    };
 
                     if tag_name == "Manual" || tag_name == "Value" {
-                        let parent_tag = current_tag_stack.last().map(|s| s.as_str()).unwrap_or("");
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == "Value"
-                                && let Ok(val_str) = std::str::from_utf8(attr.value.as_bytes())
-                            {
+                        if let Some(val_str) = attr_value_string(e, "Value") {
+                            if in_sends && parent_tag == "Send" {
+                                if let (Some(idx), Some(trk)) =
+                                    (current_send_idx, current_track.as_mut())
+                                    && let Ok(val) = val_str.parse::<f32>()
+                                    && val.is_finite()
+                                {
+                                    trk.sends[idx] = val.clamp(0.0, 1.0);
+                                }
+                            } else {
                                 handle_value_element(
                                     parent_tag,
-                                    val_str,
+                                    &val_str,
                                     in_tempo,
                                     &mut bpm,
                                     &mut current_device,
@@ -457,6 +648,38 @@ impl AlsParser {
                                 );
                             }
                         }
+                    } else if tag_name == "Sends" {
+                        if in_mixer
+                            && current_device.is_none()
+                            && let Some(ref mut trk) = current_track
+                        {
+                            trk.sends.clear();
+                            tracks_with_explicit_sends.insert(trk.id);
+                        }
+                    } else if tag_name == "TrackSendHolder" {
+                        if in_sends && let Some(ref mut trk) = current_track {
+                            let idx = attr_value_string(e, "Id")
+                                .and_then(|s| s.parse::<usize>().ok())
+                                .unwrap_or(trk.sends.len());
+                            if trk.sends.len() <= idx {
+                                trk.sends.resize(idx + 1, 0.0);
+                            }
+                        }
+                    } else if (tag_name == "Path"
+                        || tag_name == "RelativePath"
+                        || tag_name == "CurrentEnd"
+                        || tag_name == "LoopEnd")
+                        && current_device.is_none()
+                    {
+                        handle_audio_clip_tag(
+                            tag_name.as_str(),
+                            parent_tag,
+                            grandparent_tag,
+                            e,
+                            &mut current_clip,
+                            &mut clip_has_current_end,
+                            &mut clip_has_loop_end,
+                        );
                     } else if let Some(dtype) = map_ableton_tag_to_device_type(&tag_name) {
                         let mut dev_id = 0u64;
                         for attr in e.attributes().flatten() {
@@ -549,9 +772,7 @@ impl AlsParser {
                             }
                         }
                     } else if tag_name == "ScaleType"
-                        || (tag_name == "Name"
-                            && current_tag_stack.last().map(|s| s.as_str())
-                                == Some("ScaleInformation"))
+                        || (tag_name == "Name" && parent_tag == "ScaleInformation")
                     {
                         for attr in e.attributes().flatten() {
                             if attr.key.as_ref() == "Value" {
@@ -573,23 +794,28 @@ impl AlsParser {
                                 scale.is_active = s == "true" || s == "1";
                             }
                         }
-                    } else if tag_name == "UserName" || tag_name == "EffectiveName" {
-                        for attr in e.attributes().flatten() {
-                            if attr.key.as_ref() == "Value" {
-                                let val =
-                                    String::from_utf8_lossy(attr.value.as_bytes()).to_string();
-                                if !val.is_empty() {
-                                    if let Some(ref mut dev) = current_device {
-                                        dev.name = val;
-                                    } else if let Some(ref mut clip) = current_clip {
-                                        clip.name = val;
-                                    } else if let Some(ref mut trk) = current_track {
-                                        trk.name = val;
-                                    }
+                    } else if tag_name == "UserName"
+                        || tag_name == "EffectiveName"
+                        || (tag_name == "Name"
+                            && (parent_tag == "AudioClip" || parent_tag == "MidiClip"))
+                    {
+                        if let Some(val) = attr_value_string(e, "Value")
+                            && !val.is_empty()
+                        {
+                            if let Some(ref mut dev) = current_device {
+                                dev.name = val;
+                            } else if let Some(ref mut clip) = current_clip {
+                                if parent_tag != "FileRef" && parent_tag != "SampleRef" {
+                                    clip.name = val;
                                 }
+                            } else if let Some(ref mut trk) = current_track {
+                                trk.name = val;
                             }
                         }
-                    } else if tag_name == "ClipSlot" {
+                    } else if tag_name == "ClipSlot"
+                        && !in_freeze_sequencer
+                        && parent_tag == "ClipSlotList"
+                    {
                         current_clip_slot_idx += 1;
                     }
                 }
@@ -597,9 +823,24 @@ impl AlsParser {
                     let tag_name =
                         String::from_utf8_lossy(e.name().as_ref().as_bytes()).to_string();
                     current_tag_stack.pop();
+                    let parent_after_pop =
+                        current_tag_stack.last().map(|s| s.as_str()).unwrap_or("");
 
                     match tag_name.as_str() {
                         "Tempo" => in_tempo = false,
+                        "FreezeSequencer" => in_freeze_sequencer = false,
+                        "Mixer" => {
+                            in_mixer = false;
+                            in_sends = false;
+                            current_send_idx = None;
+                        }
+                        "Sends" => {
+                            in_sends = false;
+                            current_send_idx = None;
+                        }
+                        "TrackSendHolder" => {
+                            current_send_idx = None;
+                        }
                         "Device" => {
                             if let Some(dev) = current_device.take() {
                                 current_device_tag = None;
@@ -624,25 +865,39 @@ impl AlsParser {
                             if let Some(clip) = current_clip.take()
                                 && let Some(ref mut trk) = current_track
                             {
-                                if current_clip_slot_idx < trk.clip_slots.len() {
-                                    trk.clip_slots[current_clip_slot_idx].clip = Some(clip);
-                                } else {
+                                while trk.clip_slots.len() <= current_clip_slot_idx {
                                     let slot_id = (trk.id.0 * 1000) + trk.clip_slots.len() as u64;
-                                    trk.clip_slots.push(ClipSlot::with_clip(slot_id, clip));
+                                    trk.clip_slots.push(ClipSlot::empty(slot_id));
                                 }
+                                trk.clip_slots[current_clip_slot_idx].clip = Some(clip);
                             }
-                            current_clip_slot_idx += 1;
+                            if !current_tag_stack.iter().any(|t| t == "ClipSlot") {
+                                current_clip_slot_idx += 1;
+                            }
+                        }
+                        "ClipSlot" => {
+                            if !in_freeze_sequencer && parent_after_pop == "ClipSlotList" {
+                                current_clip_slot_idx += 1;
+                            }
                         }
                         "MidiTrack" | "AudioTrack" => {
                             if let Some(trk) = current_track.take() {
                                 tracks.push(trk);
                             }
+                            in_mixer = false;
+                            in_sends = false;
+                            in_freeze_sequencer = false;
+                            current_send_idx = None;
                             current_clip_slot_idx = 0;
                         }
                         "ReturnTrack" => {
                             if let Some(trk) = current_track.take() {
                                 return_tracks.push(trk);
                             }
+                            in_mixer = false;
+                            in_sends = false;
+                            in_freeze_sequencer = false;
+                            current_send_idx = None;
                             current_clip_slot_idx = 0;
                         }
                         _ => {}
@@ -653,6 +908,21 @@ impl AlsParser {
                 _ => {}
             }
             buf.clear();
+        }
+
+        let return_count = return_tracks.len();
+        for trk in tracks.iter_mut().chain(return_tracks.iter_mut()) {
+            if !tracks_with_explicit_sends.contains(&trk.id) {
+                trk.sends.resize(return_count, 0.0);
+            }
+        }
+        main_track.sends.resize(return_count, 0.0);
+        if used_track_ids.contains(&main_track.id.0) {
+            let mut candidate = 999u64;
+            while used_track_ids.contains(&candidate) {
+                candidate += 1;
+            }
+            main_track.id = TrackId(candidate);
         }
 
         // If no scenes were parsed, default to 8 scenes
@@ -784,6 +1054,189 @@ impl AlsParser {
         Ok(())
     }
 
+    fn write_track<W: std::io::Write>(
+        writer: &mut Writer<W>,
+        track: &Track,
+        tag_name: &str,
+    ) -> Result<(), quick_xml::Error> {
+        let mut track_elem = BytesStart::new(tag_name);
+        let id_str = track.id.to_string();
+        track_elem.push_attribute(("Id", id_str.as_str()));
+        writer.write_event(Event::Start(track_elem))?;
+
+        // Name
+        writer.write_event(Event::Start(BytesStart::new("Name")))?;
+        let mut uname = BytesStart::new("UserName");
+        uname.push_attribute(("Value", track.name.as_str()));
+        writer.write_event(Event::Empty(uname))?;
+        writer.write_event(Event::End(BytesEnd::new("Name")))?;
+
+        // DeviceChain
+        writer.write_event(Event::Start(BytesStart::new("DeviceChain")))?;
+
+        // Devices
+        writer.write_event(Event::Start(BytesStart::new("Devices")))?;
+        for dev in &track.device_chain {
+            Self::write_ableton_device(writer, dev)?;
+        }
+        writer.write_event(Event::End(BytesEnd::new("Devices")))?;
+
+        // Mixer
+        writer.write_event(Event::Start(BytesStart::new("Mixer")))?;
+
+        // Volume
+        writer.write_event(Event::Start(BytesStart::new("Volume")))?;
+        let mut vol = BytesStart::new("Manual");
+        let lin_vol = if track.volume_db <= -60.0 {
+            0.0f32
+        } else {
+            10.0f32.powf(track.volume_db / 20.0)
+        };
+        let vol_str = lin_vol.to_string();
+        vol.push_attribute(("Value", vol_str.as_str()));
+        writer.write_event(Event::Empty(vol))?;
+        writer.write_event(Event::End(BytesEnd::new("Volume")))?;
+
+        // Pan
+        writer.write_event(Event::Start(BytesStart::new("Pan")))?;
+        let mut pan = BytesStart::new("Manual");
+        let pan_str = track.pan.to_string();
+        pan.push_attribute(("Value", pan_str.as_str()));
+        writer.write_event(Event::Empty(pan))?;
+        writer.write_event(Event::End(BytesEnd::new("Pan")))?;
+
+        // Sends
+        writer.write_event(Event::Start(BytesStart::new("Sends")))?;
+        for (idx, &level) in track.sends.iter().enumerate() {
+            let mut holder_elem = BytesStart::new("TrackSendHolder");
+            let idx_str = idx.to_string();
+            holder_elem.push_attribute(("Id", idx_str.as_str()));
+            writer.write_event(Event::Start(holder_elem))?;
+
+            writer.write_event(Event::Start(BytesStart::new("Send")))?;
+            let mut send_manual = BytesStart::new("Manual");
+            let send_str = level.to_string();
+            send_manual.push_attribute(("Value", send_str.as_str()));
+            writer.write_event(Event::Empty(send_manual))?;
+            writer.write_event(Event::End(BytesEnd::new("Send")))?;
+
+            writer.write_event(Event::End(BytesEnd::new("TrackSendHolder")))?;
+        }
+        writer.write_event(Event::End(BytesEnd::new("Sends")))?;
+
+        writer.write_event(Event::End(BytesEnd::new("Mixer")))?;
+
+        // MainSequencer -> ClipSlotList
+        if !track.clip_slots.is_empty() {
+            writer.write_event(Event::Start(BytesStart::new("MainSequencer")))?;
+            writer.write_event(Event::Start(BytesStart::new("ClipSlotList")))?;
+            for slot in &track.clip_slots {
+                let mut slot_elem = BytesStart::new("ClipSlot");
+                let s_id = slot.id.to_string();
+                slot_elem.push_attribute(("Id", s_id.as_str()));
+                writer.write_event(Event::Start(slot_elem))?;
+                writer.write_event(Event::Start(BytesStart::new("ClipSlot")))?;
+                writer.write_event(Event::Start(BytesStart::new("Value")))?;
+
+                if let Some(ref clip) = slot.clip {
+                    match clip.payload {
+                        ClipPayload::Midi(ref mdata) => {
+                            let mut clip_elem = BytesStart::new("MidiClip");
+                            let c_id = clip.id.to_string();
+                            clip_elem.push_attribute(("Id", c_id.as_str()));
+                            writer.write_event(Event::Start(clip_elem))?;
+
+                            // Name
+                            writer.write_event(Event::Start(BytesStart::new("Name")))?;
+                            let mut c_name = BytesStart::new("UserName");
+                            c_name.push_attribute(("Value", clip.name.as_str()));
+                            writer.write_event(Event::Empty(c_name))?;
+                            writer.write_event(Event::End(BytesEnd::new("Name")))?;
+
+                            // KeyTracks
+                            writer.write_event(Event::Start(BytesStart::new("KeyTracks")))?;
+                            let mut notes_by_pitch: std::collections::BTreeMap<u8, Vec<&MidiNote>> =
+                                std::collections::BTreeMap::new();
+                            for note in &mdata.notes {
+                                notes_by_pitch.entry(note.pitch).or_default().push(note);
+                            }
+
+                            for (pitch, notes) in notes_by_pitch {
+                                writer.write_event(Event::Start(BytesStart::new("KeyTrack")))?;
+                                let mut k_elem = BytesStart::new("MidiKey");
+                                let p_str = pitch.to_string();
+                                k_elem.push_attribute(("Value", p_str.as_str()));
+                                writer.write_event(Event::Empty(k_elem))?;
+
+                                writer.write_event(Event::Start(BytesStart::new("Notes")))?;
+                                for note in notes {
+                                    let mut n_elem = BytesStart::new("MidiNoteEvent");
+                                    let t_str = note.start_beat.to_string();
+                                    let d_str = note.duration_beats.to_string();
+                                    let v_str = note.velocity.to_string();
+                                    n_elem.push_attribute(("Time", t_str.as_str()));
+                                    n_elem.push_attribute(("Duration", d_str.as_str()));
+                                    n_elem.push_attribute(("Velocity", v_str.as_str()));
+                                    writer.write_event(Event::Empty(n_elem))?;
+                                }
+                                writer.write_event(Event::End(BytesEnd::new("Notes")))?;
+                                writer.write_event(Event::End(BytesEnd::new("KeyTrack")))?;
+                            }
+                            writer.write_event(Event::End(BytesEnd::new("KeyTracks")))?;
+                            writer.write_event(Event::End(BytesEnd::new("MidiClip")))?;
+                        }
+                        ClipPayload::Audio(ref adata) => {
+                            let mut clip_elem = BytesStart::new("AudioClip");
+                            let c_id = clip.id.to_string();
+                            clip_elem.push_attribute(("Id", c_id.as_str()));
+                            writer.write_event(Event::Start(clip_elem))?;
+
+                            writer.write_event(Event::Start(BytesStart::new("Name")))?;
+                            let mut c_name = BytesStart::new("UserName");
+                            c_name.push_attribute(("Value", clip.name.as_str()));
+                            writer.write_event(Event::Empty(c_name))?;
+                            writer.write_event(Event::End(BytesEnd::new("Name")))?;
+
+                            writer.write_event(Event::Start(BytesStart::new("FileRef")))?;
+                            let mut p_elem = BytesStart::new("Path");
+                            p_elem.push_attribute(("Value", adata.file_path.as_str()));
+                            writer.write_event(Event::Empty(p_elem))?;
+                            writer.write_event(Event::End(BytesEnd::new("FileRef")))?;
+
+                            if (clip.length_beats - 4.0).abs() > f64::EPSILON
+                                || (clip.loop_end_beat - 4.0).abs() > f64::EPSILON
+                            {
+                                let mut ce_elem = BytesStart::new("CurrentEnd");
+                                let len_str = clip.length_beats.to_string();
+                                ce_elem.push_attribute(("Value", len_str.as_str()));
+                                writer.write_event(Event::Empty(ce_elem))?;
+
+                                writer.write_event(Event::Start(BytesStart::new("Loop")))?;
+                                let mut le_elem = BytesStart::new("LoopEnd");
+                                let loop_end_str = clip.loop_end_beat.to_string();
+                                le_elem.push_attribute(("Value", loop_end_str.as_str()));
+                                writer.write_event(Event::Empty(le_elem))?;
+                                writer.write_event(Event::End(BytesEnd::new("Loop")))?;
+                            }
+
+                            writer.write_event(Event::End(BytesEnd::new("AudioClip")))?;
+                        }
+                    }
+                }
+
+                writer.write_event(Event::End(BytesEnd::new("Value")))?;
+                writer.write_event(Event::End(BytesEnd::new("ClipSlot")))?;
+                writer.write_event(Event::End(BytesEnd::new("ClipSlot")))?;
+            }
+            writer.write_event(Event::End(BytesEnd::new("ClipSlotList")))?;
+            writer.write_event(Event::End(BytesEnd::new("MainSequencer")))?;
+        }
+
+        writer.write_event(Event::End(BytesEnd::new("DeviceChain")))?;
+        writer.write_event(Event::End(BytesEnd::new(tag_name)))?;
+        Ok(())
+    }
+
     /// Export a LiveCraft `Project` to an Ableton-compatible XML string
     pub fn export_to_xml(project: &Project) -> Result<String, AlsError> {
         let mut buffer = Vec::new();
@@ -814,9 +1267,7 @@ impl AlsParser {
         let mut st_elem = BytesStart::new("Name");
         st_elem.push_attribute(("Value", project.scale.scale_type.name()));
         writer.write_event(Event::Empty(st_elem))?;
-        writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
-            "ScaleInformation",
-        )))?;
+        writer.write_event(Event::End(BytesEnd::new("ScaleInformation")))?;
 
         // Tracks
         writer.write_event(Event::Start(BytesStart::new("Tracks")))?;
@@ -828,166 +1279,12 @@ impl AlsParser {
                 TrackType::Group => "GroupTrack",
                 TrackType::Main => "MainTrack",
             };
-
-            let mut track_elem = BytesStart::new(tag_name);
-            let id_str = track.id.to_string();
-            track_elem.push_attribute(("Id", id_str.as_str()));
-            writer.write_event(Event::Start(track_elem))?;
-
-            // Name
-            writer.write_event(Event::Start(BytesStart::new("Name")))?;
-            let mut uname = BytesStart::new("UserName");
-            uname.push_attribute(("Value", track.name.as_str()));
-            writer.write_event(Event::Empty(uname))?;
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Name")))?;
-
-            // DeviceChain
-            writer.write_event(Event::Start(BytesStart::new("DeviceChain")))?;
-
-            // Devices
-            writer.write_event(Event::Start(BytesStart::new("Devices")))?;
-            for dev in &track.device_chain {
-                Self::write_ableton_device(&mut writer, dev)?;
-            }
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Devices")))?;
-
-            // Mixer
-            writer.write_event(Event::Start(BytesStart::new("Mixer")))?;
-
-            // Volume
-            writer.write_event(Event::Start(BytesStart::new("Volume")))?;
-            let mut vol = BytesStart::new("Manual");
-            let lin_vol = if track.volume_db <= -60.0 {
-                0.0f32
-            } else {
-                10.0f32.powf(track.volume_db / 20.0)
-            };
-            let vol_str = lin_vol.to_string();
-            vol.push_attribute(("Value", vol_str.as_str()));
-            writer.write_event(Event::Empty(vol))?;
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Volume")))?;
-
-            // Pan
-            writer.write_event(Event::Start(BytesStart::new("Pan")))?;
-            let mut pan = BytesStart::new("Manual");
-            let pan_str = track.pan.to_string();
-            pan.push_attribute(("Value", pan_str.as_str()));
-            writer.write_event(Event::Empty(pan))?;
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Pan")))?;
-
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Mixer")))?;
-
-            // MainSequencer -> ClipSlotList
-            writer.write_event(Event::Start(BytesStart::new("MainSequencer")))?;
-            writer.write_event(Event::Start(BytesStart::new("ClipSlotList")))?;
-            for slot in &track.clip_slots {
-                let mut slot_elem = BytesStart::new("ClipSlot");
-                let s_id = slot.id.to_string();
-                slot_elem.push_attribute(("Id", s_id.as_str()));
-                writer.write_event(Event::Start(slot_elem))?;
-                writer.write_event(Event::Start(BytesStart::new("ClipSlot")))?;
-                writer.write_event(Event::Start(BytesStart::new("Value")))?;
-
-                if let Some(ref clip) = slot.clip {
-                    match clip.payload {
-                        ClipPayload::Midi(ref mdata) => {
-                            let mut clip_elem = BytesStart::new("MidiClip");
-                            let c_id = clip.id.to_string();
-                            clip_elem.push_attribute(("Id", c_id.as_str()));
-                            writer.write_event(Event::Start(clip_elem))?;
-
-                            // Name
-                            writer.write_event(Event::Start(BytesStart::new("Name")))?;
-                            let mut c_name = BytesStart::new("UserName");
-                            c_name.push_attribute(("Value", clip.name.as_str()));
-                            writer.write_event(Event::Empty(c_name))?;
-                            writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
-                                "Name",
-                            )))?;
-
-                            // KeyTracks
-                            writer.write_event(Event::Start(BytesStart::new("KeyTracks")))?;
-                            let mut notes_by_pitch: std::collections::BTreeMap<u8, Vec<&MidiNote>> =
-                                std::collections::BTreeMap::new();
-                            for note in &mdata.notes {
-                                notes_by_pitch.entry(note.pitch).or_default().push(note);
-                            }
-
-                            for (pitch, notes) in notes_by_pitch {
-                                writer.write_event(Event::Start(BytesStart::new("KeyTrack")))?;
-                                let mut k_elem = BytesStart::new("MidiKey");
-                                let p_str = pitch.to_string();
-                                k_elem.push_attribute(("Value", p_str.as_str()));
-                                writer.write_event(Event::Empty(k_elem))?;
-
-                                writer.write_event(Event::Start(BytesStart::new("Notes")))?;
-                                for note in notes {
-                                    let mut n_elem = BytesStart::new("MidiNoteEvent");
-                                    let t_str = note.start_beat.to_string();
-                                    let d_str = note.duration_beats.to_string();
-                                    let v_str = note.velocity.to_string();
-                                    n_elem.push_attribute(("Time", t_str.as_str()));
-                                    n_elem.push_attribute(("Duration", d_str.as_str()));
-                                    n_elem.push_attribute(("Velocity", v_str.as_str()));
-                                    writer.write_event(Event::Empty(n_elem))?;
-                                }
-                                writer.write_event(Event::End(
-                                    quick_xml::events::BytesEnd::new("Notes"),
-                                ))?;
-                                writer.write_event(Event::End(
-                                    quick_xml::events::BytesEnd::new("KeyTrack"),
-                                ))?;
-                            }
-                            writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
-                                "KeyTracks",
-                            )))?;
-                            writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
-                                "MidiClip",
-                            )))?;
-                        }
-                        ClipPayload::Audio(ref adata) => {
-                            let mut clip_elem = BytesStart::new("AudioClip");
-                            let c_id = clip.id.to_string();
-                            clip_elem.push_attribute(("Id", c_id.as_str()));
-                            writer.write_event(Event::Start(clip_elem))?;
-
-                            writer.write_event(Event::Start(BytesStart::new("Name")))?;
-                            let mut c_name = BytesStart::new("UserName");
-                            c_name.push_attribute(("Value", clip.name.as_str()));
-                            writer.write_event(Event::Empty(c_name))?;
-                            writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
-                                "Name",
-                            )))?;
-
-                            writer.write_event(Event::Start(BytesStart::new("FileRef")))?;
-                            let mut p_elem = BytesStart::new("Path");
-                            p_elem.push_attribute(("Value", adata.file_path.as_str()));
-                            writer.write_event(Event::Empty(p_elem))?;
-                            writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
-                                "FileRef",
-                            )))?;
-
-                            writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
-                                "AudioClip",
-                            )))?;
-                        }
-                    }
-                }
-
-                writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Value")))?;
-                writer.write_event(Event::End(quick_xml::events::BytesEnd::new("ClipSlot")))?;
-                writer.write_event(Event::End(quick_xml::events::BytesEnd::new("ClipSlot")))?;
-            }
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new("ClipSlotList")))?;
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new(
-                "MainSequencer",
-            )))?;
-
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new("DeviceChain")))?;
-
-            writer.write_event(Event::End(quick_xml::events::BytesEnd::new(tag_name)))?;
+            Self::write_track(&mut writer, track, tag_name)?;
         }
-        writer.write_event(Event::End(quick_xml::events::BytesEnd::new("Tracks")))?;
+        for ret_track in &project.return_tracks {
+            Self::write_track(&mut writer, ret_track, "ReturnTrack")?;
+        }
+        writer.write_event(Event::End(BytesEnd::new("Tracks")))?;
 
         // Transport
         writer.write_event(Event::Start(BytesStart::new("Transport")))?;

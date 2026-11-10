@@ -9,6 +9,8 @@ publish.workspace = true
 
 [dependencies]
 serde_json.workspace = true
+hound.workspace = true
+livecraft-dsp.workspace = true
 
 [lints]
 workspace = true

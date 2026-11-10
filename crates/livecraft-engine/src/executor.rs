@@ -8,7 +8,9 @@
 
 use crate::clip::PlayableClip;
 use crate::collector;
-use crate::compiled::{CompiledGraph, InputBlock, MAX_BLOCK, MAX_NOTE_EVENTS, Node, RAMP_STEP};
+use crate::compiled::{
+    CompiledGraph, InputBlock, MAX_BLOCK, MAX_NOTE_EVENTS, Node, RAMP_STEP, StemTarget,
+};
 use crate::launch::{Fired, FollowTarget, Pcg32, follow_target, pick_action};
 use crate::midi::{
     HostClock, MidiMessage, MidiOutEvent, note_event, note_out_event, period_us, sample_offset,
@@ -234,6 +236,7 @@ pub struct Engine {
     metronome: MetronomeVoice,
     click_left: Box<[f32]>,
     click_right: Box<[f32]>,
+    stem_target: StemTarget,
 }
 
 /// The external input the driver captures: the samples its input stream pushed, and the block being
@@ -337,6 +340,7 @@ impl Engine {
             metronome: MetronomeVoice::default(),
             click_left: vec![0.0; MAX_BLOCK].into_boxed_slice(),
             click_right: vec![0.0; MAX_BLOCK].into_boxed_slice(),
+            stem_target: StemTarget::Main,
         };
         let handle = EngineHandle {
             commands: command_tx,
@@ -382,6 +386,18 @@ impl Engine {
         self.midi_out = Some(MidiOutCapture { events, anchor });
     }
 
+    /// Selects which stem path the running graph isolates. Passing `None` resets to `StemTarget::Main`.
+    pub fn set_stem_target(&mut self, target: Option<StemTarget>) {
+        let target = target.unwrap_or(StemTarget::Main);
+        self.stem_target = target;
+        self.graph.set_stem_target(target);
+    }
+
+    /// Maximum effect tail length in samples for the active graph and stem target.
+    pub fn tail_samples(&self) -> u64 {
+        self.graph.max_tail_samples()
+    }
+
     /// Renders `out`, which holds interleaved frames of `channels` samples. It is the only call from
     /// the driver callback. The buffer starts at the engine clock's time now.
     pub fn process(&mut self, out: &mut [f32], channels: usize) {
@@ -389,13 +405,33 @@ impl Engine {
         self.process_at(out, channels, block_start_us);
     }
 
+    /// Deterministic offline render path for `VirtualDriver` and `OfflineBouncer`.
+    /// Disables the metronome and derives `block_start_us` from the sample frame count rather than
+    /// a wall clock, then runs the same core block processor as `process_at`.
+    pub fn process_offline(&mut self, out: &mut [f32], channels: usize) {
+        let sr = u128::from((self.sample_rate.max(1.0)) as u64);
+        let block_start_us = (u128::from(self.frame) * 1_000_000 / sr) as u64;
+        self.process_at_inner(out, channels, block_start_us, false, true);
+    }
+
     /// As `process`, for a buffer that starts at `block_start_us` on the engine clock. `process` reads that
     /// time from the clock. Tests pass a time they chose, so the frames of MIDI input are known.
     pub fn process_at(&mut self, out: &mut [f32], channels: usize, block_start_us: u64) {
+        self.process_at_inner(out, channels, block_start_us, true, false);
+    }
+
+    fn process_at_inner(
+        &mut self,
+        out: &mut [f32],
+        channels: usize,
+        block_start_us: u64,
+        measure_cpu: bool,
+        suppress_metronome: bool,
+    ) {
         if channels == 0 {
             return;
         }
-        let started = Instant::now();
+        let started = measure_cpu.then(Instant::now);
         // The first frame of this buffer, and when it starts: the anchor for MIDI output.
         let anchor = (self.frame, block_start_us);
         self.apply_pending();
@@ -426,7 +462,13 @@ impl Engine {
             self.graph.clock = song + self.clock_offset;
             self.graph.render_with_input(&context, input);
             self.push_midi_out();
-            self.render_metronome(song, dt, block);
+            if suppress_metronome {
+                self.click_left[..block].fill(0.0);
+                self.click_right[..block].fill(0.0);
+                self.metronome = MetronomeVoice::default();
+            } else {
+                self.render_metronome(song, dt, block);
+            }
             let (left, right) = self.graph.output(block);
             let samples = &mut out[start * channels..(start + block) * channels];
             for (frame, chunk) in samples.chunks_exact_mut(channels).enumerate() {
@@ -444,7 +486,8 @@ impl Engine {
             self.frame += block as u64;
             start += block;
         }
-        self.publish(frames, started.elapsed().as_secs_f32(), anchor);
+        let elapsed = started.map_or(0.0, |t| t.elapsed().as_secs_f32());
+        self.publish(frames, elapsed, anchor);
     }
 
     /// Pops the MIDI messages that arrived and turns the note on and note off ones into note events at
@@ -556,6 +599,7 @@ impl Engine {
         if let Ok(mut next) = self.graphs.pop() {
             next.adopt_state(&mut self.graph);
             next.clock = self.graph.clock;
+            next.set_stem_target(self.stem_target);
             self.settings = next.timeline.transport;
             if self
                 .scene_signature

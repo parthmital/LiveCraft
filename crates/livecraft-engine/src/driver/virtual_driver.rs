@@ -35,8 +35,37 @@ impl VirtualDriver {
         };
         let step = self.buffer_frames as usize * self.channels;
         for chunk in out.chunks_mut(step) {
-            engine.process(chunk, self.channels);
+            engine.process_offline(chunk, self.channels);
         }
+    }
+
+    /// Advances the engine by `frames` frames in `buffer_frames` steps, discarding the audio.
+    pub fn skip_frames(&mut self, frames: usize) {
+        let Some(engine) = self.engine.as_mut() else {
+            return;
+        };
+        if frames == 0 {
+            return;
+        }
+        let step_frames = self.buffer_frames as usize;
+        let mut scratch = vec![0.0f32; frames.min(step_frames) * self.channels];
+        let mut remaining = frames;
+        while remaining > 0 {
+            let chunk_frames = remaining.min(step_frames);
+            let slice = &mut scratch[..chunk_frames * self.channels];
+            engine.process_offline(slice, self.channels);
+            remaining -= chunk_frames;
+        }
+    }
+
+    /// Returns a mutable reference to the attached engine, if started.
+    pub fn engine_mut(&mut self) -> Option<&mut Engine> {
+        self.engine.as_mut()
+    }
+
+    /// Consumes the driver and returns its engine, if started.
+    pub fn into_engine(self) -> Option<Engine> {
+        self.engine
     }
 }
 
@@ -153,5 +182,29 @@ mod tests {
             driver.start(second),
             Err(DriverError::AlreadyStarted)
         ));
+    }
+
+    #[test]
+    fn skip_frames_and_engine_accessors_work() {
+        let (_first, engine) = started_set();
+        let (_second, twin) = started_set();
+        let mut skipped = VirtualDriver::new(44100, 64, 2);
+        assert!(skipped.engine_mut().is_none());
+        skipped.start(engine).expect("start");
+        assert!(skipped.engine_mut().is_some());
+        skipped.skip_frames(200);
+        let mut after_skip = vec![0.0f32; 300 * 2];
+        skipped.render(&mut after_skip);
+
+        let mut full = VirtualDriver::new(44100, 64, 2);
+        full.start(twin).expect("start");
+        let mut prefix = vec![0.0f32; 200 * 2];
+        full.render(&mut prefix);
+        let mut after_full = vec![0.0f32; 300 * 2];
+        full.render(&mut after_full);
+
+        let bits = |samples: &[f32]| samples.iter().map(|s| s.to_bits()).collect::<Vec<_>>();
+        assert_eq!(bits(&after_skip), bits(&after_full));
+        assert!(skipped.into_engine().is_some());
     }
 }

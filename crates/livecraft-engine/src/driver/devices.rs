@@ -221,7 +221,10 @@ mod tests {
 
     #[test]
     fn a_rate_outside_the_offered_list_is_not_listed() {
-        assert_eq!(supported_rates(&[(8_000, 8_000), (22_050, 22_050)]), vec![]);
+        assert_eq!(
+            supported_rates(&[(8_000, 8_000), (22_050, 22_050)]),
+            Vec::<u32>::new()
+        );
     }
 
     #[test]
@@ -234,7 +237,7 @@ mod tests {
 
     #[test]
     fn a_device_without_configurations_offers_no_rates() {
-        assert_eq!(supported_rates(&[]), vec![]);
+        assert_eq!(supported_rates(&[]), Vec::<u32>::new());
     }
 
     #[test]

@@ -42,7 +42,7 @@ States: `[ ]` to do, `[x]` done, `[~]` done except owner input queued in `OWNER-
 - [x] M05 Real-time engine core ([milestone](milestones/M05-realtime-engine-core.md))
 - [~] M06 Audio and MIDI I/O and device settings ([milestone](milestones/M06-audio-midi-io.md)). Owner input queued: Q09 (device list, sound, MIDI), Q10 (ASIO SDK build)
 - [~] M07 Transport, tempo, metronome, launch scheduler ([milestone](milestones/M07-transport-and-launch.md)). Owner input queued: Q11 (Previous on the first clip, Repeat release, Metronome Settings entries)
-- [ ] M08 Offline render and export ([milestone](milestones/M08-offline-render-export.md))
+- [~] M08 Offline render and export ([milestone](milestones/M08-offline-render-export.md)). Owner input queued: Q12 (oracle WAV renders in Live 12.4)
 
 ## Phase 2: Files and content
 

@@ -72,6 +72,7 @@ pub struct ReverbEffect {
     combs_r: Vec<CombFilter>,
     allpass_l: Vec<AllPassFilter>,
     allpass_r: Vec<AllPassFilter>,
+    sample_rate: f32,
     pub room_size: f32,
     pub damping: f32,
     pub stereo_width: f32,
@@ -106,6 +107,7 @@ impl ReverbEffect {
             combs_r,
             allpass_l,
             allpass_r,
+            sample_rate,
             room_size: 0.75,
             damping: 0.35,
             stereo_width: 1.0,
@@ -206,6 +208,36 @@ impl DeviceProcessor for ReverbEffect {
     }
 
     fn reset(&mut self) {}
+
+    fn tail_samples(&self) -> Option<u64> {
+        if !self.is_enabled
+            || !self.dry_wet.is_finite()
+            || self.dry_wet <= 0.0
+            || !self.sample_rate.is_finite()
+            || self.sample_rate <= 0.0
+            || !self.room_size.is_finite()
+            || !self.damping.is_finite()
+        {
+            return None;
+        }
+        let max_comb_len = self
+            .combs_l
+            .iter()
+            .chain(self.combs_r.iter())
+            .map(|c| c.buffer.len())
+            .fold(0usize, usize::max);
+        if max_comb_len == 0 {
+            return None;
+        }
+        let room = f64::from(self.room_size).clamp(0.0, 0.98);
+        let damp = f64::from(self.damping).clamp(0.0, 1.0) * 0.4;
+        // Freeverb comb loop feedback with mild high-frequency damping attenuation.
+        let fb = (room * 0.28 + 0.7) * (1.0 - damp * 0.1);
+        let loops = (1e-4_f64.ln() / fb.ln()).ceil().max(1.0);
+        let max_tail = (30.0 * f64::from(self.sample_rate)).ceil();
+        let tail = (loops * max_comb_len as f64).ceil().min(max_tail);
+        Some(tail as u64)
+    }
 }
 
 #[cfg(test)]
@@ -226,5 +258,42 @@ mod tests {
     #[test]
     fn reverb_room_size_changes_the_output() {
         assert_parameter_changes_output(|| ReverbEffect::new(44100.0), 1, 0.1);
+    }
+
+    #[test]
+    fn reverb_tail_samples_is_none_when_dry_or_bypassed() {
+        let mut rev = ReverbEffect::new(44100.0);
+        rev.dry_wet = 0.0;
+        assert_eq!(rev.tail_samples(), None);
+
+        rev.dry_wet = 0.5;
+        rev.is_enabled = false;
+        assert_eq!(rev.tail_samples(), None);
+    }
+
+    #[test]
+    fn reverb_tail_samples_scales_with_sample_rate_room_size_and_damping() {
+        let rev_44k = ReverbEffect::new(44100.0);
+        let rev_88k = ReverbEffect::new(88200.0);
+        let tail_44k = rev_44k.tail_samples().expect("wet reverb has tail");
+        let tail_88k = rev_88k.tail_samples().expect("wet reverb has tail");
+        assert_eq!(tail_88k, tail_44k * 2);
+
+        let mut small_room = rev_44k.clone();
+        small_room.set_params(0.2, 0.35, 0.25);
+        let mut large_room = rev_44k.clone();
+        large_room.set_params(0.9, 0.35, 0.25);
+        assert!(small_room.tail_samples().expect("tail") < tail_44k);
+        assert!(large_room.tail_samples().expect("tail") > tail_44k);
+
+        let mut no_damp = rev_44k.clone();
+        no_damp.set_params(0.75, 0.0, 0.25);
+        let mut max_damp = rev_44k.clone();
+        max_damp.set_params(0.75, 1.0, 0.25);
+        assert!(max_damp.tail_samples().expect("tail") < no_damp.tail_samples().expect("tail"));
+
+        let mut extreme = rev_44k;
+        extreme.set_params(0.98, 0.0, 1.0);
+        assert!(extreme.tail_samples().expect("tail") <= 30 * 44_100);
     }
 }

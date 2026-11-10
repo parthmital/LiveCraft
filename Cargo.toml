@@ -46,6 +46,12 @@ assert_no_alloc = "=1.1.2"
 toml = "=1.1.8"
 directories = "=6.0.0"
 midir = "=0.11.1"
+sha2 = "=0.11.1"
+realfft = "=3.5.1"
+rubato = "=5.0.1"
+flacenc = { version = "=0.5.1", default-features = false, features = ["log"] }
+rusty_mp3 = "=1.0.5"
+symphonia = { version = "=0.6.1", default-features = false, features = ["wav", "aiff", "flac", "mp3", "pcm"] }
 livecraft-testkit = { path = "crates/livecraft-testkit" }
 livecraft-model = { path = "crates/livecraft-model" }
 livecraft-formats = { path = "crates/livecraft-formats" }

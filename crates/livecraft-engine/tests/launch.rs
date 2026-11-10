@@ -235,6 +235,7 @@ fn a_follow_action_render_is_byte_identical_for_a_stored_seed() {
             sample_rate: 44100,
             duration_bars: 4,
             bits_per_sample: 24,
+            ..RenderOptions::default()
         };
         OfflineBouncer::render_project(&project, path, options).expect("render");
     }

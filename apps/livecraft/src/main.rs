@@ -1,6 +1,7 @@
+mod cli;
+
 use clap::{Parser, Subcommand, ValueEnum};
 use livecraft_devices::operator::{OperatorSynth, Waveform};
-use livecraft_engine::bouncer::{OfflineBouncer, RenderOptions};
 use livecraft_engine::driver::{DeviceInfo, DeviceList, DriverConfig};
 use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
 use livecraft_engine::output::Playback;
@@ -85,34 +86,10 @@ enum Commands {
         #[arg(short, long)]
         clips: bool,
     },
-    /// Render project to a WAV audio file
-    Render {
-        /// Path to .als or .json project
-        path: PathBuf,
-        /// Output WAV file path
-        #[arg(short, long, default_value = "output.wav")]
-        output: PathBuf,
-        /// Duration to render in musical bars
-        #[arg(short, long, default_value_t = 8)]
-        duration_bars: u32,
-        /// Sample rate in Hz (44100, 48000, 96000)
-        #[arg(short, long, default_value_t = 44100)]
-        sample_rate: u32,
-        /// Bit depth (16, 24, 32)
-        #[arg(short, long, default_value_t = 24)]
-        bits: u16,
-    },
-    /// Export each track as an isolated stem WAV file
-    Stems {
-        /// Path to .als or .json project
-        path: PathBuf,
-        /// Output directory for stem files
-        #[arg(short, long, default_value = "./stems")]
-        output_dir: PathBuf,
-        /// Duration to render in musical bars
-        #[arg(short, long, default_value_t = 8)]
-        duration_bars: u32,
-    },
+    /// Export audio from a project (Live Export Audio/Video)
+    Render(cli::render::RenderArgs),
+    /// Export each individual track as an isolated stem audio file
+    Stems(cli::render::StemsArgs),
     /// Play project in terminal with real-time ASCII VU meters
     Play {
         /// Path to .als or .json project
@@ -316,62 +293,13 @@ fn main() -> anyhow::Result<()> {
                 print_project_inspection(&proj, devices, clips);
             }
         }
-        Some(Commands::Render {
-            path,
-            output,
-            duration_bars,
-            sample_rate,
-            bits,
-        }) => {
-            let proj = load_project_from_path(&path)?;
-            println!("Rendering '{}' to '{}'...", proj.name, output.display());
-            println!(
-                "Configuration: {} bars @ {} Hz, {}-bit WAV",
-                duration_bars, sample_rate, bits
-            );
-
-            let options = RenderOptions {
-                sample_rate,
-                duration_bars,
-                bits_per_sample: bits,
-            };
-
-            let start = std::time::Instant::now();
-            OfflineBouncer::render_project(&proj, &output, options)?;
-            let elapsed = start.elapsed();
-
-            println!(
-                "Render complete in {:.2?}! Output saved to: {}",
-                elapsed,
-                output.display()
-            );
+        Some(Commands::Render(args)) => {
+            let proj = load_project_from_path(&args.path)?;
+            cli::render::run_render(&proj, args)?;
         }
-        Some(Commands::Stems {
-            path,
-            output_dir,
-            duration_bars,
-        }) => {
-            let proj = load_project_from_path(&path)?;
-            println!(
-                "Exporting {} stems to '{}'...",
-                proj.tracks.len(),
-                output_dir.display()
-            );
-
-            let options = RenderOptions {
-                sample_rate: 44100,
-                duration_bars,
-                bits_per_sample: 24,
-            };
-
-            let start = std::time::Instant::now();
-            let stems = OfflineBouncer::render_stems(&proj, &output_dir, options)?;
-            let elapsed = start.elapsed();
-
-            println!("Exported {} stems in {:.2?}:", stems.len(), elapsed);
-            for s in stems {
-                println!("  - {}", s);
-            }
+        Some(Commands::Stems(args)) => {
+            let proj = load_project_from_path(&args.path)?;
+            cli::render::run_stems(&proj, args)?;
         }
         Some(Commands::Play { path, duration }) => {
             let proj = if let Some(p) = path {

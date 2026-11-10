@@ -4,6 +4,9 @@
 //! - `ci`: format check, clippy, tests, release build, layering check, docs link check.
 //! - `layering`: fail when a crate depends on a workspace crate its layer may not use.
 //! - `docs`: fail when a Markdown file links to a local path that does not exist.
+//! - `oracle [<name> | --all]`: render `fixtures/oracle/*.als` and compare against `.agent-local/reference/oracle/*.wav`.
+
+mod oracle;
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -59,18 +62,23 @@ const LAYERS: &[(&str, &[&str])] = &[
         &["livecraft-model", "livecraft-engine"],
     ),
     ("livecraft-time", &[]),
-    ("xtask", &[]),
+    ("xtask", &["livecraft-dsp"]),
 ];
 
 type Result<T = ()> = std::result::Result<T, String>;
 
 fn main() -> ExitCode {
-    let command = std::env::args().nth(1);
+    let mut args = std::env::args().skip(1);
+    let command = args.next();
+    let rest: Vec<String> = args.collect();
     let result = match command.as_deref() {
-        Some("ci") => ci(std::env::args().any(|arg| arg == "--no-deny")),
+        Some("ci") => ci(rest.iter().any(|arg| arg == "--no-deny")),
         Some("layering") => layering(),
         Some("docs") => docs(),
-        _ => Err("usage: cargo xtask <ci [--no-deny]|layering|docs>".to_string()),
+        Some("oracle") => oracle::oracle_command(&rest),
+        _ => Err(
+            "usage: cargo xtask <ci [--no-deny]|layering|docs|oracle [<name>|--all]>".to_string(),
+        ),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
