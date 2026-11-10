@@ -2,6 +2,7 @@ use clap::{Args, ValueEnum};
 use livecraft_engine::bouncer::{
     AudioFileFormat, DitherMode, OfflineBouncer, RenderOptions, RenderReport, RenderedTrack,
 };
+use livecraft_formats::project_dir::ProjectContext;
 use livecraft_model::ids::TrackId;
 use livecraft_model::model::Project;
 use std::path::{Path, PathBuf};
@@ -224,6 +225,7 @@ pub fn run_render(proj: &Project, args: RenderArgs) -> anyhow::Result<()> {
         normalize: args.normalize,
         create_analysis_file: args.analysis_file,
         write_report: !args.no_report,
+        project_context: Some(ProjectContext::from_set_path(&args.path)),
     };
     execute_export(proj, &args.output, options)
 }
@@ -241,6 +243,7 @@ pub fn run_stems(proj: &Project, args: StemsArgs) -> anyhow::Result<()> {
         convert_to_mono: args.mono,
         normalize: args.normalize,
         write_report: !args.no_report,
+        project_context: Some(ProjectContext::from_set_path(&args.path)),
         ..RenderOptions::default()
     };
     execute_export(proj, &args.output_dir, options)
@@ -299,7 +302,7 @@ fn resolve_rendered_track(
     Ok(RenderedTrack::Track(id))
 }
 
-fn resolve_single_track(project: &Project, selector: &str) -> anyhow::Result<TrackId> {
+pub(crate) fn resolve_single_track(project: &Project, selector: &str) -> anyhow::Result<TrackId> {
     let selector = selector.trim();
     if selector.is_empty() {
         anyhow::bail!("track selector must not be empty");

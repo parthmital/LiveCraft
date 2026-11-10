@@ -10,6 +10,7 @@ pub use livecraft_dsp::metrics::AudioMetrics;
 use livecraft_dsp::metrics::analyze_audio;
 pub use livecraft_formats::audio_encode::{AudioFileFormat, BitDepth};
 use livecraft_formats::audio_encode::{write_mp3_320, write_pcm_f32, write_pcm_i16, write_pcm_i24};
+use livecraft_formats::project_dir::ProjectContext;
 use livecraft_model::ids::TrackId;
 use livecraft_model::model::{Project, Track, TrackType};
 use livecraft_time::Beats;
@@ -71,6 +72,9 @@ pub struct RenderOptions {
     pub normalize: bool,
     pub create_analysis_file: bool,
     pub write_report: bool,
+    /// Optional project context for resolving relative audio clip paths during export.
+    #[serde(skip)]
+    pub project_context: Option<ProjectContext>,
 }
 
 impl Default for RenderOptions {
@@ -94,6 +98,7 @@ impl Default for RenderOptions {
             normalize: false,
             create_analysis_file: false,
             write_report: false,
+            project_context: None,
         }
     }
 }
@@ -102,7 +107,16 @@ impl Default for RenderOptions {
 /// and the transport playing from the start. The caller drives the returned `Engine` with
 /// `process_offline` (or `VirtualDriver`).
 pub fn start_render(project: &Project, sample_rate: f32) -> anyhow::Result<(Playback, Engine)> {
-    let (mut playback, engine) = Playback::start(project, sample_rate)?;
+    start_render_in_context(project, sample_rate, ProjectContext::default())
+}
+
+/// As [`start_render`], using `context` to resolve relative audio clip references.
+pub fn start_render_in_context(
+    project: &Project,
+    sample_rate: f32,
+    context: ProjectContext,
+) -> anyhow::Result<(Playback, Engine)> {
+    let (mut playback, engine) = Playback::start_in_context(project, sample_rate, context)?;
     for trk in project.tracks.iter() {
         if let Some(slot) = trk.clip_slots.first()
             && slot.clip.is_some()
@@ -418,8 +432,10 @@ fn render_stem_f32(
     start_frames: usize,
     render_frames: usize,
     render_as_loop: bool,
+    project_context: &ProjectContext,
 ) -> anyhow::Result<Vec<f32>> {
-    let (mut playback, mut engine) = start_render(project, render_rate as f32)?;
+    let (mut playback, mut engine) =
+        start_render_in_context(project, render_rate as f32, project_context.clone())?;
     engine.set_stem_target(Some(stem_target));
     let mut driver = VirtualDriver::new(render_rate, BLOCK_FRAMES as u32, 2);
     driver.start(engine).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -443,7 +459,8 @@ fn render_stem_f32(
             drop(driver);
             drop(playback);
 
-            let (_playback2, mut engine2) = start_render(project, render_rate as f32)?;
+            let (_playback2, mut engine2) =
+                start_render_in_context(project, render_rate as f32, project_context.clone())?;
             engine2.set_stem_target(Some(stem_target));
             let mut driver2 = VirtualDriver::new(render_rate, BLOCK_FRAMES as u32, 2);
             driver2.start(engine2).map_err(|e| anyhow::anyhow!("{e}"))?;
@@ -529,6 +546,7 @@ fn render_and_write_stem(
     start_frames: usize,
     render_frames: usize,
 ) -> anyhow::Result<Vec<RenderOutputReport>> {
+    let project_context = options.project_context.clone().unwrap_or_default();
     let mut samples = render_stem_f32(
         project,
         stem_target,
@@ -536,6 +554,7 @@ fn render_and_write_stem(
         start_frames,
         render_frames,
         options.render_as_loop,
+        &project_context,
     )?;
 
     if let Some(src_rate) = options.source_sample_rate

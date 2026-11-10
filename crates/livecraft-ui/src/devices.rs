@@ -2,16 +2,25 @@ use crate::Edits;
 use crate::style::LivePalette;
 use crate::widgets::live_knob;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Stroke, Ui, Vec2};
-use livecraft_model::ids::TrackId;
+use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{Device, DeviceType, Track};
 use livecraft_session::commands::device::{RemoveDevice, SetDeviceEnabled, SetDeviceParam};
+
+/// Actions requested by Device Chain buttons for the app shell to handle.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DeviceChainAction {
+    pub save_device_preset: Option<(TrackId, DeviceId, String)>,
+    pub save_rack_preset: Option<TrackId>,
+}
 
 pub fn render_device_chain(
     ui: &mut Ui,
     selected_track: &Track,
     palette: &LivePalette,
     edits: &mut Edits,
-) {
+) -> DeviceChainAction {
+    let mut action = DeviceChainAction::default();
+
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing = Vec2::new(6.0, 0.0);
 
@@ -27,6 +36,23 @@ pub fn render_device_chain(
             return;
         }
 
+        ui.vertical(|ui| {
+            ui.set_width(92.0);
+            ui.add_space(4.0);
+            ui.label(
+                egui::RichText::new(format!("Chain ({})", selected_track.device_chain.len()))
+                    .size(10.0)
+                    .color(palette.control_disabled),
+            );
+            if ui
+                .button(egui::RichText::new("Save Rack .adg").size(10.0))
+                .on_hover_text("Save track device chain as an Ableton Rack Preset (.adg)")
+                .clicked()
+            {
+                action.save_rack_preset = Some(selected_track.id);
+            }
+        });
+
         let mut remove_idx = None;
 
         for (dev_idx, dev) in selected_track.device_chain.iter().enumerate() {
@@ -41,7 +67,7 @@ pub fn render_device_chain(
                     DeviceType::Delay => 210.0,
                     DeviceType::Reverb => 210.0,
                     DeviceType::Compressor => 210.0,
-                    _ => 180.0,
+                    _ => 200.0,
                 };
                 ui.set_width(box_width);
 
@@ -78,7 +104,7 @@ pub fn render_device_chain(
                             .color(palette.control_foreground),
                     );
 
-                    // Close/Remove button on right
+                    // Save .adv and Close/Remove buttons on right
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if ui
                             .add(
@@ -93,6 +119,22 @@ pub fn render_device_chain(
                             .clicked()
                         {
                             remove_idx = Some(dev_idx);
+                        }
+                        if ui
+                            .add(
+                                egui::Button::new(
+                                    egui::RichText::new("Save .adv")
+                                        .size(9.5)
+                                        .color(palette.control_foreground),
+                                )
+                                .fill(palette.control_background)
+                                .corner_radius(CornerRadius::same(2)),
+                            )
+                            .on_hover_text("Save Device Preset (.adv)")
+                            .clicked()
+                        {
+                            action.save_device_preset =
+                                Some((selected_track.id, dev.id, dev.name.clone()));
                         }
                     });
                 });
@@ -252,6 +294,8 @@ pub fn render_device_chain(
             edits.push(Box::new(RemoveDevice::new(selected_track.id, device.id)));
         }
     });
+
+    action
 }
 
 fn render_eq_eight_controls(

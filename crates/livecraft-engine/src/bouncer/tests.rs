@@ -726,3 +726,61 @@ fn oracle_fixtures_render_deterministically_and_match_analytical_linear_math() {
 
     let _ = fs::remove_dir_all(out_dir);
 }
+
+#[test]
+fn export_resolves_broken_absolute_audio_clip_via_project_context() {
+    let dir = temp_test_dir("project_context_relative");
+    let proj_root = dir.join("BounceSet Project");
+    livecraft_formats::project_dir::create_project_layout(&proj_root).expect("layout");
+    let sample_path = proj_root.join("Samples/Imported/bounce_tone.wav");
+    let spec = hound::WavSpec {
+        channels: 2,
+        sample_rate: 44_100,
+        bits_per_sample: 32,
+        sample_format: hound::SampleFormat::Float,
+    };
+    let mut writer = hound::WavWriter::create(&sample_path, spec).expect("create wav");
+    for i in 0..44_100 {
+        let s = ((i as f32) * 440.0 * std::f32::consts::TAU / 44_100.0).sin() * 0.5;
+        writer.write_sample(s).expect("write L");
+        writer.write_sample(s).expect("write R");
+    }
+    writer.finalize().expect("finalize wav");
+
+    let mut project = Project::new_default("BouncerRel");
+    project.tracks[2].device_chain.clear();
+    project.main_track.device_chain.clear();
+    let mut clip = Clip::new_audio(
+        950,
+        "Tone",
+        "C:/nonexistent_moved_drive_98765/Samples/Imported/bounce_tone.wav",
+        4.0,
+    );
+    if let ClipPayload::Audio(ref mut audio) = clip.payload {
+        audio.relative_path = Some("Samples/Imported/bounce_tone.wav".to_string());
+    }
+    project.tracks[2].clip_slots[0].clip = Some(clip);
+
+    // Without project_context, the broken absolute path yields silence.
+    let silent_wav = dir.join("without_context.wav");
+    OfflineBouncer::export(&project, &silent_wav, base_opts(1, 32)).expect("export silent");
+    assert!(read_wav_f32(&silent_wav).iter().all(|&s| s == 0.0));
+
+    // With RenderOptions.project_context, relative_path resolves and renders non-silent audio.
+    let resolved_wav = dir.join("with_context.wav");
+    let opts = RenderOptions {
+        project_context: Some(ProjectContext::for_project(&proj_root)),
+        write_report: true,
+        ..base_opts(1, 32)
+    };
+    let report = OfflineBouncer::export(&project, &resolved_wav, opts).expect("export resolved");
+    assert!(report.outputs[0].metrics.peak_dbfs.is_finite());
+    assert!(read_wav_f32(&resolved_wav).iter().any(|&s| s.abs() > 0.05));
+
+    let report_json =
+        fs::read_to_string(dir.join("with_context.wav.report.json")).expect("read report");
+    let parsed: RenderReport = serde_json::from_str(&report_json).expect("parse report");
+    assert_eq!(parsed.settings.project_context, None);
+
+    let _ = fs::remove_dir_all(dir);
+}

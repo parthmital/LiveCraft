@@ -525,3 +525,77 @@ fn five_distinct_livecraft_sets_roundtrip_via_gzip_als() {
 
     let _ = std::fs::remove_dir_all(&tmp);
 }
+
+#[test]
+fn audio_clip_relative_path_lossless_als_roundtrip() {
+    let tmp = std::env::temp_dir().join(format!(
+        "livecraft_audio_rel_roundtrip_{}",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).expect("mkdir");
+
+    // 1. Existing XML without <RelativePath> and with relative_path = None remains untouched.
+    let no_rel_xml = concat!(
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n",
+        "<Ableton MajorVersion=\"5\" MinorVersion=\"12.0_12117\">\n",
+        "\t<LiveSet>\n",
+        "\t\t<Tracks>\n",
+        "\t\t\t<AudioTrack Id=\"1\">\n",
+        "\t\t\t\t<Name><EffectiveName Value=\"Audio\" /></Name>\n",
+        "\t\t\t\t<DeviceChain><MainSequencer><ClipSlotList>\n",
+        "\t\t\t\t\t<ClipSlot Id=\"0\"><ClipSlot><Value>\n",
+        "\t\t\t\t\t\t<AudioClip Id=\"10\">\n",
+        "\t\t\t\t\t\t\t<Name Value=\"Dry\" />\n",
+        "\t\t\t\t\t\t\t<SampleRef><FileRef><Path Value=\"D:/Audio/Dry.wav\" /></FileRef></SampleRef>\n",
+        "\t\t\t\t\t\t</AudioClip>\n",
+        "\t\t\t\t\t</Value></ClipSlot></ClipSlot>\n",
+        "\t\t\t\t</ClipSlotList></MainSequencer></DeviceChain>\n",
+        "\t\t\t</AudioTrack>\n",
+        "\t\t</Tracks>\n",
+        "\t</LiveSet>\n",
+        "</Ableton>\n"
+    );
+    let mut doc = AlsDocument::from_xml(no_rel_xml).expect("parse no_rel_xml");
+    let proj = doc.project().clone();
+    if let Some(ref clip) = proj.tracks[0].clip_slots[0].clip
+        && let ClipPayload::Audio(ref a) = clip.payload
+    {
+        assert_eq!(a.file_path, "D:/Audio/Dry.wav");
+        assert_eq!(a.relative_path, None);
+    } else {
+        panic!("expected audio clip");
+    }
+    doc.apply_project(&proj).expect("apply unchanged");
+    let unchanged_xml = doc.to_xml().expect("to_xml unchanged");
+    assert!(
+        !unchanged_xml.contains("RelativePath"),
+        "unchanged XML must not gain RelativePath tags:\n{unchanged_xml}"
+    );
+
+    // 2. Setting relative_path patches <RelativePath> and <RelativePathType Value="3" /> and round-trips.
+    let mut edited = proj;
+    if let Some(ref mut clip) = edited.tracks[0].clip_slots[0].clip
+        && let ClipPayload::Audio(ref mut a) = clip.payload
+    {
+        a.relative_path = Some("Samples/Imported/Dry.wav".to_owned());
+    }
+    doc.apply_project(&edited).expect("apply relative_path");
+    let patched_xml = doc.to_xml().expect("to_xml patched");
+    assert!(patched_xml.contains("<RelativePathType Value=\"3\""));
+    assert!(patched_xml.contains("<RelativePath Value=\"Samples/Imported/Dry.wav\""));
+
+    let als_path = tmp.join("rel_roundtrip.als");
+    doc.save_als(&als_path).expect("save_als");
+    let reopened = AlsDocument::open(&als_path).expect("reopen");
+    if let Some(ref clip) = reopened.project().tracks[0].clip_slots[0].clip
+        && let ClipPayload::Audio(ref a) = clip.payload
+    {
+        assert_eq!(a.file_path, "D:/Audio/Dry.wav");
+        assert_eq!(a.relative_path.as_deref(), Some("Samples/Imported/Dry.wav"));
+    } else {
+        panic!("expected audio clip on reopen");
+    }
+
+    let _ = std::fs::remove_dir_all(&tmp);
+}

@@ -11,6 +11,7 @@ use crate::commands::note::AddNote;
 use crate::engine_sync::{push_changes, send_command};
 use crate::history::{HistoryEntry, Transaction, UndoHistory};
 use crate::preferences::{AudioPreferences, MidiPreferences, Preferences, PreferencesError};
+use crate::project_ops::build_project_context;
 use crate::transport::TransportControl;
 use livecraft_engine::driver::{
     AudioDriver, DeviceList, DriverConfig, DriverError, DriverStatus, Latency, NullDriver,
@@ -20,10 +21,13 @@ use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
 use livecraft_engine::output::Playback;
 use livecraft_formats::als::{AlsDocument, AlsError, AlsParser};
+use livecraft_formats::project_dir::{MissingFile, ProjectContext};
 use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
 use livecraft_model::model::{MidiNote, Project};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
+
+pub use crate::project_ops::{ExportClipOutcome, SessionFormatError};
 
 /// How long the session waits between attempts to reopen a lost audio output (M06 item 8).
 pub const AUDIO_RETRY: Duration = Duration::from_secs(2);
@@ -97,19 +101,19 @@ pub enum SessionAudioError {
 }
 
 pub struct Session {
-    project: Project,
+    pub(crate) project: Project,
     history: UndoHistory,
     ids: IdAllocator,
-    engine: Option<Playback>,
-    dirty: bool,
+    pub(crate) engine: Option<Playback>,
+    pub(crate) dirty: bool,
     /// The Set as the engine last received it, so each change sends only what differs.
     sent: Project,
-    /// The preferences the Set was opened with, and the audio settings changed since.
-    preferences: Preferences,
+    /// The preferences the Set was opened with, and the audio/library settings changed since.
+    pub(crate) preferences: Preferences,
     /// Builds the driver for each audio output the session opens.
     driver_factory: DriverFactory,
-    /// Where the preferences are saved after an audio change, or `None` when there is no file.
-    prefs_path: Option<PathBuf>,
+    /// Where the preferences are saved after a change, or `None` when there is no file.
+    pub(crate) prefs_path: Option<PathBuf>,
     /// The insert marker and the stop position that Play, Continue, and Stop use (manual 6.3).
     transport: TransportControl,
     /// Why the audio output is not the one the preferences name, for the status bar.
@@ -120,7 +124,13 @@ pub struct Session {
     /// output is replaced before its engine has published a snapshot.
     carried: Option<Carried>,
     /// Lossless `.als` DOM kept alongside the Set so saves patch only modified nodes.
-    als_doc: Option<AlsDocument>,
+    pub(crate) als_doc: Option<AlsDocument>,
+    /// Path of the open or last-saved `.als` file, if any.
+    pub(crate) set_path: Option<PathBuf>,
+    /// Project directory, library roots, and set folder used to resolve sample references.
+    pub(crate) project_context: ProjectContext,
+    /// Missing file references detected against `project_context`.
+    pub(crate) missing_files: Vec<MissingFile>,
 }
 
 impl Session {
@@ -131,6 +141,7 @@ impl Session {
             engine,
             Box::new(cpal_driver),
             Preferences::default(),
+            None,
             None,
             None,
         )
@@ -147,13 +158,23 @@ impl Session {
             Preferences::default(),
             None,
             Some(doc),
+            None,
         )
     }
 
     /// Opens a `.als` file losslessly without starting an audio output (headless).
     pub fn open_als(path: &Path) -> Result<Self, AlsError> {
         let doc = AlsDocument::open(path)?;
-        Ok(Self::from_als_document(doc, None))
+        let project = doc.project().clone();
+        Ok(Self::from_parts(
+            project,
+            None,
+            Box::new(cpal_driver),
+            Preferences::default(),
+            None,
+            Some(doc),
+            Some(path.to_path_buf()),
+        ))
     }
 
     /// Opens a `.als` file losslessly with the audio output and MIDI inputs that the preferences
@@ -170,7 +191,14 @@ impl Session {
         prefs_path: Option<PathBuf>,
     ) -> Result<Self, AlsError> {
         let doc = AlsDocument::open(path)?;
-        Ok(Self::from_als_with_driver(doc, factory, prefs_path))
+        let project = doc.project().clone();
+        Ok(Self::with_driver_and_doc(
+            project,
+            factory,
+            prefs_path,
+            Some(doc),
+            Some(path.to_path_buf()),
+        ))
     }
 
     /// Opens a Set from a parsed lossless [`AlsDocument`] with the audio output that `factory`
@@ -181,12 +209,13 @@ impl Session {
         prefs_path: Option<PathBuf>,
     ) -> Self {
         let project = doc.project().clone();
-        Self::with_driver_and_doc(project, factory, prefs_path, Some(doc))
+        Self::with_driver_and_doc(project, factory, prefs_path, Some(doc), None)
     }
 
     /// Attaches or replaces the lossless [`AlsDocument`] used when saving this Set.
     pub fn attach_als_document(&mut self, doc: AlsDocument) {
         self.als_doc = Some(doc);
+        self.refresh_missing_files();
     }
 
     /// Returns the lossless [`AlsDocument`] attached to this Set, if any.
@@ -201,10 +230,12 @@ impl Session {
         preferences: Preferences,
         prefs_path: Option<PathBuf>,
         als_doc: Option<AlsDocument>,
+        set_path: Option<PathBuf>,
     ) -> Self {
         let ids = project.id_allocator();
         let sent = project.clone();
-        Self {
+        let project_context = build_project_context(set_path.as_deref(), &preferences.library);
+        let mut session = Self {
             project,
             history: UndoHistory::default(),
             ids,
@@ -219,7 +250,12 @@ impl Session {
             carried: None,
             transport: TransportControl::default(),
             als_doc,
-        }
+            set_path,
+            project_context,
+            missing_files: Vec::new(),
+        };
+        session.refresh_missing_files();
+        session
     }
 
     /// Opens a Set with the audio output and the MIDI inputs that the preferences file names (manual
@@ -237,7 +273,7 @@ impl Session {
         factory: DriverFactory,
         prefs_path: Option<PathBuf>,
     ) -> Self {
-        Self::with_driver_and_doc(project, factory, prefs_path, None)
+        Self::with_driver_and_doc(project, factory, prefs_path, None, None)
     }
 
     fn with_driver_and_doc(
@@ -245,12 +281,22 @@ impl Session {
         factory: DriverFactory,
         prefs_path: Option<PathBuf>,
         als_doc: Option<AlsDocument>,
+        set_path: Option<PathBuf>,
     ) -> Self {
         let preferences = prefs_path
             .as_deref()
             .map_or_else(Preferences::default, load_preferences);
-        let engine = open_engine(&project, &factory, &preferences);
-        Self::from_parts(project, engine, factory, preferences, prefs_path, als_doc)
+        let project_context = build_project_context(set_path.as_deref(), &preferences.library);
+        let engine = open_engine(&project, &factory, &preferences, &project_context);
+        Self::from_parts(
+            project,
+            engine,
+            factory,
+            preferences,
+            prefs_path,
+            als_doc,
+            set_path,
+        )
     }
 
     /// The MIDI input and output ports this machine offers, for the settings (manual 2.3).
@@ -375,8 +421,13 @@ impl Session {
         };
         self.engine = None;
         let ports = midi_ports(&self.preferences.midi);
-        let mut next = Playback::open_with_driver(&self.project, driver, &ports)
-            .map_err(SessionAudioError::Output)?;
+        let mut next = Playback::open_with_driver_in_context(
+            &self.project,
+            driver,
+            &ports,
+            self.project_context.clone(),
+        )
+        .map_err(SessionAudioError::Output)?;
         if let Some(carried) = &carried {
             carried.apply(&mut next);
         }
@@ -424,6 +475,8 @@ impl Session {
             self.als_doc = Some(doc);
         }
         self.dirty = false;
+        self.set_path = Some(path.to_path_buf());
+        self.update_project_context();
         Ok(())
     }
 
@@ -529,6 +582,7 @@ impl Session {
     fn changed(&mut self) {
         self.dirty = true;
         self.sync_engine();
+        self.refresh_missing_files();
     }
 
     /// Sends the change since the last sync to the engine (see `engine_sync`).

@@ -69,27 +69,38 @@ impl AlsIdAllocator {
     /// Records an existing numeric ID so newly allocated IDs never collide with it.
     pub fn reserve(&mut self, id: u64) {
         self.used.insert(id);
-        if id >= self.next {
-            self.next = id.saturating_add(1);
+        if id >= self.next && id < u64::MAX {
+            self.next = id + 1;
         }
     }
 
     /// Records the `NextPointeeId/@Value` read from the input document.
     pub fn seed_next_pointee_id(&mut self, value: u64) {
         self.original_next_pointee_id = Some(value);
-        if value > self.next {
+        if value > self.next && value < u64::MAX {
             self.next = value;
         }
     }
 
     /// Allocates a fresh unique numeric ID above all previously observed IDs.
     pub fn alloc(&mut self) -> u64 {
+        if self.next == 0 {
+            self.next = 1;
+        }
         while self.used.contains(&self.next) {
-            self.next = self.next.saturating_add(1);
+            self.next = if self.next == u64::MAX {
+                1
+            } else {
+                self.next + 1
+            };
         }
         let id = self.next;
         self.used.insert(id);
-        self.next = self.next.saturating_add(1);
+        self.next = if self.next < u64::MAX {
+            self.next + 1
+        } else {
+            1
+        };
         self.grew = true;
         id
     }
@@ -261,6 +272,11 @@ impl AlsDocument {
     #[must_use]
     pub fn tree(&self) -> &XmlTree {
         &self.tree
+    }
+
+    /// Returns a mutable reference to the underlying lossless [`XmlTree`].
+    pub(crate) fn tree_mut(&mut self) -> &mut XmlTree {
+        &mut self.tree
     }
 
     /// Returns the entity-to-[`XmlNodeId`] mapping table.
@@ -645,6 +661,7 @@ pub(crate) fn devices_equal(a: &Device, b: &Device) -> bool {
         && a.device_type == b.device_type
         && a.is_enabled == b.is_enabled
         && a.parameters == b.parameters
+        && a.sample_refs == b.sample_refs
 }
 
 #[must_use]
@@ -686,6 +703,7 @@ fn payloads_equal(
         }
         (ClipPayload::Audio(aa), ClipPayload::Audio(ab)) => {
             aa.file_path == ab.file_path
+                && aa.relative_path == ab.relative_path
                 && aa.sample_rate == ab.sample_rate
                 && aa.channels == ab.channels
                 && aa.warp_mode == ab.warp_mode

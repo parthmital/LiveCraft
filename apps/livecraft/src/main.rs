@@ -5,9 +5,7 @@ use livecraft_devices::operator::{OperatorSynth, Waveform};
 use livecraft_engine::driver::{DeviceInfo, DeviceList, DriverConfig};
 use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
 use livecraft_engine::output::Playback;
-use livecraft_formats::als::AlsParser;
 use livecraft_model::model::{Clip, ClipPayload, MidiNote, Project, TrackType};
-use std::fs;
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -66,6 +64,30 @@ enum Commands {
         /// Project tempo (BPM)
         #[arg(short, long, default_value_t = 120.0)]
         bpm: f32,
+        /// Create a Live Project folder (<Name> Project/<Name>.als)
+        #[arg(long)]
+        project: bool,
+    },
+    /// Inspect project health (missing/unused files, missing plug-ins, sample-rate mismatches, external files)
+    Health(cli::project::HealthArgs),
+    /// Collect external samples into the Live Project folder and save the Set
+    Collect(cli::project::CollectArgs),
+    /// Find audio files inside a Live Project folder not referenced by any Live document
+    Unused(cli::project::UnusedArgs),
+    /// Install Ableton Live Packs (.alp)
+    Pack {
+        #[command(subcommand)]
+        action: cli::project::PackAction,
+    },
+    /// Import or export Standard MIDI Files (.mid)
+    Midi {
+        #[command(subcommand)]
+        action: cli::project::MidiAction,
+    },
+    /// Import or export Ableton Live Clips (.alc)
+    Clip {
+        #[command(subcommand)]
+        action: cli::project::ClipAction,
     },
     /// Print metadata summary of an Ableton project
     Info {
@@ -260,26 +282,39 @@ fn main() -> anyhow::Result<()> {
                 println!("Ran {name} and saved {}", out.display());
             }
         },
-        Some(Commands::New { path, bpm }) => {
-            let name = path
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("New Project");
-            let mut proj = Project::new_default(name);
-            proj.transport.set_bpm(bpm);
-
-            if let Some(ext) = path.extension().and_then(|s| s.to_str())
-                && ext.eq_ignore_ascii_case("json")
-            {
-                let json = serde_json::to_string_pretty(&proj)?;
-                fs::write(&path, json)?;
-                println!("Created new LiveCraft JSON project: {}", path.display());
-                return Ok(());
-            }
-
-            AlsParser::save_project_to_als(&proj, &path)?;
-            println!("Created new Ableton Live set: {}", path.display());
+        Some(Commands::New { path, bpm, project }) => {
+            cli::project::run_new(&path, bpm, project)?;
         }
+        Some(Commands::Health(args)) => {
+            cli::project::run_health(args)?;
+        }
+        Some(Commands::Collect(args)) => {
+            cli::project::run_collect(args)?;
+        }
+        Some(Commands::Unused(args)) => {
+            cli::project::run_unused(args)?;
+        }
+        Some(Commands::Pack { action }) => match action {
+            cli::project::PackAction::Install(args) => {
+                cli::project::run_pack_install(args)?;
+            }
+        },
+        Some(Commands::Midi { action }) => match action {
+            cli::project::MidiAction::Import(args) => {
+                cli::project::run_midi_import(args)?;
+            }
+            cli::project::MidiAction::Export(args) => {
+                cli::project::run_midi_export(args)?;
+            }
+        },
+        Some(Commands::Clip { action }) => match action {
+            cli::project::ClipAction::ImportAlc(args) => {
+                cli::project::run_clip_import_alc(args)?;
+            }
+            cli::project::ClipAction::ExportAlc(args) => {
+                cli::project::run_clip_export_alc(args)?;
+            }
+        },
         Some(Commands::Info { path }) => {
             let proj = load_project_from_path(&path)?;
             print_project_card(&proj, &path);

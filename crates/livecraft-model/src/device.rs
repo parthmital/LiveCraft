@@ -242,6 +242,14 @@ pub fn param_table(device_type: &DeviceType) -> &'static [ParamSpec] {
     }
 }
 
+/// An embedded `<SampleRef><FileRef>` reference carried by a device or preset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeviceSampleRef {
+    pub path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_path: Option<String>,
+}
+
 /// A device on a track. Values are stored by parameter id. `get_param` and `set_param` take the
 /// names of M01, which are the adapter until the engine moves to ids (M05).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -252,6 +260,8 @@ pub struct Device {
     pub device_type: DeviceType,
     pub is_enabled: bool,
     pub parameters: ParamValues,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub sample_refs: Vec<DeviceSampleRef>,
 }
 
 impl Device {
@@ -263,6 +273,7 @@ impl Device {
             device_type,
             is_enabled: true,
             parameters,
+            sample_refs: Vec::new(),
         }
     }
 
@@ -302,6 +313,8 @@ struct DeviceRepr {
     device_type: DeviceType,
     is_enabled: bool,
     parameters: BTreeMap<String, f32>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    sample_refs: Vec<DeviceSampleRef>,
 }
 
 impl From<Device> for DeviceRepr {
@@ -316,6 +329,7 @@ impl From<Device> for DeviceRepr {
             device_type: device.device_type,
             is_enabled: device.is_enabled,
             parameters,
+            sample_refs: device.sample_refs,
         }
     }
 }
@@ -328,6 +342,7 @@ impl From<DeviceRepr> for Device {
             device_type: repr.device_type,
             is_enabled: repr.is_enabled,
             parameters: ParamValues::default(),
+            sample_refs: repr.sample_refs,
         };
         for (name, value) in &repr.parameters {
             device.set_param(name, *value);

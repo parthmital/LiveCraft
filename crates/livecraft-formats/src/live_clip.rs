@@ -1,7 +1,7 @@
 //! Ableton Live Clip (`.alc`) gzip XML reader and writer (manual 5.3, page 134).
 
-use std::fs::{self, File};
-use std::path::Path;
+use std::fs;
+use std::path::{Component, Path};
 
 use livecraft_model::ids::TrackId;
 use livecraft_model::model::{Clip, ClipPayload, ClipSlot, Device, Track, TrackType};
@@ -12,6 +12,11 @@ use crate::als::map::{
 };
 use crate::als::tree::{XmlAttr, XmlTree};
 use crate::als::write::write_als_gz;
+use crate::health::{copy_dedup, path_is_inside, relative_forward_slash};
+use crate::project_dir::{
+    ProjectContext, ProjectDirError, SAMPLES_DIR, SAMPLES_IMPORTED_DIR, SampleLocation,
+    SampleReference, SampleResolution, resolve_sample_reference,
+};
 
 /// A standalone Live Clip (`.alc`) containing a single clip and its track's device chain.
 #[derive(Debug, Clone)]
@@ -20,52 +25,123 @@ pub struct LiveClipFile {
     pub devices: Vec<Device>,
 }
 
+fn validate_project_dir(project_dir: &Path) -> Result<(), AlsError> {
+    if project_dir.as_os_str().is_empty()
+        || project_dir.to_string_lossy().contains('\0')
+        || project_dir
+            .components()
+            .any(|c| matches!(c, Component::ParentDir))
+    {
+        return Err(AlsError::InvalidFormat(format!(
+            "invalid project directory `{}`: traversal or empty path is forbidden",
+            project_dir.display()
+        )));
+    }
+    Ok(())
+}
+
 /// Saves `live_clip` as a gzip-compressed Ableton Live Clip (`.alc`) XML file.
 ///
 /// When `copy_audio_into` is `Some(project_dir)` and the clip is an Audio clip whose
-/// sample exists on disk, the sample is opened read-only and copied into
-/// `<project_dir>/Samples/Imported/<filename>` without moving or modifying the original,
+/// sample exists on disk, the sample is opened read-only and deduplicated/copied into
+/// `<project_dir>/Samples/Imported/` without moving or modifying the original,
 /// and the clip's stored/relative sample paths are updated to reference the copy.
 pub fn save_live_clip(
     live_clip: &LiveClipFile,
     path: &Path,
     copy_audio_into: Option<&Path>,
 ) -> Result<(), AlsError> {
+    save_live_clip_in_context(live_clip, path, copy_audio_into, None)
+}
+
+/// Saves `live_clip` as a `.alc` file using an optional [`ProjectContext`] to resolve
+/// relative sample references before copying into `copy_audio_into` or preserving
+/// `audio.relative_path`.
+pub fn save_live_clip_in_context(
+    live_clip: &LiveClipFile,
+    path: &Path,
+    copy_audio_into: Option<&Path>,
+    ctx: Option<&ProjectContext>,
+) -> Result<(), AlsError> {
     let mut clip_to_save = live_clip.clip.clone();
-    let mut imported_rel_path: Option<String> = None;
 
-    if let Some(project_dir) = copy_audio_into
-        && let ClipPayload::Audio(ref mut audio) = clip_to_save.payload
-        && !audio.file_path.is_empty()
-    {
-        let src_path = Path::new(&audio.file_path);
-        if src_path.is_file() {
-            let file_name = src_path.file_name().ok_or_else(|| {
-                AlsError::InvalidFormat("audio sample path has no file name".to_owned())
-            })?;
-            let imported_dir = project_dir.join("Samples").join("Imported");
-            fs::create_dir_all(&imported_dir)?;
-            let dest_path = imported_dir.join(file_name);
-
-            let same_file = match (fs::canonicalize(src_path), fs::canonicalize(&dest_path)) {
-                (Ok(a), Ok(b)) => a == b,
-                _ => false,
+    if let Some(project_dir) = copy_audio_into {
+        validate_project_dir(project_dir)?;
+        if let ClipPayload::Audio(ref mut audio) = clip_to_save.payload
+            && (!audio.file_path.trim().is_empty()
+                || audio
+                    .relative_path
+                    .as_deref()
+                    .is_some_and(|s| !s.trim().is_empty()))
+        {
+            let r = SampleReference {
+                path: audio.file_path.clone(),
+                relative_path: audio.relative_path.clone(),
             };
-            if !same_file {
-                let mut reader = File::open(src_path)?;
-                let mut writer = File::create(&dest_path)?;
-                std::io::copy(&mut reader, &mut writer)?;
-            }
-
-            let rel = format!("Samples/Imported/{}", file_name.to_string_lossy());
-            let raw_dest = dest_path.to_string_lossy().into_owned();
-            let normalized_dest = if raw_dest.starts_with(r"\\?\") {
-                raw_dest
+            let resolved_src = if let Some(context) = ctx {
+                match resolve_sample_reference(&r, context) {
+                    SampleResolution::Resolved { resolved_path, .. } => Some(resolved_path),
+                    SampleResolution::Missing { .. } => None,
+                }
             } else {
-                raw_dest.replace('\\', "/")
+                let proj_ctx = ProjectContext::for_project(project_dir);
+                match resolve_sample_reference(&r, &proj_ctx) {
+                    SampleResolution::Resolved { resolved_path, .. } => Some(resolved_path),
+                    SampleResolution::Missing { .. } => {
+                        match resolve_sample_reference(&r, &ProjectContext::default()) {
+                            SampleResolution::Resolved { resolved_path, .. } => Some(resolved_path),
+                            SampleResolution::Missing { .. } => None,
+                        }
+                    }
+                }
             };
-            audio.file_path = normalized_dest;
-            imported_rel_path = Some(rel);
+            if let Some(src_path) = resolved_src {
+                let imported_dir = project_dir.join(SAMPLES_DIR).join(SAMPLES_IMPORTED_DIR);
+                if !path_is_inside(&imported_dir, project_dir) {
+                    return Err(AlsError::InvalidFormat(format!(
+                        "destination `{}` escapes project directory `{}`",
+                        imported_dir.display(),
+                        project_dir.display()
+                    )));
+                }
+                fs::create_dir_all(&imported_dir)?;
+                if !path_is_inside(&imported_dir, project_dir) {
+                    return Err(AlsError::InvalidFormat(format!(
+                        "destination `{}` escapes project directory `{}`",
+                        imported_dir.display(),
+                        project_dir.display()
+                    )));
+                }
+                let (dest_path, rel_str, _reused) =
+                    copy_dedup(&src_path, &imported_dir, project_dir).map_err(|e| match e {
+                        ProjectDirError::Io(io) => AlsError::Io(io),
+                        other => AlsError::InvalidFormat(other.to_string()),
+                    })?;
+                let raw_dest = dest_path.to_string_lossy().into_owned();
+                let normalized_dest = if raw_dest.starts_with(r"\\?\") {
+                    raw_dest
+                } else {
+                    raw_dest.replace('\\', "/")
+                };
+                audio.file_path = normalized_dest;
+                audio.relative_path = Some(rel_str);
+            }
+        }
+    } else if let Some(context) = ctx
+        && let ClipPayload::Audio(ref mut audio) = clip_to_save.payload
+        && audio.relative_path.is_none()
+        && !audio.file_path.trim().is_empty()
+    {
+        let r = SampleReference::from_path(&audio.file_path);
+        if let SampleResolution::Resolved {
+            resolved_path,
+            location: SampleLocation::InProject,
+            ..
+        } = resolve_sample_reference(&r, context)
+            && let Some(root) = context.project_root.as_deref()
+            && let Some(rel) = relative_forward_slash(&resolved_path, root)
+        {
+            audio.relative_path = Some(rel);
         }
     }
 
@@ -126,15 +202,6 @@ pub fn save_live_clip(
     devices::patch_track_devices(&mut tree, dc_node, None, &track, &mut entities, &mut ids)?;
     clips::patch_track_clips(&mut tree, main_seq, None, &track, &mut entities, &mut ids)?;
 
-    if let Some(rel) = imported_rel_path
-        && let Some(&clip_node) = entities.clips.get(&clip_to_save.id)
-        && let Some(sr) = tree.ensure_child(clip_node, "SampleRef")
-        && let Some(fr) = tree.ensure_child(sr, "FileRef")
-    {
-        set_child_value(&mut tree, fr, "RelativePathType", "3");
-        set_child_value(&mut tree, fr, "RelativePath", rel);
-    }
-
     if ids.next_id() > 100 {
         set_child_value(
             &mut tree,
@@ -185,8 +252,10 @@ pub fn load_live_clip(path: &Path) -> Result<LiveClipFile, AlsError> {
 mod tests {
     use super::*;
     use crate::als::AlsParser;
+    use crate::project_dir::create_project_layout;
     use livecraft_model::ids::{ClipId, DeviceId};
     use livecraft_model::model::{DeviceType, MidiNote};
+    use proptest::prelude::*;
     use std::path::PathBuf;
 
     fn temp_dir(name: &str) -> PathBuf {
@@ -289,5 +358,138 @@ mod tests {
         }
 
         let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn rejects_parent_traversal_dedups_collisions_and_preserves_relative_path() {
+        let dir = temp_dir("security_and_rel");
+        let proj = dir.join("Proj Project");
+        create_project_layout(&proj).expect("layout");
+        let ext_a = dir.join("ExtA/kick.wav");
+        let ext_b = dir.join("ExtB/kick.wav");
+        fs::create_dir_all(ext_a.parent().expect("parent a")).expect("mkdir a");
+        fs::create_dir_all(ext_b.parent().expect("parent b")).expect("mkdir b");
+        fs::write(&ext_a, b"RIFFaaaa").expect("write ext_a");
+        fs::write(&ext_b, b"RIFFbbbb").expect("write ext_b");
+
+        let mut clip_a = Clip::new_audio(ClipId(10), "Kick A", ext_a.to_string_lossy(), 4.0);
+        let alc_a = proj.join("Clips/KickA.alc");
+        save_live_clip(
+            &LiveClipFile {
+                clip: clip_a.clone(),
+                devices: Vec::new(),
+            },
+            &alc_a,
+            Some(&proj.join("..").join("Escape")),
+        )
+        .expect_err(".. traversal in project_dir must fail");
+
+        save_live_clip(
+            &LiveClipFile {
+                clip: clip_a.clone(),
+                devices: Vec::new(),
+            },
+            &alc_a,
+            Some(&proj),
+        )
+        .expect("save Kick A");
+
+        // Saving a different sample with the same filename must disambiguate, never overwrite.
+        let clip_b = Clip::new_audio(ClipId(11), "Kick B", ext_b.to_string_lossy(), 4.0);
+        let alc_b = proj.join("Clips/KickB.alc");
+        save_live_clip(
+            &LiveClipFile {
+                clip: clip_b,
+                devices: Vec::new(),
+            },
+            &alc_b,
+            Some(&proj),
+        )
+        .expect("save Kick B");
+
+        assert_eq!(
+            fs::read(proj.join("Samples/Imported/kick.wav")).expect("read kick"),
+            b"RIFFaaaa"
+        );
+        assert_eq!(
+            fs::read(proj.join("Samples/Imported/kick_1.wav")).expect("read kick_1"),
+            b"RIFFbbbb"
+        );
+
+        // Preserves explicit audio.relative_path even when copy_audio_into is None.
+        if let ClipPayload::Audio(ref mut a) = clip_a.payload {
+            a.relative_path = Some("Samples/Imported/kick.wav".to_owned());
+        }
+        let alc_rel = proj.join("Clips/KickRel.alc");
+        save_live_clip(
+            &LiveClipFile {
+                clip: clip_a,
+                devices: Vec::new(),
+            },
+            &alc_rel,
+            None,
+        )
+        .expect("save without copy");
+        let loaded_rel = load_live_clip(&alc_rel).expect("load preserved rel");
+        match loaded_rel.clip.payload {
+            ClipPayload::Audio(a) => {
+                assert_eq!(
+                    a.relative_path.as_deref(),
+                    Some("Samples/Imported/kick.wav")
+                );
+            }
+            other => panic!("expected audio clip, got {other:?}"),
+        }
+
+        // save_live_clip_in_context resolves relative path in source context and copies to target.
+        let src_proj = dir.join("Source Project");
+        create_project_layout(&src_proj).expect("src layout");
+        let src_wav = src_proj.join("Samples/Recorded/vox.wav");
+        fs::write(&src_wav, b"RIFFvox!").expect("write vox");
+        let mut rel_clip = Clip::new_audio(ClipId(12), "Vox", "", 4.0);
+        if let ClipPayload::Audio(ref mut a) = rel_clip.payload {
+            a.relative_path = Some("Samples/Recorded/vox.wav".to_owned());
+        }
+        let dst_proj = dir.join("Dest Project");
+        create_project_layout(&dst_proj).expect("dst layout");
+        let dst_alc = dst_proj.join("Clips/Vox.alc");
+        let src_ctx = ProjectContext::for_project(&src_proj);
+        save_live_clip_in_context(
+            &LiveClipFile {
+                clip: rel_clip,
+                devices: Vec::new(),
+            },
+            &dst_alc,
+            Some(&dst_proj),
+            Some(&src_ctx),
+        )
+        .expect("save in context");
+        assert!(dst_proj.join("Samples/Imported/vox.wav").is_file());
+        let loaded_ctx = load_live_clip(&dst_alc).expect("load ctx alc");
+        match loaded_ctx.clip.payload {
+            ClipPayload::Audio(a) => {
+                assert_eq!(a.relative_path.as_deref(), Some("Samples/Imported/vox.wav"));
+            }
+            other => panic!("expected audio clip, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn arbitrary_bytes_never_panic_in_load_live_clip(
+            bytes in proptest::collection::vec(any::<u8>(), 0..1024)
+        ) {
+            let path = std::env::temp_dir().join(format!(
+                "livecraft_alc_prop_{}.alc",
+                std::process::id()
+            ));
+            let _ = fs::write(&path, &bytes);
+            let _ = load_live_clip(&path);
+            let _ = fs::remove_file(&path);
+        }
     }
 }

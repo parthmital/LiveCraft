@@ -2,6 +2,7 @@ pub mod app;
 pub mod arrange;
 pub mod browser;
 pub mod devices;
+pub mod file_manager;
 pub mod mixer;
 pub mod pianoroll;
 pub mod session;

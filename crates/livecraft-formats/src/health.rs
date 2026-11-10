@@ -248,7 +248,7 @@ pub fn probe_audio_sample_rate(path: &Path) -> Result<u32, HealthError> {
             .and_then(|e| e.to_str())
             .is_some_and(|e| e.eq_ignore_ascii_case("mp3"));
     if is_mp3 {
-        return probe_mp3_rate(&mut file, &hdr, path);
+        return probe_mp3_rate(&mut file, &hdr, file_len, path);
     }
     Err(HealthError::AudioProbe {
         path: path.to_path_buf(),
@@ -296,10 +296,32 @@ fn run_health_check(
     }
 
     let xml_rel = tree.map(build_xml_fileref_map).unwrap_or_default();
+    let xml_rates = tree
+        .map(extract_audio_clip_explicit_rates)
+        .unwrap_or_default();
     let mut acc = HealthAcc::default();
-    for (mut r, loc, sr) in collect_project_clip_refs_with_rate(project) {
-        r.relative_path = xml_rel.get(&r.path).and_then(|x| x.relative_path.clone());
-        acc.check(&r, loc, options.expected_sample_rate.unwrap_or(sr), &ctx);
+    for (clip_id, mut r, loc) in collect_project_clip_refs_with_id(project) {
+        if r.relative_path.is_none() {
+            r.relative_path = xml_rel.get(&r.path).and_then(|x| x.relative_path.clone());
+        }
+        let exp_sr = if let Some(exp) = options.expected_sample_rate {
+            exp
+        } else if tree.is_some() {
+            xml_rates
+                .by_id
+                .get(&clip_id)
+                .copied()
+                .or_else(|| {
+                    xml_rates
+                        .by_ref
+                        .get(&(r.path.clone(), r.relative_path.clone()))
+                        .copied()
+                })
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        acc.check(&r, loc, exp_sr, &ctx);
     }
     if let Some(t) = tree {
         for (r, tag, sr_opt) in extract_xml_file_refs_with_rate(t) {
@@ -404,8 +426,14 @@ impl HealthAcc {
     }
 }
 
+fn is_external_plugin_tag(tag: &str) -> bool {
+    tag.contains("Plugin") || tag.contains("MxDevice")
+}
+
 fn is_plugin_available(tag: &str, name: &str, available: Option<&[String]>) -> bool {
-    let Some(list) = available else { return false };
+    let Some(list) = available else {
+        return !is_external_plugin_tag(tag);
+    };
     list.iter()
         .any(|p| p.eq_ignore_ascii_case(tag) || p.eq_ignore_ascii_case(name))
 }
@@ -484,7 +512,67 @@ fn probe_flac_rate(file: &mut File, path: &Path) -> Result<u32, HealthError> {
         })
 }
 
-fn probe_mp3_rate(file: &mut File, hdr: &[u8; 12], path: &Path) -> Result<u32, HealthError> {
+#[derive(Clone, Copy)]
+struct Mp3FrameHeader {
+    version: u8,
+    layer: u8,
+    sample_rate: u32,
+    frame_len: usize,
+}
+
+fn parse_mp3_frame_header(w: &[u8]) -> Option<Mp3FrameHeader> {
+    if w.len() < 4 || w[0] != 0xFF || (w[1] & 0xE0) != 0xE0 {
+        return None;
+    }
+    let version = (w[1] >> 3) & 3;
+    let layer = (w[1] >> 1) & 3;
+    let br_idx = ((w[2] >> 4) & 0x0F) as usize;
+    let sr_idx = ((w[2] >> 2) & 0x03) as usize;
+    let padding = usize::from((w[2] >> 1) & 1);
+    if version == 1 || layer == 0 || br_idx == 0 || br_idx == 15 || sr_idx >= 3 {
+        return None;
+    }
+    let sample_rate = match version {
+        3 => [44100, 48000, 32000][sr_idx],
+        2 => [22050, 24000, 16000][sr_idx],
+        _ => [11025, 12000, 8000][sr_idx],
+    };
+    let kbps: usize = match (version, layer) {
+        (3, 3) => [
+            0, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448,
+        ][br_idx],
+        (3, 2) => [
+            0, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384,
+        ][br_idx],
+        (3, 1) => [
+            0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320,
+        ][br_idx],
+        (_, 3) => [
+            0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256,
+        ][br_idx],
+        _ => [0, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160][br_idx],
+    };
+    let bitrate_bps = kbps * 1000;
+    let sr = sample_rate as usize;
+    let frame_len = match (version, layer) {
+        (_, 3) => ((12 * bitrate_bps) / sr + padding) * 4,
+        (3, _) | (_, 2) => (144 * bitrate_bps) / sr + padding,
+        _ => (72 * bitrate_bps) / sr + padding,
+    };
+    (frame_len >= 4).then_some(Mp3FrameHeader {
+        version,
+        layer,
+        sample_rate,
+        frame_len,
+    })
+}
+
+fn probe_mp3_rate(
+    file: &mut File,
+    hdr: &[u8; 12],
+    file_len: u64,
+    path: &Path,
+) -> Result<u32, HealthError> {
     let start = if &hdr[0..3] == b"ID3" {
         let sz = ((u64::from(hdr[6] & 0x7F)) << 21)
             | ((u64::from(hdr[7] & 0x7F)) << 14)
@@ -494,28 +582,51 @@ fn probe_mp3_rate(file: &mut File, hdr: &[u8; 12], path: &Path) -> Result<u32, H
     } else {
         0
     };
+    if start >= file_len {
+        return Err(HealthError::AudioProbe {
+            path: path.to_path_buf(),
+            reason: "MP3 frame header not found".into(),
+        });
+    }
     file.seek(SeekFrom::Start(start))?;
     let mut buf = vec![0u8; 65_536];
     let n = file.read(&mut buf)?;
-    for w in buf[..n].windows(4) {
-        if w[0] == 0xFF && (w[1] & 0xE0) == 0xE0 {
-            let (ver, layer, br, sr_idx) = (
-                (w[1] >> 3) & 3,
-                (w[1] >> 1) & 3,
-                (w[2] >> 4) & 15,
-                ((w[2] >> 2) & 3) as usize,
-            );
-            if ver != 1 && layer != 0 && br != 15 && sr_idx < 3 {
-                let rates = match ver {
-                    3 => [44100, 48000, 32000],
-                    2 => [22050, 24000, 16000],
-                    _ => [11025, 12000, 8000],
-                };
-                return Ok(rates[sr_idx]);
+    let mut fallback = None;
+    for i in 0..n.saturating_sub(3) {
+        let Some(h1) = parse_mp3_frame_header(&buf[i..i + 4]) else {
+            continue;
+        };
+        let next_file_pos = start
+            .saturating_add(i as u64)
+            .saturating_add(h1.frame_len as u64);
+        if next_file_pos.saturating_add(4) <= file_len {
+            let next_buf_pos = i.saturating_add(h1.frame_len);
+            let next_bytes = if next_buf_pos.saturating_add(4) <= n {
+                Some([
+                    buf[next_buf_pos],
+                    buf[next_buf_pos + 1],
+                    buf[next_buf_pos + 2],
+                    buf[next_buf_pos + 3],
+                ])
+            } else if file.seek(SeekFrom::Start(next_file_pos)).is_ok() {
+                let mut tmp = [0u8; 4];
+                file.read_exact(&mut tmp).ok().map(|()| tmp)
+            } else {
+                None
+            };
+            if let Some(nb) = next_bytes
+                && let Some(h2) = parse_mp3_frame_header(&nb)
+                && h2.version == h1.version
+                && h2.layer == h1.layer
+                && h2.sample_rate == h1.sample_rate
+            {
+                return Ok(h1.sample_rate);
             }
+        } else if file_len.saturating_sub(start) < (h1.frame_len as u64).saturating_add(4) {
+            fallback.get_or_insert(h1.sample_rate);
         }
     }
-    Err(HealthError::AudioProbe {
+    fallback.ok_or_else(|| HealthError::AudioProbe {
         path: path.to_path_buf(),
         reason: "MP3 frame header not found".into(),
     })
@@ -528,34 +639,99 @@ fn probe_mp3_rate(file: &mut File, hdr: &[u8; 12], path: &Path) -> Result<u32, H
 pub(crate) fn collect_project_clip_refs(
     project: &Project,
 ) -> Vec<(SampleReference, ClipLocationRef)> {
-    collect_project_clip_refs_with_rate(project)
+    collect_project_clip_refs_with_id(project)
         .into_iter()
-        .map(|(r, loc, _)| (r, loc))
+        .map(|(_, r, loc)| (r, loc))
         .collect()
 }
 
-fn collect_project_clip_refs_with_rate(
+fn collect_project_clip_refs_with_id(
     project: &Project,
-) -> Vec<(SampleReference, ClipLocationRef, u32)> {
+) -> Vec<(u64, SampleReference, ClipLocationRef)> {
     let mut out = Vec::new();
     for t in project.all_tracks() {
         for (i, s) in t.clip_slots.iter().enumerate() {
             if let Some(ref c) = s.clip
                 && let ClipPayload::Audio(ref a) = c.payload
-                && !a.file_path.trim().is_empty()
+                && (!a.file_path.trim().is_empty()
+                    || a.relative_path
+                        .as_deref()
+                        .is_some_and(|rel| !rel.trim().is_empty()))
             {
                 let loc = ClipLocationRef::SessionSlot(t.id.0, i, c.name.clone());
-                out.push((SampleReference::from_path(&a.file_path), loc, a.sample_rate));
+                let sr = SampleReference {
+                    path: a.file_path.clone(),
+                    relative_path: a.relative_path.clone(),
+                };
+                out.push((c.id.0, sr, loc));
             }
         }
         for arr in &t.arrangement_clips {
             if let ClipPayload::Audio(ref a) = arr.clip.payload
-                && !a.file_path.trim().is_empty()
+                && (!a.file_path.trim().is_empty()
+                    || a.relative_path
+                        .as_deref()
+                        .is_some_and(|rel| !rel.trim().is_empty()))
             {
                 let loc =
                     ClipLocationRef::Arrangement(t.id.0, arr.clip.id.0, arr.clip.name.clone());
-                out.push((SampleReference::from_path(&a.file_path), loc, a.sample_rate));
+                let sr = SampleReference {
+                    path: a.file_path.clone(),
+                    relative_path: a.relative_path.clone(),
+                };
+                out.push((arr.clip.id.0, sr, loc));
             }
+        }
+    }
+    out
+}
+
+#[derive(Default)]
+struct ExplicitClipRates {
+    by_id: HashMap<u64, u32>,
+    by_ref: HashMap<(String, Option<String>), u32>,
+}
+
+fn extract_audio_clip_explicit_rates(tree: &XmlTree) -> ExplicitClipRates {
+    let mut out = ExplicitClipRates::default();
+    let mut stack = vec![tree.root()];
+    while let Some(nid) = stack.pop() {
+        let Some(node) = tree.node(nid) else {
+            continue;
+        };
+        let Some(tag) = node.element_name() else {
+            continue;
+        };
+        if tag == "AudioClip" {
+            let sr_opt = tree
+                .child(nid, "SampleRef")
+                .and_then(|sr| read_val(tree, sr, "DefaultSampleRate"))
+                .and_then(|s| s.parse::<u32>().ok());
+            if let Some(sr) = sr_opt {
+                if let Some(cid) = tree.attr(nid, "Id").and_then(|s| s.parse::<u64>().ok()) {
+                    out.by_id.insert(cid, sr);
+                }
+                if let Some(fr) = tree
+                    .child(nid, "SampleRef")
+                    .and_then(|sr_node| tree.child(sr_node, "FileRef"))
+                    .or_else(|| tree.child(nid, "FileRef"))
+                {
+                    let path = read_val(tree, fr, "Path").unwrap_or_default();
+                    let rel = read_val(tree, fr, "RelativePath").filter(|s| !s.trim().is_empty());
+                    let eff_path = if path.trim().is_empty() {
+                        rel.clone().unwrap_or_default()
+                    } else {
+                        path
+                    };
+                    if !eff_path.trim().is_empty() || rel.is_some() {
+                        out.by_ref.entry((eff_path, rel)).or_insert(sr);
+                    }
+                }
+            }
+            continue;
+        }
+        for &c in node.children().iter().rev() {
+            stack.push(c);
         }
     }
     out
@@ -623,17 +799,42 @@ pub(crate) fn path_is_inside(candidate: &Path, dir: &Path) -> bool {
 }
 
 pub(crate) fn canonical_or_self(path: &Path) -> PathBuf {
-    fs::canonicalize(path).unwrap_or_else(|_| {
-        path.components().fold(PathBuf::new(), |mut out, c| {
-            match c {
-                Component::CurDir => {}
-                Component::ParentDir => {
-                    let _ = out.pop();
+    if let Ok(canon) = fs::canonicalize(path) {
+        return canon;
+    }
+    let mut tail: Vec<Component<'_>> = Vec::new();
+    let mut cur = path;
+    while !cur.as_os_str().is_empty() {
+        if let Ok(canon) = fs::canonicalize(cur) {
+            let mut out = canon;
+            for comp in tail.into_iter().rev() {
+                match comp {
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        let _ = out.pop();
+                    }
+                    other => out.push(other),
                 }
-                _ => out.push(c),
             }
-            out
-        })
+            return out;
+        }
+        let Some(parent) = cur.parent() else {
+            break;
+        };
+        if let Some(last) = cur.components().next_back() {
+            tail.push(last);
+        }
+        cur = parent;
+    }
+    path.components().fold(PathBuf::new(), |mut out, c| {
+        match c {
+            Component::CurDir => {}
+            Component::ParentDir => {
+                let _ = out.pop();
+            }
+            _ => out.push(c),
+        }
+        out
     })
 }
 
@@ -655,29 +856,46 @@ pub(crate) fn read_val(tree: &XmlTree, parent: XmlNodeId, child: &str) -> Option
 }
 
 pub(crate) fn resolve_candidate(raw: &str, ctx: &ProjectContext) -> Option<PathBuf> {
+    if raw.contains('\0') {
+        return None;
+    }
     let b = raw.as_bytes();
     let win =
         b.len() >= 3 && b[0].is_ascii_alphabetic() && b[1] == b':' && matches!(b[2], b'/' | b'\\');
     if Path::new(raw).is_absolute() || raw.starts_with('/') || raw.starts_with("\\\\") || win {
         return Path::new(raw).is_file().then(|| PathBuf::from(raw));
     }
+    let has_parent_dir = raw.split(['/', '\\']).any(|s| s == "..")
+        || Path::new(raw)
+            .components()
+            .any(|c| matches!(c, Component::ParentDir));
+    if ctx.project_root.is_none() && has_parent_dir {
+        return None;
+    }
     let join = |base: &Path| {
         raw.split(['/', '\\'])
             .filter(|s| !s.is_empty() && *s != ".")
             .fold(base.to_path_buf(), |p, s| p.join(s))
+    };
+    let is_allowed = |candidate: &Path| -> bool {
+        candidate.is_file()
+            && ctx
+                .project_root
+                .as_deref()
+                .is_none_or(|root| path_is_inside(candidate, root))
     };
     for base in [ctx.project_root.as_deref(), ctx.set_dir.as_deref()]
         .into_iter()
         .flatten()
     {
         let c = join(base);
-        if c.is_file() {
+        if is_allowed(&c) {
             return Some(c);
         }
     }
     (ctx.project_root.is_none() && ctx.set_dir.is_none())
         .then(|| join(Path::new(".")))
-        .filter(|c| c.is_file())
+        .filter(|c| is_allowed(c))
 }
 
 pub(crate) fn file_name_from_ref(raw: &str) -> Option<String> {
@@ -698,14 +916,17 @@ pub(crate) fn walk_files(
         for entry in fs::read_dir(&dir)? {
             let entry = entry?;
             let (path, ft) = (entry.path(), entry.file_type()?);
-            if ft.is_dir() || (ft.is_symlink() && path.is_dir()) {
+            if ft.is_symlink() {
+                continue;
+            }
+            if ft.is_dir() {
                 if let Some(n) = entry.file_name().to_str()
                     && ((skip_info && n == PROJECT_INFO_DIR) || (skip_backup && n == BACKUP_DIR))
                 {
                     continue;
                 }
                 stack.push(path);
-            } else if ft.is_file() || (ft.is_symlink() && path.is_file()) {
+            } else if ft.is_file() {
                 out.push(path);
             }
         }
@@ -779,4 +1000,248 @@ pub(crate) fn has_ext(path: &Path, exts: &[&str]) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
         .is_some_and(|e| exts.iter().any(|x| e.eq_ignore_ascii_case(x)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::audio_encode::{AudioFileFormat, BitDepth, write_mp3_320, write_pcm_file};
+    use crate::project_dir::create_project_layout;
+    use livecraft_model::ids::{ClipId, DeviceId};
+    use livecraft_model::model::{Device, TrackType};
+    use proptest::prelude::*;
+
+    fn temp_dir(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "livecraft_health_unit_{name}_{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn resolve_candidate_blocks_parent_traversal_and_allows_intra_project_relative() {
+        let dir = temp_dir("rel_escape");
+        let root = dir.join("Proj Project");
+        create_project_layout(&root).expect("layout");
+        let clips_dir = root.join("Clips");
+        fs::create_dir_all(&clips_dir).expect("clips dir");
+        let secret = dir.join("secret.wav");
+        let intra = root.join("Samples/Imported/used_alc.wav");
+        fs::write(&secret, b"RIFFsecret").expect("write secret");
+        fs::write(&intra, b"RIFFintra").expect("write intra");
+
+        let no_root_ctx = ProjectContext {
+            project_root: None,
+            set_dir: Some(clips_dir.clone()),
+            ..ProjectContext::default()
+        };
+        assert_eq!(resolve_candidate("../../secret.wav", &no_root_ctx), None);
+        assert_eq!(resolve_candidate(r"..\..\secret.wav", &no_root_ctx), None);
+
+        let proj_ctx = ProjectContext {
+            project_root: Some(root.clone()),
+            set_dir: Some(clips_dir),
+            ..ProjectContext::default()
+        };
+        assert_eq!(resolve_candidate("../../secret.wav", &proj_ctx), None);
+        assert_eq!(resolve_candidate(r"..\..\secret.wav", &proj_ctx), None);
+        assert!(resolve_candidate("../Samples/Imported/used_alc.wav", &proj_ctx).is_some());
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn walk_files_skips_symlinks() {
+        let dir = temp_dir("walk_symlinks");
+        let root = dir.join("Proj Project");
+        create_project_layout(&root).expect("layout");
+        let real_wav = root.join("Samples/Imported/real.wav");
+        fs::write(&real_wav, b"RIFFreal").expect("write real");
+
+        let outside_dir = dir.join("Outside");
+        fs::create_dir_all(&outside_dir).expect("outside dir");
+        let secret_wav = outside_dir.join("secret.wav");
+        fs::write(&secret_wav, b"RIFFsecret").expect("write secret");
+
+        let link_file = root.join("Samples/Imported/link_secret.wav");
+        let link_dir = root.join("Samples/LinkDir");
+
+        #[cfg(unix)]
+        let linked = std::os::unix::fs::symlink(&secret_wav, &link_file).is_ok()
+            && std::os::unix::fs::symlink(&outside_dir, &link_dir).is_ok();
+        #[cfg(windows)]
+        let linked = {
+            let sym_ok = std::os::windows::fs::symlink_file(&secret_wav, &link_file).is_ok()
+                && std::os::windows::fs::symlink_dir(&outside_dir, &link_dir).is_ok();
+            if sym_ok {
+                true
+            } else {
+                std::process::Command::new("cmd")
+                    .args(["/C", "mklink", "/J"])
+                    .arg(&link_dir)
+                    .arg(&outside_dir)
+                    .output()
+                    .is_ok_and(|o| o.status.success())
+            }
+        };
+
+        assert!(
+            linked,
+            "expected symlink or Windows NTFS junction creation to succeed in temp dir"
+        );
+        let walked = walk_files(&root, true, true).expect("walk_files");
+        assert_eq!(walked.len(), 1);
+        assert_eq!(walked[0], real_wav);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn health_check_defaults_avoid_false_positive_rate_and_native_custom_devices() {
+        let dir = temp_dir("defaults");
+        let root = dir.join("Clean48k Project");
+        create_project_layout(&root).expect("layout");
+        let wav48 = root.join("Samples/Recorded/take_48k.wav");
+        write_pcm_file(
+            &wav48,
+            AudioFileFormat::Wav,
+            BitDepth::Bits16,
+            48000,
+            1,
+            &[0.1, -0.1],
+        )
+        .expect("write 48k wav");
+
+        let mut project = Project::new_default("Clean48k");
+        let track = project
+            .tracks
+            .iter_mut()
+            .find(|t| t.track_type == TrackType::Audio)
+            .expect("audio track");
+        track.clip_slots[0].clip = Some(Clip::new_audio(
+            ClipId(100),
+            "Take",
+            "Samples/Recorded/take_48k.wav",
+            4.0,
+        ));
+        project.tracks[0].device_chain.push(Device::new(
+            DeviceId(101),
+            "Wavetable",
+            DeviceType::Custom("Wavetable".to_owned()),
+        ));
+        project.tracks[0].device_chain.push(Device::new(
+            DeviceId(102),
+            "Effect Rack",
+            DeviceType::Custom("AudioEffectGroupDevice".to_owned()),
+        ));
+        project.tracks[0].device_chain.push(Device::new(
+            DeviceId(103),
+            "FabPro",
+            DeviceType::Custom("AuPluginDevice".to_owned()),
+        ));
+        project.tracks[0].device_chain.push(Device::new(
+            DeviceId(104),
+            "M4L LFO",
+            DeviceType::Custom("MxDeviceAudioEffect".to_owned()),
+        ));
+
+        let doc = AlsDocument::from_project(&project).expect("doc");
+        let opts = HealthCheckOptions {
+            project_root: Some(root.clone()),
+            ..HealthCheckOptions::default()
+        };
+        let rep = check_document_health(&doc, &opts).expect("check health");
+        assert!(
+            rep.sample_rate_mismatches.is_empty(),
+            "defaulted 44100 without XML <DefaultSampleRate> must not mismatch: {:?}",
+            rep.sample_rate_mismatches
+        );
+        let flagged: Vec<_> = rep
+            .missing_plugins
+            .iter()
+            .map(|p| p.plugin_type.as_str())
+            .collect();
+        assert_eq!(flagged, vec!["AuPluginDevice", "MxDeviceAudioEffect"]);
+
+        // Explicit <DefaultSampleRate Value="44100"/> in XML DOES flag 48 kHz file when expected_sample_rate is None.
+        let xml = format!(
+            "<?xml version=\"1.0\"?><Ableton><LiveSet><Tracks>\
+             <AudioTrack Id=\"1\"><Name><EffectiveName Value=\"A\"/></Name>\
+             <DeviceChain><MainSequencer><ClipSlotList><ClipSlot Id=\"0\"><ClipSlot><Value>\
+             <AudioClip Id=\"77\"><Name Value=\"ExplicitSR\"/>\
+             <SampleRef><DefaultSampleRate Value=\"44100\"/><FileRef>\
+             <Path Value=\"{}\"/></FileRef></SampleRef>\
+             </AudioClip></Value></ClipSlot></ClipSlot></ClipSlotList></MainSequencer></DeviceChain>\
+             </AudioTrack></Tracks></LiveSet></Ableton>",
+            wav48.to_string_lossy()
+        );
+        let explicit_doc = AlsDocument::from_xml_named(&xml, "ExplicitSR").expect("xml doc");
+        let explicit_rep = check_document_health(&explicit_doc, &opts).expect("explicit health");
+        assert_eq!(explicit_rep.sample_rate_mismatches.len(), 1);
+        assert_eq!(
+            explicit_rep.sample_rate_mismatches[0].expected_sample_rate,
+            44100
+        );
+        assert_eq!(
+            explicit_rep.sample_rate_mismatches[0].actual_sample_rate,
+            48000
+        );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn probe_mp3_rate_verifies_consecutive_frame_and_keeps_short_fixture() {
+        let dir = temp_dir("mp3_probe");
+
+        let short_mp3 = dir.join("short.mp3");
+        fs::write(&short_mp3, [0xFF_u8, 0xFB, 0x94, 0x00, 0x00, 0x00]).expect("write short");
+        assert_eq!(probe_audio_sample_rate(&short_mp3).expect("short"), 48000);
+
+        // False sync at offset 16 in a 2 KiB file with no valid second frame header at 16 + 384.
+        let mut false_sync = vec![0x11_u8; 2048];
+        false_sync[16..20].copy_from_slice(&[0xFF, 0xFB, 0x94, 0x00]);
+        let bad_mp3 = dir.join("false_sync.mp3");
+        fs::write(&bad_mp3, &false_sync).expect("write bad");
+        assert!(probe_audio_sample_rate(&bad_mp3).is_err());
+
+        // Two consecutive MPEG-1 Layer III 128 kbps 48 kHz frames (384 bytes per frame).
+        let mut two_frames = vec![0u8; 384 * 2];
+        two_frames[0..4].copy_from_slice(&[0xFF, 0xFB, 0x94, 0x00]);
+        two_frames[384..388].copy_from_slice(&[0xFF, 0xFB, 0x94, 0x00]);
+        let valid_synth = dir.join("two_frames.mp3");
+        fs::write(&valid_synth, &two_frames).expect("write two frames");
+        assert_eq!(
+            probe_audio_sample_rate(&valid_synth).expect("two frames"),
+            48000
+        );
+
+        let real_mp3 = dir.join("real_44k.mp3");
+        write_mp3_320(&real_mp3, 44100, 1, &vec![0.0_f32; 4096]).expect("encode mp3");
+        assert_eq!(probe_audio_sample_rate(&real_mp3).expect("real 44k"), 44100);
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn arbitrary_bytes_never_panic_in_probe_audio_sample_rate(
+            ext_idx in 0usize..5,
+            bytes in proptest::collection::vec(any::<u8>(), 0..1024)
+        ) {
+            let ext = ["wav", "aif", "flac", "mp3", "bin"][ext_idx];
+            let path = std::env::temp_dir().join(format!(
+                "livecraft_probe_prop_{}.{ext}",
+                std::process::id()
+            ));
+            let _ = fs::write(&path, &bytes);
+            let _ = probe_audio_sample_rate(&path);
+            let _ = fs::remove_file(&path);
+        }
+    }
 }

@@ -24,6 +24,8 @@ pub struct WarpMarker {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AudioClipData {
     pub file_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub relative_path: Option<String>,
     pub sample_rate: u32,
     pub channels: u16,
     pub warp_mode: WarpMode,
@@ -104,6 +106,7 @@ impl Clip {
             end_marker_beat: length_beats,
             payload: ClipPayload::Audio(AudioClipData {
                 file_path: file_path.into(),
+                relative_path: None,
                 sample_rate: 44100,
                 channels: 2,
                 warp_mode: WarpMode::Beats,

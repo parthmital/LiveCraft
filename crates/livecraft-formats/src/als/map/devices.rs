@@ -4,7 +4,7 @@
 use std::collections::{HashMap, HashSet};
 
 use livecraft_model::ids::{DeviceId, TrackId};
-use livecraft_model::model::{Device, DeviceType, Track, param_table};
+use livecraft_model::model::{Device, DeviceSampleRef, DeviceType, Track, param_table};
 
 use super::super::AlsError;
 use super::super::tree::{XmlAttr, XmlNode, XmlNodeId, XmlTree};
@@ -367,6 +367,7 @@ pub(crate) fn read_single_device(
                 dev.set_param(k, v);
             }
         }
+        dev.sample_refs = collect_device_sample_refs(tree, node);
         entities.devices.insert(dev.id, node);
         return dev;
     }
@@ -388,9 +389,69 @@ pub(crate) fn read_single_device(
     if !matches!(dtype, DeviceType::Custom(_)) {
         read_native_device_params(tree, node, track_id, &mut dev, entities);
     }
+    dev.sample_refs = collect_device_sample_refs(tree, node);
 
     entities.devices.insert(dev.id, node);
     dev
+}
+
+fn collect_device_sample_refs(tree: &XmlTree, dev_node: XmlNodeId) -> Vec<DeviceSampleRef> {
+    let mut out = Vec::new();
+    let mut stack = vec![dev_node];
+    while let Some(nid) = stack.pop() {
+        let Some(node) = tree.node(nid) else {
+            continue;
+        };
+        let Some(tag) = node.element_name() else {
+            continue;
+        };
+        if tag == "FileRef" {
+            let path = child_value_str(tree, nid, "Path")
+                .map(str::to_owned)
+                .or_else(|| {
+                    tree.child(nid, "Path")
+                        .map(|p| tree.text_content(p).trim().to_owned())
+                        .filter(|s| !s.is_empty())
+                })
+                .unwrap_or_default();
+            let relative_path = child_value_str(tree, nid, "RelativePath")
+                .map(str::to_owned)
+                .or_else(|| {
+                    tree.child(nid, "RelativePath")
+                        .map(|p| tree.text_content(p).trim().to_owned())
+                        .filter(|s| !s.is_empty())
+                })
+                .filter(|s| !s.trim().is_empty());
+            if !path.trim().is_empty() || relative_path.is_some() {
+                out.push(DeviceSampleRef {
+                    path,
+                    relative_path,
+                });
+            }
+            continue;
+        }
+        for &c in node.children().iter().rev() {
+            stack.push(c);
+        }
+    }
+    out
+}
+
+fn append_device_sample_refs(tree: &mut XmlTree, node: XmlNodeId, sample_refs: &[DeviceSampleRef]) {
+    for sref in sample_refs {
+        let sr_node = tree.alloc_element("SampleRef");
+        tree.append_child(node, sr_node);
+        let fr_node = tree.alloc_element("FileRef");
+        tree.append_child(sr_node, fr_node);
+        if let Some(ref rel) = sref.relative_path {
+            append_value_child(tree, fr_node, "RelativePathType", "3");
+            append_value_child(tree, fr_node, "RelativePath", rel);
+        } else {
+            append_value_child(tree, fr_node, "RelativePathType", "0");
+            append_value_child(tree, fr_node, "RelativePath", "");
+        }
+        append_value_child(tree, fr_node, "Path", &sref.path);
+    }
 }
 
 fn alloc_dev_id(
@@ -403,7 +464,7 @@ fn alloc_dev_id(
     let id = match parsed {
         Some(v) if v > 0 && !used.contains(&v) => v,
         _ => {
-            let mut cand = (track_id.0 * 100) + idx as u64 + 1;
+            let mut cand = (track_id.0.saturating_mul(100)).saturating_add(idx as u64 + 1);
             while used.contains(&cand) || cand == 0 {
                 cand = ids.alloc();
             }
@@ -665,6 +726,7 @@ pub(crate) fn patch_device_node(
         let on_node = tree.alloc_element("On");
         tree.append_child(node, on_node);
         append_value_child(tree, on_node, "Manual", bool_str(cur.is_enabled));
+        append_device_sample_refs(tree, node, &cur.sample_refs);
 
         if matches!(cur.device_type, DeviceType::Custom(_)) {
             return;
@@ -686,6 +748,12 @@ pub(crate) fn patch_device_node(
         && let Some(on_node) = tree.ensure_child(node, "On")
     {
         set_manual_value(tree, on_node, bool_str(cur.is_enabled));
+    }
+    if prev.is_some_and(|p| p.sample_refs != cur.sample_refs) {
+        for old_sr in tree.children_named(node, "SampleRef") {
+            tree.remove_child(node, old_sr);
+        }
+        append_device_sample_refs(tree, node, &cur.sample_refs);
     }
 
     if matches!(cur.device_type, DeviceType::Custom(_)) {

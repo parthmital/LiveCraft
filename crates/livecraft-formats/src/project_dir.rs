@@ -10,10 +10,10 @@ use serde::{Deserialize, Serialize};
 use crate::als::AlsError;
 use crate::als::map::AlsDocument;
 use crate::als::read::{decompress_als_or_xml, read_xml_tree};
-use crate::als::tree::XmlTree;
+use crate::als::tree::{XmlNodeId, XmlTree};
 use crate::health::{
     all_project_clips_mut, build_xml_fileref_map, canonical_or_self, collect_project_clip_refs,
-    copy_dedup, extract_xml_file_refs, file_name_from_ref, has_ext, path_is_inside,
+    copy_dedup, extract_xml_file_refs, file_name_from_ref, has_ext, path_is_inside, read_val,
     relative_forward_slash, resolve_candidate, walk_files,
 };
 
@@ -142,15 +142,55 @@ pub fn save_set_into_project(
         .unwrap_or_else(|| Path::new("."));
     let (project_dir, set_path, created_new_project) =
         if let Some(root) = detect_project_root(target) {
+            let abs_parent = if parent.is_relative() {
+                std::env::current_dir().map_or_else(|_| parent.to_path_buf(), |c| c.join(parent))
+            } else {
+                parent.to_path_buf()
+            };
+            if !path_is_inside(&abs_parent, &root) {
+                return Err(ProjectDirError::WritePolicyDenied("outside root".into()));
+            }
             fs::create_dir_all(parent)?;
             if !path_is_inside(parent, &root) {
                 return Err(ProjectDirError::WritePolicyDenied("outside root".into()));
             }
-            (ProjectDir { root }, parent.join(&als_name), false)
+            let dest_set = parent.join(&als_name);
+            if fs::symlink_metadata(&dest_set).is_ok_and(|m| m.is_symlink())
+                || !path_is_inside(&dest_set, &root)
+            {
+                return Err(ProjectDirError::WritePolicyDenied(
+                    "destination escapes project root".into(),
+                ));
+            }
+            (ProjectDir { root }, dest_set, false)
         } else {
-            let dir = create_project_layout(&parent.join(format!("{stem} Project")))?;
-            let set = dir.root.join(&als_name);
-            (dir, set, true)
+            let candidate_root = parent.join(format!("{stem} Project"));
+            if fs::symlink_metadata(&candidate_root).is_ok() {
+                if is_project_root(&candidate_root) {
+                    let set = candidate_root.join(&als_name);
+                    if fs::symlink_metadata(&set).is_ok_and(|m| m.is_symlink()) {
+                        return Err(ProjectDirError::WritePolicyDenied(
+                            "destination is a symbolic link".into(),
+                        ));
+                    }
+                    (
+                        ProjectDir {
+                            root: candidate_root,
+                        },
+                        set,
+                        false,
+                    )
+                } else {
+                    return Err(ProjectDirError::WritePolicyDenied(format!(
+                        "destination `{}` exists and is not a Live Project",
+                        candidate_root.display()
+                    )));
+                }
+            } else {
+                let dir = create_project_layout(&candidate_root)?;
+                let set = dir.root.join(&als_name);
+                (dir, set, true)
+            }
         };
     doc.save_als(&set_path)?;
     Ok(SavedSetLocation {
@@ -458,17 +498,95 @@ pub fn automatic_search(
     Ok(out)
 }
 
+fn normalize_stored_path(path: &Path) -> String {
+    let raw = path.to_string_lossy().into_owned();
+    if raw.starts_with(r"\\?\") {
+        raw
+    } else {
+        raw.replace('\\', "/")
+    }
+}
+
+fn set_fileref_child(tree: &mut XmlTree, fileref: XmlNodeId, tag: &str, val: &str) {
+    if let Some(cid) = tree.ensure_child(fileref, tag) {
+        if !tree.children(cid).is_empty() {
+            tree.clear_children(cid);
+        }
+        tree.set_value_attr(cid, val);
+    }
+}
+
 pub fn replace_sample_reference(project: &mut Project, old_path: &str, new_path: &str) -> usize {
+    replace_sample_reference_with_rel(project, old_path, new_path, None)
+}
+
+pub fn replace_sample_reference_with_rel(
+    project: &mut Project,
+    old_ref: &str,
+    new_path: &str,
+    new_rel: Option<&str>,
+) -> usize {
+    if old_ref.trim().is_empty() {
+        return 0;
+    }
     let mut n = 0;
     for c in all_project_clips_mut(project) {
         if let ClipPayload::Audio(ref mut a) = c.payload
-            && a.file_path == old_path
+            && (a.file_path == old_ref || a.relative_path.as_deref() == Some(old_ref))
         {
             a.file_path = new_path.to_owned();
+            a.relative_path = new_rel.map(str::to_owned);
             n += 1;
         }
     }
     n
+}
+
+pub fn replace_xml_sample_reference(
+    tree: &mut XmlTree,
+    old_ref: &str,
+    new_path: &str,
+    new_rel: Option<&str>,
+) -> usize {
+    if old_ref.trim().is_empty() {
+        return 0;
+    }
+    let mut matching = Vec::new();
+    let mut stack = vec![tree.root()];
+    while let Some(nid) = stack.pop() {
+        let Some(node) = tree.node(nid) else {
+            continue;
+        };
+        if node.element_name() == Some("FileRef") {
+            let path_val = read_val(tree, nid, "Path").unwrap_or_default();
+            let rel_val = read_val(tree, nid, "RelativePath").unwrap_or_default();
+            if path_val == old_ref || rel_val == old_ref {
+                matching.push(nid);
+            }
+            continue;
+        }
+        for &c in node.children().iter().rev() {
+            stack.push(c);
+        }
+    }
+    for &nid in &matching {
+        set_fileref_child(tree, nid, "Path", new_path);
+        match new_rel {
+            Some(rel) => {
+                set_fileref_child(tree, nid, "RelativePathType", "3");
+                set_fileref_child(tree, nid, "RelativePath", rel);
+            }
+            None => {
+                if tree.child(nid, "RelativePath").is_some() {
+                    set_fileref_child(tree, nid, "RelativePath", "");
+                }
+                if tree.child(nid, "RelativePathType").is_some() {
+                    set_fileref_child(tree, nid, "RelativePathType", "0");
+                }
+            }
+        }
+    }
+    matching.len()
 }
 
 pub fn repair_missing_files_auto(
@@ -482,18 +600,30 @@ pub fn repair_missing_files_auto(
         |d| detect_missing_files_in_document(d, ctx),
     );
     let mut report = AutoRepairReport::default();
+    let mut repairs = Vec::new();
     for (item, outcome) in automatic_search(&missing, opts, ctx)? {
         if let SearchCandidateOutcome::OneCandidate(found) = outcome {
-            let stored = ctx
+            let rel_opt = ctx
                 .project_root
                 .as_deref()
                 .filter(|r| path_is_inside(&found, r))
-                .and_then(|r| relative_forward_slash(&found, r))
-                .unwrap_or_else(|| found.to_string_lossy().into_owned());
-            replace_sample_reference(project, &item.reference.path, &stored);
+                .and_then(|r| relative_forward_slash(&found, r));
+            let stored = normalize_stored_path(&found);
+            replace_sample_reference_with_rel(
+                project,
+                &item.reference.path,
+                &stored,
+                rel_opt.as_deref(),
+            );
             if let Some(ref rel) = item.reference.relative_path {
-                replace_sample_reference(project, rel, &stored);
+                replace_sample_reference_with_rel(project, rel, &stored, rel_opt.as_deref());
             }
+            repairs.push((
+                item.reference.path.clone(),
+                item.reference.relative_path.clone(),
+                stored,
+                rel_opt,
+            ));
             report
                 .repaired
                 .push((item.reference.display_ref().to_owned(), found));
@@ -502,9 +632,20 @@ pub fn repair_missing_files_auto(
         }
     }
     if let Some(d) = doc
-        && !report.repaired.is_empty()
+        && !repairs.is_empty()
     {
         d.apply_project(project)?;
+        let tree = d.tree_mut();
+        for (old_path, old_rel, new_path, new_rel) in repairs {
+            if !old_path.trim().is_empty() {
+                replace_xml_sample_reference(tree, &old_path, &new_path, new_rel.as_deref());
+            }
+            if let Some(rel) = old_rel
+                && rel != old_path
+            {
+                replace_xml_sample_reference(tree, &rel, &new_path, new_rel.as_deref());
+            }
+        }
     }
     Ok(report)
 }
@@ -606,20 +747,33 @@ pub fn collect_all_and_save(
         .as_deref()
         .map(|d| build_xml_fileref_map(d.tree()))
         .unwrap_or_default();
-    let (mut report, mut copied, mut skipped) =
-        (CollectReport::default(), HashMap::new(), HashSet::new());
+    let (mut report, mut copied, mut skipped) = (
+        CollectReport::default(),
+        HashMap::<PathBuf, (String, String)>::new(),
+        HashSet::new(),
+    );
 
     for clip in all_project_clips_mut(project) {
         let ClipPayload::Audio(ref mut audio) = clip.payload else {
             continue;
         };
-        if audio.file_path.trim().is_empty() {
+        if audio.file_path.trim().is_empty()
+            && audio
+                .relative_path
+                .as_deref()
+                .is_none_or(|s| s.trim().is_empty())
+        {
             continue;
         }
-        let mut r = SampleReference::from_path(&audio.file_path);
-        r.relative_path = xml_rel
-            .get(&audio.file_path)
-            .and_then(|x| x.relative_path.clone());
+        let mut r = SampleReference {
+            path: audio.file_path.clone(),
+            relative_path: audio.relative_path.clone(),
+        };
+        if r.relative_path.is_none() {
+            r.relative_path = xml_rel
+                .get(&audio.file_path)
+                .and_then(|x| x.relative_path.clone());
+        }
         let SampleResolution::Resolved {
             resolved_path,
             location,
@@ -642,11 +796,12 @@ pub fn collect_all_and_save(
             }
             continue;
         }
-        let rel_str = if let Some(rel) = copied.get(&canon) {
-            String::clone(rel)
+        let (dest_str, rel_str) = if let Some(pair) = copied.get(&canon) {
+            pair.clone()
         } else {
             let (dest, rel, reused) = copy_dedup(&resolved_path, &imported, root)?;
-            copied.insert(canon, rel.clone());
+            let dest_str = normalize_stored_path(&dest);
+            copied.insert(canon, (dest_str.clone(), rel.clone()));
             report.collected.push(CollectedFile {
                 original_path: resolved_path,
                 destination_path: dest,
@@ -654,15 +809,63 @@ pub fn collect_all_and_save(
                 location,
                 reused_existing: reused,
             });
-            rel
+            (dest_str, rel)
         };
-        if audio.file_path != rel_str {
-            audio.file_path = rel_str;
+        if audio.file_path != dest_str || audio.relative_path.as_deref() != Some(rel_str.as_str()) {
+            audio.file_path = dest_str;
+            audio.relative_path = Some(rel_str);
             report.updated_references += 1;
         }
     }
     if let Some(d) = doc {
         d.apply_project(project)?;
+        let xml_refs = extract_xml_file_refs(d.tree());
+        for (r, tag) in xml_refs {
+            if tag == "AudioClip" {
+                continue;
+            }
+            let SampleResolution::Resolved {
+                resolved_path,
+                location,
+                ..
+            } = resolve_sample_reference(&r, ctx)
+            else {
+                let k = r.display_ref().to_owned();
+                if !k.is_empty() && !report.missing.contains(&k) {
+                    report.missing.push(k);
+                }
+                continue;
+            };
+            if location == SampleLocation::InProject {
+                continue;
+            }
+            let canon = canonical_or_self(&resolved_path);
+            if !opts.should_collect(&location) {
+                if skipped.insert(canon) {
+                    report.skipped_by_policy.push((resolved_path, location));
+                }
+                continue;
+            }
+            let (dest_str, rel_str) = if let Some(pair) = copied.get(&canon) {
+                pair.clone()
+            } else {
+                let (dest, rel, reused) = copy_dedup(&resolved_path, &imported, root)?;
+                let dest_str = normalize_stored_path(&dest);
+                copied.insert(canon, (dest_str.clone(), rel.clone()));
+                report.collected.push(CollectedFile {
+                    original_path: resolved_path,
+                    destination_path: dest,
+                    project_relative_path: rel.clone(),
+                    location,
+                    reused_existing: reused,
+                });
+                (dest_str, rel)
+            };
+            let old_ref = r.display_ref();
+            let patched =
+                replace_xml_sample_reference(d.tree_mut(), old_ref, &dest_str, Some(&rel_str));
+            report.updated_references += patched;
+        }
     }
     Ok(report)
 }

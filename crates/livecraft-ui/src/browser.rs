@@ -1,6 +1,13 @@
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Sense, Ui, Vec2};
 use livecraft_model::model::DeviceType;
+use livecraft_session::ProjectContext;
+use std::collections::HashSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
+const MAX_SCAN_DEPTH: usize = 8;
+const MAX_SCAN_ENTRIES: usize = 2000;
 
 /// A device the browser asks the app to insert: its type and its name.
 fn device_request(name: impl Into<String>, device_type: DeviceType) -> (DeviceType, String) {
@@ -23,13 +30,65 @@ pub enum BrowserCategory {
     CurrentProject,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BrowserFileKind {
+    LiveClip,
+    DevicePreset,
+    RackPreset,
+    MidiFile,
+    AudioFile,
+}
+
+impl BrowserFileKind {
+    #[must_use]
+    pub fn from_path(path: &Path) -> Option<Self> {
+        let ext = path.extension()?.to_str()?.to_ascii_lowercase();
+        match ext.as_str() {
+            "alc" => Some(Self::LiveClip),
+            "adv" => Some(Self::DevicePreset),
+            "adg" => Some(Self::RackPreset),
+            "mid" | "midi" => Some(Self::MidiFile),
+            "wav" | "aif" | "aiff" | "aifc" | "flac" | "mp3" | "ogg" | "oga" | "opus" | "m4a"
+            | "aac" => Some(Self::AudioFile),
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn badge(self) -> &'static str {
+        match self {
+            Self::LiveClip => ".alc",
+            Self::DevicePreset => ".adv",
+            Self::RackPreset => ".adg",
+            Self::MidiFile => ".mid",
+            Self::AudioFile => "aud",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BrowserFileEntry {
+    pub path: PathBuf,
+    pub display_name: String,
+    pub kind: BrowserFileKind,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct BrowserAction {
     pub add_device: Option<(DeviceType, String)>,
+    pub import_alc: Option<PathBuf>,
+    pub load_adv: Option<PathBuf>,
+    pub load_adg: Option<PathBuf>,
+    pub import_mid: Option<PathBuf>,
 }
 
 pub struct LiveBrowser {
     pub selected_category: BrowserCategory,
     pub search_query: String,
+    cached_category: Option<BrowserCategory>,
+    cached_context: Option<ProjectContext>,
+    cached_entries: Vec<BrowserFileEntry>,
+    cache_dirty: bool,
 }
 
 impl Default for LiveBrowser {
@@ -37,13 +96,33 @@ impl Default for LiveBrowser {
         Self {
             selected_category: BrowserCategory::Instruments,
             search_query: String::new(),
+            cached_category: None,
+            cached_context: None,
+            cached_entries: Vec::new(),
+            cache_dirty: true,
         }
     }
 }
 
 impl LiveBrowser {
-    pub fn render(&mut self, ui: &mut Ui, palette: &LivePalette) -> BrowserAction {
-        let mut action = BrowserAction { add_device: None };
+    /// Marks the file-browser scan cache stale so the next frame refreshes from disk.
+    pub fn invalidate(&mut self) {
+        self.cache_dirty = true;
+    }
+
+    /// Returns the currently cached scanned entries (for diagnostics or tests).
+    #[must_use]
+    pub fn cached_entries(&self) -> &[BrowserFileEntry] {
+        &self.cached_entries
+    }
+
+    pub fn render(
+        &mut self,
+        ui: &mut Ui,
+        palette: &LivePalette,
+        project_context: &ProjectContext,
+    ) -> BrowserAction {
+        let mut action = BrowserAction::default();
 
         ui.vertical(|ui| {
             ui.set_width(ui.available_width());
@@ -123,6 +202,7 @@ impl LiveBrowser {
                 }
                 if resp.clicked() {
                     self.selected_category = BrowserCategory::Collections(idx);
+                    self.cache_dirty = true;
                 }
             }
 
@@ -176,6 +256,7 @@ impl LiveBrowser {
                 }
                 if resp.clicked() {
                     self.selected_category = cat;
+                    self.cache_dirty = true;
                 }
             }
 
@@ -224,11 +305,22 @@ impl LiveBrowser {
                 }
                 if resp.clicked() {
                     self.selected_category = cat;
+                    self.cache_dirty = true;
                 }
             }
 
             ui.add_space(4.0);
             ui.separator();
+
+            if self.cache_dirty
+                || self.cached_category != Some(self.selected_category)
+                || self.cached_context.as_ref() != Some(project_context)
+            {
+                self.cached_entries = scan_browser_files(self.selected_category, project_context);
+                self.cached_category = Some(self.selected_category);
+                self.cached_context = Some(project_context.clone());
+                self.cache_dirty = false;
+            }
 
             // 5. Category Content List (scrollable)
             egui::ScrollArea::vertical()
@@ -268,11 +360,7 @@ impl LiveBrowser {
                             ),
                         ];
                         for (name, dtype, desc) in instruments {
-                            if !self.search_query.is_empty()
-                                && !name
-                                    .to_lowercase()
-                                    .contains(&self.search_query.to_lowercase())
-                            {
+                            if !matches_query(name, &self.search_query) {
                                 continue;
                             }
                             ui.horizontal(|ui| {
@@ -310,11 +398,7 @@ impl LiveBrowser {
                             ("Redux", DeviceType::Redux),
                         ];
                         for (name, dtype) in fx {
-                            if !self.search_query.is_empty()
-                                && !name
-                                    .to_lowercase()
-                                    .contains(&self.search_query.to_lowercase())
-                            {
+                            if !matches_query(name, &self.search_query) {
                                 continue;
                             }
                             ui.horizontal(|ui| {
@@ -342,6 +426,9 @@ impl LiveBrowser {
                             "Trap 808 Essentials",
                         ];
                         for kit in kits {
+                            if !matches_query(kit, &self.search_query) {
+                                continue;
+                            }
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(false, kit).clicked() {
                                     action.add_device =
@@ -360,22 +447,48 @@ impl LiveBrowser {
                         }
                     }
                     BrowserCategory::Samples => {
-                        let samples = [
-                            "808 Kick Drum.wav",
-                            "Crisp Snare 01.wav",
-                            "Hi-Hat Closed 16th.wav",
-                            "Synth Lead C4.wav",
-                            "Sub Bass 40Hz.wav",
-                            "Amen Break 174bpm.wav",
-                        ];
-                        for s in samples {
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new(s)
-                                        .size(10.0)
-                                        .color(palette.control_foreground),
-                                );
-                            });
+                        if !self.cached_entries.is_empty() {
+                            self.render_scanned_entries(ui, palette, &mut action);
+                        } else {
+                            let samples = [
+                                "808 Kick Drum.wav",
+                                "Crisp Snare 01.wav",
+                                "Hi-Hat Closed 16th.wav",
+                                "Synth Lead C4.wav",
+                                "Sub Bass 40Hz.wav",
+                                "Amen Break 174bpm.wav",
+                            ];
+                            for s in samples {
+                                if !matches_query(s, &self.search_query) {
+                                    continue;
+                                }
+                                ui.horizontal(|ui| {
+                                    ui.label(
+                                        egui::RichText::new(s)
+                                            .size(10.0)
+                                            .color(palette.control_foreground),
+                                    );
+                                });
+                            }
+                        }
+                    }
+                    BrowserCategory::CurrentProject
+                    | BrowserCategory::UserLibrary
+                    | BrowserCategory::Clips
+                    | BrowserCategory::Packs => {
+                        ui.horizontal(|ui| {
+                            if ui.small_button("Refresh").clicked() {
+                                self.cache_dirty = true;
+                            }
+                        });
+                        if self.cached_entries.is_empty() {
+                            ui.label(
+                                egui::RichText::new("No matching files on disk.")
+                                    .size(10.0)
+                                    .color(palette.control_disabled),
+                            );
+                        } else {
+                            self.render_scanned_entries(ui, palette, &mut action);
                         }
                     }
                     _ => {
@@ -385,6 +498,9 @@ impl LiveBrowser {
                             ("Stereo Delay Echo", DeviceType::Delay),
                         ];
                         for (name, dtype) in defaults {
+                            if !matches_query(name, &self.search_query) {
+                                continue;
+                            }
                             ui.horizontal(|ui| {
                                 if ui.selectable_label(false, name).clicked() {
                                     action.add_device = Some(device_request(name, dtype));
@@ -396,5 +512,281 @@ impl LiveBrowser {
         });
 
         action
+    }
+
+    fn render_scanned_entries(
+        &self,
+        ui: &mut Ui,
+        palette: &LivePalette,
+        action: &mut BrowserAction,
+    ) {
+        for entry in &self.cached_entries {
+            if !matches_query(&entry.display_name, &self.search_query) {
+                continue;
+            }
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(entry.kind.badge())
+                        .size(9.0)
+                        .monospace()
+                        .color(palette.amber),
+                );
+                let resp = ui
+                    .selectable_label(
+                        false,
+                        egui::RichText::new(&entry.display_name)
+                            .size(10.0)
+                            .color(palette.control_foreground),
+                    )
+                    .on_hover_text(entry.path.display().to_string());
+                if resp.clicked() {
+                    match entry.kind {
+                        BrowserFileKind::LiveClip => {
+                            action.import_alc = Some(entry.path.clone());
+                        }
+                        BrowserFileKind::DevicePreset => {
+                            action.load_adv = Some(entry.path.clone());
+                        }
+                        BrowserFileKind::RackPreset => {
+                            action.load_adg = Some(entry.path.clone());
+                        }
+                        BrowserFileKind::MidiFile => {
+                            action.import_mid = Some(entry.path.clone());
+                        }
+                        BrowserFileKind::AudioFile => {}
+                    }
+                }
+            });
+        }
+    }
+}
+
+fn matches_query(name: &str, query: &str) -> bool {
+    query.trim().is_empty()
+        || name
+            .to_ascii_lowercase()
+            .contains(&query.to_ascii_lowercase())
+}
+
+/// Scans real files on disk for `category` under `ctx`'s existing directories.
+#[must_use]
+pub fn scan_browser_files(
+    category: BrowserCategory,
+    ctx: &ProjectContext,
+) -> Vec<BrowserFileEntry> {
+    let mut roots: Vec<PathBuf> = Vec::new();
+    match category {
+        BrowserCategory::CurrentProject => {
+            if let Some(root) = ctx.project_root.as_deref().or(ctx.set_dir.as_deref()) {
+                roots.push(root.to_path_buf());
+            }
+        }
+        BrowserCategory::UserLibrary => {
+            if let Some(lib) = ctx.user_library.as_deref() {
+                roots.push(lib.to_path_buf());
+            }
+        }
+        BrowserCategory::Packs => {
+            roots.extend(ctx.factory_packs_roots.iter().cloned());
+            if let Some(lib) = ctx.user_library.as_deref() {
+                let packs_sub = lib.join("Packs");
+                if packs_sub.is_dir() && !roots.contains(&packs_sub) {
+                    roots.push(packs_sub);
+                }
+            }
+        }
+        BrowserCategory::Clips | BrowserCategory::Samples => {
+            if let Some(root) = ctx.project_root.as_deref().or(ctx.set_dir.as_deref()) {
+                roots.push(root.to_path_buf());
+            }
+            if let Some(lib) = ctx.user_library.as_deref() {
+                roots.push(lib.to_path_buf());
+            }
+            roots.extend(ctx.factory_packs_roots.iter().cloned());
+        }
+        _ => return Vec::new(),
+    }
+
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    for root in roots {
+        if !root.is_dir() {
+            continue;
+        }
+        walk_browser_dir(&root, &root, 0, category, &mut seen, &mut out);
+        if out.len() >= MAX_SCAN_ENTRIES {
+            break;
+        }
+    }
+
+    out.sort_by(|a, b| {
+        a.display_name
+            .to_ascii_lowercase()
+            .cmp(&b.display_name.to_ascii_lowercase())
+            .then_with(|| a.path.cmp(&b.path))
+    });
+    out
+}
+
+fn walk_browser_dir(
+    root: &Path,
+    dir: &Path,
+    depth: usize,
+    category: BrowserCategory,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut Vec<BrowserFileEntry>,
+) {
+    if depth > MAX_SCAN_DEPTH || out.len() >= MAX_SCAN_ENTRIES {
+        return;
+    }
+    let Ok(entries) = fs::read_dir(dir) else {
+        return;
+    };
+    let mut children: Vec<fs::DirEntry> = entries.flatten().collect();
+    children.sort_by_key(|e| e.file_name());
+
+    for entry in children {
+        if out.len() >= MAX_SCAN_ENTRIES {
+            break;
+        }
+        let Ok(ft) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if ft.is_dir() {
+            let name = entry.file_name();
+            let name_lossy = name.to_string_lossy();
+            if name_lossy == "Ableton Project Info" || name_lossy == "Backup" {
+                continue;
+            }
+            walk_browser_dir(root, &path, depth + 1, category, seen, out);
+        } else if ft.is_file()
+            && let Some(kind) = BrowserFileKind::from_path(&path)
+        {
+            let include = match category {
+                BrowserCategory::Clips => matches!(
+                    kind,
+                    BrowserFileKind::LiveClip
+                        | BrowserFileKind::MidiFile
+                        | BrowserFileKind::AudioFile
+                ),
+                BrowserCategory::Samples => kind == BrowserFileKind::AudioFile,
+                _ => true,
+            };
+            if !include {
+                continue;
+            }
+            let dedup_key = fs::canonicalize(&path).unwrap_or_else(|_| path.clone());
+            if !seen.insert(dedup_key) {
+                continue;
+            }
+            let display_name = path
+                .strip_prefix(root)
+                .ok()
+                .map(|p| p.to_string_lossy().replace('\\', "/"))
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| {
+                    path.file_name().map_or_else(
+                        || path.display().to_string(),
+                        |n| n.to_string_lossy().into_owned(),
+                    )
+                });
+            out.push(BrowserFileEntry {
+                path,
+                display_name,
+                kind,
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    struct TempDirGuard(PathBuf);
+
+    impl TempDirGuard {
+        fn new(label: &str) -> Self {
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "livecraft_browser_test_{label}_{}_{}",
+                std::process::id(),
+                id
+            ));
+            let _ = fs::remove_dir_all(&dir);
+            fs::create_dir_all(&dir).expect("create temp dir");
+            Self(dir)
+        }
+    }
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn scan_browser_files_finds_supported_formats_and_skips_internal_dirs() {
+        let dir = TempDirGuard::new("scan");
+        let proj = dir.0.join("My Project");
+        let lib = dir.0.join("User Library");
+        let packs = dir.0.join("Packs");
+
+        fs::create_dir_all(proj.join("Ableton Project Info")).expect("info dir");
+        fs::create_dir_all(proj.join("Backup")).expect("backup dir");
+        fs::create_dir_all(proj.join("Samples/Imported")).expect("samples dir");
+        fs::create_dir_all(lib.join("Presets")).expect("lib dir");
+        fs::create_dir_all(packs.join("Core")).expect("packs dir");
+
+        fs::write(proj.join("Ableton Project Info/ignored.wav"), b"x").expect("write");
+        fs::write(proj.join("Backup/ignored.alc"), b"x").expect("write");
+        fs::write(proj.join("Samples/Imported/kick.wav"), b"x").expect("write");
+        fs::write(proj.join("lead.alc"), b"x").expect("write");
+        fs::write(proj.join("melody.mid"), b"x").expect("write");
+        fs::write(lib.join("Presets/eq.adv"), b"x").expect("write");
+        fs::write(lib.join("Presets/rack.adg"), b"x").expect("write");
+        fs::write(packs.join("Core/loop.alc"), b"x").expect("write");
+
+        let ctx = ProjectContext {
+            project_root: Some(proj.clone()),
+            set_dir: Some(proj),
+            user_library: Some(lib),
+            factory_packs_roots: vec![packs],
+        };
+
+        let cur = scan_browser_files(BrowserCategory::CurrentProject, &ctx);
+        let cur_names: Vec<&str> = cur.iter().map(|e| e.display_name.as_str()).collect();
+        assert_eq!(
+            cur_names,
+            vec!["lead.alc", "melody.mid", "Samples/Imported/kick.wav"]
+        );
+
+        let user = scan_browser_files(BrowserCategory::UserLibrary, &ctx);
+        let user_names: Vec<&str> = user.iter().map(|e| e.display_name.as_str()).collect();
+        assert_eq!(user_names, vec!["Presets/eq.adv", "Presets/rack.adg"]);
+
+        let pack_entries = scan_browser_files(BrowserCategory::Packs, &ctx);
+        assert_eq!(pack_entries.len(), 1);
+        assert_eq!(pack_entries[0].kind, BrowserFileKind::LiveClip);
+
+        let clip_entries = scan_browser_files(BrowserCategory::Clips, &ctx);
+        assert!(
+            clip_entries
+                .iter()
+                .any(|e| e.kind == BrowserFileKind::LiveClip)
+        );
+        assert!(
+            clip_entries
+                .iter()
+                .any(|e| e.kind == BrowserFileKind::MidiFile)
+        );
+        assert!(
+            !clip_entries
+                .iter()
+                .any(|e| e.kind == BrowserFileKind::DevicePreset)
+        );
     }
 }

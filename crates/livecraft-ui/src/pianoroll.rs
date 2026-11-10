@@ -2,12 +2,20 @@ use crate::Edits;
 use crate::style::LivePalette;
 use eframe::egui::{self, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, Ui, Vec2};
 use livecraft_model::color::parse_hex_color;
+use livecraft_model::ids::ClipId;
 use livecraft_model::model::{
     Clip, ClipPayload, MidiClipData, MidiNote, NOTE_NAMES, ScaleConfig, ScaleType,
 };
 use livecraft_session::commands::clip::SetClipLoop;
 use livecraft_session::commands::note::{AddNote, RemoveNote};
 use livecraft_session::commands::scale::SetScale;
+
+/// Actions requested by Clip View / Piano Roll buttons for the app shell to handle.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct PianoRollAction {
+    pub export_midi: Option<ClipId>,
+    pub save_live_clip: Option<ClipId>,
+}
 
 /// Replaces a clip's notes with the result of a tool, as one undo step: the old notes are removed,
 /// then the new notes are added.
@@ -34,45 +42,16 @@ pub fn render_piano_roll(
     playhead_beats: f64,
     palette: &LivePalette,
     edits: &mut Edits,
-) {
-    let ClipPayload::Midi(midi_data) = &clip.payload else {
-        ui.label("Audio Clip Waveform Editor");
-        return;
-    };
-
-    let key_width = 40.0;
-    let row_height = 9.5;
-    let (note_min, note_max) = if !midi_data.notes.is_empty() {
-        let n_min = midi_data.notes.iter().map(|n| n.pitch).min().unwrap_or(60);
-        let n_max = midi_data.notes.iter().map(|n| n.pitch).max().unwrap_or(72);
-        (n_min, n_max)
-    } else {
-        (60, 72)
-    };
-    let max_pitch = (note_max + 1).min(127);
-    let min_pitch = note_min.saturating_sub(1);
-    let total_pitches = (max_pitch.saturating_sub(min_pitch) + 1).max(12);
-    let total_beats = clip.length_beats.max(4.0) as f32;
-    let pixels_per_beat = 48.0;
-    let grid_width = total_beats * pixels_per_beat;
+) -> PianoRollAction {
+    let mut action = PianoRollAction::default();
+    let is_midi = matches!(clip.payload, ClipPayload::Midi(_));
 
     // Retrieve or initialize Fold state in egui memory
     let fold_id = ui.scope_id().with("pianoroll_fold_scale");
     let mut fold_scale: bool = ui.data_mut(|d| *d.get_temp_mut_or(fold_id, false));
 
-    // Determine list of visible pitches (folded or unfolded)
-    let visible_pitches: Vec<u8> = if fold_scale && scale.is_active {
-        (min_pitch..min_pitch + total_pitches)
-            .rev()
-            .filter(|&p| scale.is_in_scale(p))
-            .collect()
-    } else {
-        (min_pitch..min_pitch + total_pitches).rev().collect()
-    };
-    let num_rows = visible_pitches.len();
-
     ui.vertical(|ui| {
-        // Clip Header: Name, Length, Loop, Scale Controls & MIDI Tools (Manual p. 201, 252)
+        // Clip Header: Name, Length, Loop, Scale Controls & Export actions (Manual p. 201, 252)
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing = Vec2::new(4.0, 0.0);
 
@@ -106,73 +85,132 @@ pub fn render_piano_roll(
                 )));
             }
 
-            crate::widgets::live_divider(ui, 22.0);
+            if is_midi {
+                crate::widgets::live_divider(ui, 22.0);
 
-            // Ableton 12 Scale Controls
-            let scale_btn = crate::widgets::live_toggle_button(
-                ui,
-                scale.is_active,
-                palette.amber,
-                "Scale",
-                Vec2::new(42.0, 22.0),
-            );
-            if scale_btn.clicked() {
-                edits.push(Box::new(SetScale::new(ScaleConfig {
-                    is_active: !scale.is_active,
-                    ..*scale
-                })));
+                // Ableton 12 Scale Controls
+                let scale_btn = crate::widgets::live_toggle_button(
+                    ui,
+                    scale.is_active,
+                    palette.amber,
+                    "Scale",
+                    Vec2::new(42.0, 22.0),
+                );
+                if scale_btn.clicked() {
+                    edits.push(Box::new(SetScale::new(ScaleConfig {
+                        is_active: !scale.is_active,
+                        ..*scale
+                    })));
+                }
+
+                if scale.is_active {
+                    let current_root = NOTE_NAMES[scale.root_note as usize % 12];
+                    let mut root_note = scale.root_note;
+                    egui::ComboBox::from_id_salt("scale_root_select")
+                        .selected_text(current_root)
+                        .width(36.0)
+                        .show_ui(ui, |ui| {
+                            for (idx, &name) in NOTE_NAMES.iter().enumerate() {
+                                ui.selectable_value(&mut root_note, idx as u8, name);
+                            }
+                        });
+                    if root_note != scale.root_note {
+                        let changed = ScaleConfig {
+                            root_note,
+                            ..*scale
+                        };
+                        edits.push(Box::new(SetScale::new(changed)));
+                    }
+
+                    let mut scale_type = scale.scale_type;
+                    egui::ComboBox::from_id_salt("scale_type_select")
+                        .selected_text(scale.scale_type.name())
+                        .width(90.0)
+                        .show_ui(ui, |ui| {
+                            for &st in ScaleType::ALL {
+                                ui.selectable_value(&mut scale_type, st, st.name());
+                            }
+                        });
+
+                    if scale_type != scale.scale_type {
+                        let changed = ScaleConfig {
+                            scale_type,
+                            ..*scale
+                        };
+                        edits.push(Box::new(SetScale::new(changed)));
+                    }
+
+                    let fold_btn = crate::widgets::live_toggle_button(
+                        ui,
+                        fold_scale,
+                        palette.amber,
+                        "Fold",
+                        Vec2::new(36.0, 22.0),
+                    );
+                    if fold_btn.clicked() {
+                        fold_scale = !fold_scale;
+                        ui.data_mut(|d| d.insert_temp(fold_id, fold_scale));
+                    }
+                }
             }
 
-            if scale.is_active {
-                let current_root = NOTE_NAMES[scale.root_note as usize % 12];
-                let mut root_note = scale.root_note;
-                egui::ComboBox::from_id_salt("scale_root_select")
-                    .selected_text(current_root)
-                    .width(36.0)
-                    .show_ui(ui, |ui| {
-                        for (idx, &name) in NOTE_NAMES.iter().enumerate() {
-                            ui.selectable_value(&mut root_note, idx as u8, name);
-                        }
-                    });
-                if root_note != scale.root_note {
-                    let changed = ScaleConfig {
-                        root_note,
-                        ..*scale
-                    };
-                    edits.push(Box::new(SetScale::new(changed)));
-                }
-
-                let mut scale_type = scale.scale_type;
-                egui::ComboBox::from_id_salt("scale_type_select")
-                    .selected_text(scale.scale_type.name())
-                    .width(90.0)
-                    .show_ui(ui, |ui| {
-                        for &st in ScaleType::ALL {
-                            ui.selectable_value(&mut scale_type, st, st.name());
-                        }
-                    });
-
-                if scale_type != scale.scale_type {
-                    let changed = ScaleConfig {
-                        scale_type,
-                        ..*scale
-                    };
-                    edits.push(Box::new(SetScale::new(changed)));
-                }
-
-                let fold_btn = crate::widgets::live_toggle_button(
-                    ui,
-                    fold_scale,
-                    palette.amber,
-                    "Fold",
-                    Vec2::new(36.0, 22.0),
-                );
-                if fold_btn.clicked() {
-                    fold_scale = !fold_scale;
-                    ui.data_mut(|d| d.insert_temp(fold_id, fold_scale));
-                }
+            crate::widgets::live_divider(ui, 22.0);
+            if is_midi
+                && ui
+                    .button(egui::RichText::new("Export MIDI").size(10.0))
+                    .clicked()
+            {
+                action.export_midi = Some(clip.id);
+            }
+            if ui
+                .button(egui::RichText::new("Save .alc").size(10.0))
+                .clicked()
+            {
+                action.save_live_clip = Some(clip.id);
             }
         });
+
+        let ClipPayload::Midi(midi_data) = &clip.payload else {
+            if let ClipPayload::Audio(audio) = &clip.payload {
+                ui.add_space(6.0);
+                ui.label("Audio Clip Waveform Editor");
+                if !audio.file_path.is_empty() {
+                    ui.label(
+                        egui::RichText::new(format!("Sample: {}", audio.file_path))
+                            .size(10.5)
+                            .monospace(),
+                    );
+                }
+            }
+            return;
+        };
+
+        let key_width = 40.0;
+        let row_height = 9.5;
+        let (note_min, note_max) = if !midi_data.notes.is_empty() {
+            let n_min = midi_data.notes.iter().map(|n| n.pitch).min().unwrap_or(60);
+            let n_max = midi_data.notes.iter().map(|n| n.pitch).max().unwrap_or(72);
+            (n_min, n_max)
+        } else {
+            (60, 72)
+        };
+        let max_pitch = (note_max + 1).min(127);
+        let min_pitch = note_min.saturating_sub(1);
+        let total_pitches = (max_pitch.saturating_sub(min_pitch) + 1).max(12);
+        let total_beats = clip.length_beats.max(4.0) as f32;
+        let pixels_per_beat = 48.0;
+        let grid_width = total_beats * pixels_per_beat;
+
+        // Determine list of visible pitches (folded or unfolded)
+        let visible_pitches: Vec<u8> = if fold_scale && scale.is_active {
+            (min_pitch..min_pitch + total_pitches)
+                .rev()
+                .filter(|&p| scale.is_in_scale(p))
+                .collect()
+        } else {
+            (min_pitch..min_pitch + total_pitches).rev().collect()
+        };
+        let num_rows = visible_pitches.len();
 
         // MIDI Transformations Toolbar
         ui.horizontal(|ui| {
@@ -528,4 +566,6 @@ pub fn render_piano_roll(
                 });
             });
     });
+
+    action
 }

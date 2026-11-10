@@ -366,6 +366,10 @@ fn every_registered_command_round_trips_its_arguments() {
         ),
         ("note.remove", json!({ "clip": 9, "index": 0 })),
         (
+            "project.replace_sample_reference",
+            json!({ "old_ref": "old.wav", "new_path": "new.wav", "new_relative_path": "Samples/Imported/new.wav" }),
+        ),
+        (
             "scale.set",
             json!({ "scale": { "root_note": 0, "scale_type": "Major", "is_active": true } }),
         ),

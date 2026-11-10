@@ -11,6 +11,9 @@ use crate::compiled::{
 use crate::transport::Timeline;
 use basedrop::{Handle, Shared};
 use livecraft_devices::{DeviceProcessor, create_device_processor, is_instrument};
+use livecraft_formats::project_dir::{
+    ProjectContext, SampleReference, SampleResolution, resolve_sample_reference,
+};
 use livecraft_model::device::param_table;
 use livecraft_model::ids::{DeviceId, TrackId};
 use livecraft_model::model::{
@@ -18,8 +21,8 @@ use livecraft_model::model::{
     Track, TrackType, TuningSystem,
 };
 use livecraft_model::param::ParamId;
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 
 /// Builds the processor of a device, or None when the device has no native processor.
 pub type ProcessorFactory = fn(&Device, f32) -> Option<Box<dyn DeviceProcessor>>;
@@ -32,12 +35,16 @@ pub struct GraphCompiler {
     /// Shares the clip data with the audio thread. Freed by the collector thread.
     handle: Handle,
     factory: ProcessorFactory,
+    /// Project directory context used to resolve relative audio clip references.
+    project_context: ProjectContext,
     /// The track and device ids of each node of the last graph, in node order.
     previous: Vec<(TrackId, Vec<DeviceId>)>,
     /// The latency each device had in the last graph, in frames.
     latencies: HashMap<DeviceId, usize>,
-    /// Decoded audio by file path. A file that fails to decode is not cached, so it is retried.
-    audio: HashMap<String, Shared<DecodedAudio>>,
+    /// Decoded audio by canonical resolved path. A file that fails to decode is not cached, so it is retried.
+    audio: HashMap<PathBuf, Shared<DecodedAudio>>,
+    /// Missing sample references already logged, so repeated compiles do not spam warnings.
+    warned_missing: HashSet<SampleReference>,
 }
 
 impl GraphCompiler {
@@ -52,10 +59,33 @@ impl GraphCompiler {
             sample_rate,
             handle,
             factory,
+            project_context: ProjectContext::default(),
             previous: Vec::new(),
             latencies: HashMap::new(),
             audio: HashMap::new(),
+            warned_missing: HashSet::new(),
         }
+    }
+
+    /// Sets the `ProjectContext` used to resolve sample references on subsequent compiles.
+    pub fn set_project_context(&mut self, context: ProjectContext) {
+        if self.project_context != context {
+            self.project_context = context;
+            self.warned_missing.clear();
+        }
+    }
+
+    /// Builder variant of [`Self::set_project_context`].
+    #[must_use]
+    pub fn with_project_context(mut self, context: ProjectContext) -> Self {
+        self.project_context = context;
+        self
+    }
+
+    /// Returns the active `ProjectContext` used to resolve sample references.
+    #[must_use]
+    pub fn project_context(&self) -> &ProjectContext {
+        &self.project_context
     }
 
     /// Compiles the Set into the nodes the renderer runs. A device without a native processor makes
@@ -245,7 +275,7 @@ impl GraphCompiler {
                 PlayableSource::Midi(Shared::new(&self.handle, notes))
             }
             ClipPayload::Audio(audio) => PlayableSource::Audio {
-                data: self.decoded(&audio.file_path)?,
+                data: self.decoded(&audio.file_path, audio.relative_path.as_deref())?,
                 gain: 10.0f32.powf(audio.gain_db / 20.0),
                 is_warped: audio.is_warped,
                 original_bpm: audio.original_bpm,
@@ -260,26 +290,57 @@ impl GraphCompiler {
         })
     }
 
-    /// The decoded audio of a file, read once and shared.
-    fn decoded(&mut self, path: &str) -> Option<Shared<DecodedAudio>> {
-        if path.is_empty() {
+    /// The decoded audio of a file, resolved with `project_context`, read once and shared.
+    fn decoded(
+        &mut self,
+        file_path: &str,
+        relative_path: Option<&str>,
+    ) -> Option<Shared<DecodedAudio>> {
+        if file_path.trim().is_empty() && relative_path.is_none_or(|rel| rel.trim().is_empty()) {
             return None;
         }
-        if let Some(data) = self.audio.get(path) {
+        let reference = SampleReference {
+            path: file_path.to_owned(),
+            relative_path: relative_path.map(str::to_owned),
+        };
+        let resolved_path = match resolve_sample_reference(&reference, &self.project_context) {
+            SampleResolution::Resolved { resolved_path, .. } => {
+                self.warned_missing.remove(&reference);
+                resolved_path
+            }
+            SampleResolution::Missing { .. } => {
+                if self.warned_missing.insert(reference.clone()) {
+                    log::warn!(
+                        "Audio clip file {} cannot be read, so the clip is silent",
+                        reference.display_ref()
+                    );
+                }
+                return None;
+            }
+        };
+        let cache_key = canonical_cache_key(&resolved_path);
+        if let Some(data) = self.audio.get(&cache_key) {
             return Some(data.clone());
         }
-        match load_file(Path::new(path)) {
+        match load_file(&resolved_path) {
             Ok(decoded) => {
                 let data = Shared::new(&self.handle, decoded);
-                self.audio.insert(path.to_string(), data.clone());
+                self.audio.insert(cache_key, data.clone());
                 Some(data)
             }
             Err(error) => {
-                log::warn!("Audio clip file {path} cannot be read, so the clip is silent: {error}");
+                log::warn!(
+                    "Audio clip file {} cannot be read, so the clip is silent: {error}",
+                    resolved_path.display()
+                );
                 None
             }
         }
     }
+}
+
+fn canonical_cache_key(path: &Path) -> PathBuf {
+    std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
 /// The largest parameter table of any device (EQ Eight's 32 values).
@@ -645,5 +706,193 @@ mod tests {
         assert_eq!(channel_of(TrackId(1)), None);
         assert_eq!(channel_of(TrackId(5)), None);
         assert_eq!(channel_of(TrackId(7)), None);
+    }
+
+    fn write_constant_wav(path: &Path, amplitude: f32, frames: usize) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).expect("create wav parent");
+        }
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: 44_100,
+            bits_per_sample: 32,
+            sample_format: hound::SampleFormat::Float,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).expect("create wav");
+        for _ in 0..frames {
+            writer.write_sample(amplitude).expect("write L");
+            writer.write_sample(amplitude).expect("write R");
+        }
+        writer.finalize().expect("finalize wav");
+    }
+
+    fn playing_context(frames: usize) -> ProcessContext {
+        ProcessContext {
+            sample_rate: 44100.0,
+            frames,
+            bpm: 120.0,
+            playhead_beats: 0.0,
+            beats_per_frame: 120.0 / 60.0 / 44100.0,
+        }
+    }
+
+    #[test]
+    fn broken_absolute_path_with_valid_relative_path_resolves_via_project_context() {
+        let dir =
+            std::env::temp_dir().join(format!("livecraft_compiler_rel_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let root = dir.join("Song Project");
+        livecraft_formats::project_dir::create_project_layout(&root).expect("layout");
+        let wav_path = root.join("Samples/Imported/tone.wav");
+        write_constant_wav(&wav_path, 0.5, 4096);
+
+        let mut project = Project::new_default("RelResolve");
+        project.tracks[2].device_chain.clear();
+        project.main_track.device_chain.clear();
+        let mut clip = Clip::new_audio(
+            901,
+            "Tone",
+            "C:/definitely_nonexistent_dir_12345/Samples/Imported/tone.wav",
+            4.0,
+        );
+        if let ClipPayload::Audio(ref mut audio) = clip.payload {
+            audio.relative_path = Some("Samples/Imported/tone.wav".to_string());
+        }
+        project.tracks[2].clip_slots[0].clip = Some(clip);
+
+        let collector = Collector::new();
+        let ctx = ProjectContext::for_project(&root);
+        let mut compiler =
+            GraphCompiler::new(44100.0, collector.handle()).with_project_context(ctx.clone());
+        assert_eq!(compiler.project_context(), &ctx);
+
+        let mut graph = compiler.compile(&project);
+        graph.node_mut(TrackId(3)).expect("track 3").clips.launch(0);
+        graph.render(&playing_context(MAX_BLOCK));
+        let (left, right) = graph.output(MAX_BLOCK);
+        assert!(left.iter().any(|&s| s.abs() > 0.1));
+        assert!(right.iter().any(|&s| s.abs() > 0.1));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn set_project_context_and_repaired_path_refresh_on_subsequent_compile() {
+        let dir =
+            std::env::temp_dir().join(format!("livecraft_compiler_refresh_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let root_a = dir.join("ProjectA Project");
+        let root_b = dir.join("ProjectB Project");
+        livecraft_formats::project_dir::create_project_layout(&root_a).expect("layout A");
+        livecraft_formats::project_dir::create_project_layout(&root_b).expect("layout B");
+        write_constant_wav(&root_a.join("Samples/Imported/tone.wav"), 0.2, 4096);
+        write_constant_wav(&root_b.join("Samples/Imported/tone.wav"), 0.8, 4096);
+        let repaired_wav = dir.join("repaired.wav");
+        write_constant_wav(&repaired_wav, 0.4, 4096);
+
+        let mut project = Project::new_default("Refresh");
+        project.tracks[2].device_chain.clear();
+        project.main_track.device_chain.clear();
+        let mut clip = Clip::new_audio(
+            902,
+            "Tone",
+            "C:/definitely_nonexistent_dir_12345/Samples/Imported/tone.wav",
+            4.0,
+        );
+        if let ClipPayload::Audio(ref mut audio) = clip.payload {
+            audio.relative_path = Some("Samples/Imported/tone.wav".to_string());
+        }
+        project.tracks[2].clip_slots[0].clip = Some(clip);
+
+        let collector = Collector::new();
+        let mut compiler = GraphCompiler::new(44100.0, collector.handle());
+
+        // Without ProjectContext, broken absolute + relative path renders silence.
+        let mut silent_graph = compiler.compile(&project);
+        silent_graph
+            .node_mut(TrackId(3))
+            .expect("track 3")
+            .clips
+            .launch(0);
+        silent_graph.render(&playing_context(MAX_BLOCK));
+        assert!(silent_graph.output(MAX_BLOCK).0.iter().all(|&s| s == 0.0));
+
+        // Setting context to ProjectA resolves and plays ProjectA's WAV.
+        compiler.set_project_context(ProjectContext::for_project(&root_a));
+        let mut graph_a = compiler.compile(&project);
+        graph_a
+            .node_mut(TrackId(3))
+            .expect("track 3")
+            .clips
+            .launch(0);
+        graph_a.render(&playing_context(MAX_BLOCK));
+        let peak_a = graph_a
+            .output(MAX_BLOCK)
+            .0
+            .iter()
+            .fold(0.0f32, |m, &s| m.max(s.abs()));
+        assert!(
+            peak_a > 0.05 && peak_a < 0.35,
+            "expected ~0.14 peak, got {peak_a}"
+        );
+
+        // Moving ProjectContext to ProjectB resolves to ProjectB's file rather than stale cache.
+        compiler.set_project_context(ProjectContext::for_project(&root_b));
+        let mut graph_b = compiler.compile(&project);
+        graph_b
+            .node_mut(TrackId(3))
+            .expect("track 3")
+            .clips
+            .launch(0);
+        graph_b.render(&playing_context(MAX_BLOCK));
+        let peak_b = graph_b
+            .output(MAX_BLOCK)
+            .0
+            .iter()
+            .fold(0.0f32, |m, &s| m.max(s.abs()));
+        assert!(
+            peak_b > 0.45,
+            "expected ~0.56 peak from ProjectB, got {peak_b}"
+        );
+
+        // Fixing a previously missing direct path reloads and plays on next compile().
+        project.tracks[2].clip_slots[0].clip = Some(Clip::new_audio(
+            903,
+            "Repair",
+            "C:/definitely_nonexistent_dir_12345/missing.wav",
+            4.0,
+        ));
+        let mut missing_graph = compiler.compile(&project);
+        missing_graph
+            .node_mut(TrackId(3))
+            .expect("track 3")
+            .clips
+            .launch(0);
+        missing_graph.render(&playing_context(MAX_BLOCK));
+        assert!(missing_graph.output(MAX_BLOCK).0.iter().all(|&s| s == 0.0));
+
+        if let Some(Clip {
+            payload: ClipPayload::Audio(ref mut audio),
+            ..
+        }) = project.tracks[2].clip_slots[0].clip
+        {
+            audio.file_path = repaired_wav.to_string_lossy().into_owned();
+        }
+        let mut repaired_graph = compiler.compile(&project);
+        repaired_graph
+            .node_mut(TrackId(3))
+            .expect("track 3")
+            .clips
+            .launch(0);
+        repaired_graph.render(&playing_context(MAX_BLOCK));
+        assert!(
+            repaired_graph
+                .output(MAX_BLOCK)
+                .0
+                .iter()
+                .any(|&s| s.abs() > 0.1)
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

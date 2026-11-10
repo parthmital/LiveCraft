@@ -62,7 +62,7 @@ pub(crate) fn read_track_clips(
             let slot_id = tree
                 .attr(slot_node, "Id")
                 .and_then(|s| s.parse::<u64>().ok())
-                .unwrap_or((track_id.0 * 1000) + idx as u64);
+                .unwrap_or_else(|| track_id.0.saturating_mul(1000).saturating_add(idx as u64));
             let has_stop_button = parse_child_bool(tree, slot_node, "HasStop").unwrap_or(true);
             let value_node = tree
                 .child(slot_node, "ClipSlot")

@@ -153,33 +153,36 @@ pub(crate) fn install_pack_with_limits(
 
         let mut entry = archive.by_index(item.index)?;
         let mut out_file = File::create(&canon_target)?;
-        let mut entry_written: u64 = 0;
-
-        loop {
-            let read_len = entry.read(&mut buf)?;
-            if read_len == 0 {
-                break;
+        let extract_res: Result<(), PackError> = (|| {
+            let mut entry_written: u64 = 0;
+            loop {
+                let read_len = entry.read(&mut buf)?;
+                if read_len == 0 {
+                    break;
+                }
+                entry_written = entry_written.saturating_add(read_len as u64);
+                if entry_written > max_entry_bytes {
+                    return Err(PackError::EntryTooLarge {
+                        name: item.raw_name.clone(),
+                        limit: max_entry_bytes,
+                    });
+                }
+                report.total_bytes = report.total_bytes.saturating_add(read_len as u64);
+                if report.total_bytes > max_total_bytes {
+                    return Err(PackError::TotalTooLarge {
+                        limit: max_total_bytes,
+                    });
+                }
+                out_file.write_all(&buf[..read_len])?;
             }
-            entry_written = entry_written.saturating_add(read_len as u64);
-            if entry_written > max_entry_bytes {
-                drop(out_file);
-                let _ = fs::remove_file(&canon_target);
-                return Err(PackError::EntryTooLarge {
-                    name: item.raw_name,
-                    limit: max_entry_bytes,
-                });
-            }
-            report.total_bytes = report.total_bytes.saturating_add(read_len as u64);
-            if report.total_bytes > max_total_bytes {
-                drop(out_file);
-                let _ = fs::remove_file(&canon_target);
-                return Err(PackError::TotalTooLarge {
-                    limit: max_total_bytes,
-                });
-            }
-            out_file.write_all(&buf[..read_len])?;
+            out_file.flush()?;
+            Ok(())
+        })();
+        if let Err(err) = extract_res {
+            drop(out_file);
+            let _ = fs::remove_file(&canon_target);
+            return Err(err);
         }
-        out_file.flush()?;
 
         let reported_path = dest_dir.join(&item.rel_path);
         if reported_path
@@ -280,7 +283,8 @@ fn ensure_contained_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io::Write;
+    use proptest::prelude::*;
+    use std::io::{Cursor, Write};
     use zip::CompressionMethod;
     use zip::write::{SimpleFileOptions, ZipWriter};
 
@@ -310,6 +314,22 @@ mod tests {
             }
         }
         zw.finish().expect("finish zip");
+    }
+
+    fn spoof_zip_uncompressed_sizes(bytes: &mut [u8], fake_size: u32) {
+        let fake = fake_size.to_le_bytes();
+        let mut i = 0;
+        while i + 30 <= bytes.len() {
+            if &bytes[i..i + 4] == b"PK\x03\x04" {
+                bytes[i + 22..i + 26].copy_from_slice(&fake);
+                i += 30;
+            } else if i + 46 <= bytes.len() && &bytes[i..i + 4] == b"PK\x01\x02" {
+                bytes[i + 24..i + 28].copy_from_slice(&fake);
+                i += 46;
+            } else {
+                i += 1;
+            }
+        }
     }
 
     #[test]
@@ -368,5 +388,88 @@ mod tests {
         assert!(matches!(err, PackError::TotalTooLarge { .. }));
 
         let _ = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn rejects_zip_decompression_bomb_with_spoofed_small_header_size() {
+        let root = make_temp_dir("decompression_bomb");
+
+        // Single entry declaring 100 bytes in headers while actual stream inflates to 64 KiB.
+        let mut cursor = Cursor::new(Vec::new());
+        {
+            let mut zw = ZipWriter::new(&mut cursor);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zw.start_file("bomb.bin", opts).expect("start bomb");
+            zw.write_all(&[b'A'; 65_536]).expect("write bomb");
+            zw.finish().expect("finish bomb");
+        }
+        let mut zip_bytes = cursor.into_inner();
+        spoof_zip_uncompressed_sizes(&mut zip_bytes, 100);
+        let bomb_path = root.join("bomb_entry.alp");
+        fs::write(&bomb_path, &zip_bytes).expect("write spoofed bomb zip");
+
+        let out_entry = root.join("out_entry");
+        let err = install_pack_with_limits(&bomb_path, &out_entry, 512, 65_536).unwrap_err();
+        assert!(
+            matches!(err, PackError::EntryTooLarge { limit: 512, .. })
+                || matches!(&err, PackError::Io(io) if io.kind() == std::io::ErrorKind::InvalidData),
+            "expected EntryTooLarge or InvalidData bomb rejection, got {err:?}"
+        );
+        assert!(
+            !out_entry.join("bomb.bin").exists(),
+            "partial bomb file should be removed when decompression bomb is rejected"
+        );
+
+        // Two entries each declaring 100 bytes and within per-entry limit (32 KiB),
+        // while actual inflated streams exceed declared/total limit (30 KiB).
+        let mut total_cursor = Cursor::new(Vec::new());
+        {
+            let mut zw = ZipWriter::new(&mut total_cursor);
+            let opts = SimpleFileOptions::default().compression_method(CompressionMethod::Deflated);
+            zw.start_file("part1.bin", opts).expect("start p1");
+            zw.write_all(&[b'A'; 24_576]).expect("write p1");
+            zw.start_file("part2.bin", opts).expect("start p2");
+            zw.write_all(&[b'B'; 24_576]).expect("write p2");
+            zw.finish().expect("finish total bomb");
+        }
+        let mut total_bytes = total_cursor.into_inner();
+        spoof_zip_uncompressed_sizes(&mut total_bytes, 100);
+        let total_path = root.join("bomb_total.alp");
+        fs::write(&total_path, &total_bytes).expect("write spoofed total zip");
+
+        let out_total = root.join("out_total");
+        let err = install_pack_with_limits(&total_path, &out_total, 32_768, 30_000).unwrap_err();
+        assert!(
+            matches!(err, PackError::TotalTooLarge { limit: 30_000 })
+                || matches!(&err, PackError::Io(io) if io.kind() == std::io::ErrorKind::InvalidData),
+            "expected TotalTooLarge or InvalidData bomb rejection, got {err:?}"
+        );
+        assert!(
+            !out_total.join("part1.bin").exists() && !out_total.join("part2.bin").exists(),
+            "partial bomb files should be removed when rejected"
+        );
+
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn arbitrary_bytes_never_panic_in_install_pack(
+            bytes in proptest::collection::vec(any::<u8>(), 0..1024)
+        ) {
+            let root = std::env::temp_dir().join(format!(
+                "livecraft_pack_prop_{}",
+                std::process::id()
+            ));
+            let _ = fs::create_dir_all(&root);
+            let alp = root.join("fuzz.alp");
+            let dest = root.join("dest");
+            let _ = fs::remove_dir_all(&dest);
+            let _ = fs::write(&alp, &bytes);
+            let _ = install_pack(&alp, &dest);
+            let _ = fs::remove_dir_all(&dest);
+        }
     }
 }

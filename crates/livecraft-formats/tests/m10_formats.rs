@@ -251,6 +251,10 @@ fn live_clip_midi_and_audio_roundtrip_with_sample_copy() {
     assert_eq!(loaded_audio.devices[0].device_type, DeviceType::Utility);
     if let ClipPayload::Audio(ref adata) = loaded_audio.clip.payload {
         assert!(adata.file_path.contains("Samples/Imported/vox_chop.wav"));
+        assert_eq!(
+            adata.relative_path.as_deref(),
+            Some("Samples/Imported/vox_chop.wav")
+        );
         assert_eq!(adata.warp_mode, WarpMode::ComplexPro);
         assert_eq!(adata.pitch_cents, 300);
     } else {

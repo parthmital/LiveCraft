@@ -5,6 +5,7 @@
 //! so a file written by another build still loads.
 
 use livecraft_engine::driver::DriverConfig;
+use livecraft_formats::project_dir::CollectFilesOnExport;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{self, Write};
@@ -18,6 +19,38 @@ pub struct Preferences {
     pub audio: AudioPreferences,
     /// MIDI input and output ports and their switches.
     pub midi: MidiPreferences,
+    /// User Library, Factory Packs roots, and clip-export sample collection policy.
+    pub library: LibraryPreferences,
+}
+
+/// User Library, Factory Packs roots, and Live Clip export sample-copying policy (manual 5.7.1).
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq, Default)]
+#[serde(default)]
+pub struct LibraryPreferences {
+    /// Custom User Library folder. `None` uses the Documents/LiveCraft/User Library default.
+    pub user_library: Option<PathBuf>,
+    /// Roots searched and classified as Factory Packs.
+    pub factory_packs_roots: Vec<PathBuf>,
+    /// Whether exporting a `.alc` copies dependent audio files into the destination folder.
+    pub collect_files_on_export: CollectFilesOnExport,
+}
+
+impl LibraryPreferences {
+    /// Returns the configured User Library path, or falls back to
+    /// `<Documents>/LiveCraft/User Library` when unset or empty.
+    #[must_use]
+    pub fn effective_user_library(&self) -> Option<PathBuf> {
+        self.user_library
+            .as_ref()
+            .filter(|path| !path.as_os_str().is_empty())
+            .cloned()
+            .or_else(|| {
+                directories::UserDirs::new().and_then(|u| {
+                    u.document_dir()
+                        .map(|d| d.join("LiveCraft").join("User Library"))
+                })
+            })
+    }
 }
 
 /// Audio settings. `None` means the system default.
@@ -205,6 +238,11 @@ mod tests {
                     remote: false,
                 }],
             },
+            library: LibraryPreferences {
+                user_library: Some(PathBuf::from("D:/Samples/User Library")),
+                factory_packs_roots: vec![PathBuf::from("D:/Packs")],
+                collect_files_on_export: CollectFilesOnExport::Ask,
+            },
         }
     }
 
@@ -327,5 +365,41 @@ mod tests {
             outputs: vec![port("Synth", true), port("Drum Machine", false)],
         };
         assert_eq!(midi.output_ports_to_open(), vec!["Synth".to_string()]);
+    }
+
+    #[test]
+    fn existing_toml_without_library_section_loads_with_defaults() {
+        let dir = ScratchDir::new("no-library");
+        let path = dir.write(
+            "Preferences.toml",
+            "[audio]\ndriver_type = \"WASAPI\"\nbuffer_size = 256\n\n[[midi.inputs]]\nname = \"Key\"\ntrack = true\n",
+        );
+        let loaded = Preferences::load(&path).expect("load existing TOML");
+        assert_eq!(loaded.audio.buffer_size, Some(256));
+        assert_eq!(loaded.midi.inputs.len(), 1);
+        assert_eq!(loaded.library, LibraryPreferences::default());
+        assert_eq!(
+            loaded.library.collect_files_on_export,
+            CollectFilesOnExport::Always
+        );
+    }
+
+    #[test]
+    fn effective_user_library_uses_configured_path_or_documents_fallback() {
+        let custom = LibraryPreferences {
+            user_library: Some(PathBuf::from("E:/MyLibrary")),
+            ..LibraryPreferences::default()
+        };
+        assert_eq!(
+            custom.effective_user_library(),
+            Some(PathBuf::from("E:/MyLibrary"))
+        );
+
+        let default_lib = LibraryPreferences::default();
+        let expected_fallback = directories::UserDirs::new().and_then(|u| {
+            u.document_dir()
+                .map(|d| d.join("LiveCraft").join("User Library"))
+        });
+        assert_eq!(default_lib.effective_user_library(), expected_fallback);
     }
 }

@@ -689,6 +689,206 @@ fn b11_health_report_probes_wav_aiff_flac_mp3_and_formats_json() {
     }
 }
 
+#[test]
+fn save_set_into_project_policy_rejects_unrelated_dir_and_reuses_existing_project() {
+    let tmp = TempDir::new("save_policy");
+    let doc = AlsDocument::from_project(&Project::new_default("Policy")).expect("doc");
+
+    // Pre-existing unrelated folder `<parent>/Mix Project` (without Ableton Project Info) must be denied.
+    let unrelated = tmp.path().join("Mix Project");
+    fs::create_dir_all(&unrelated).expect("mkdir unrelated");
+    let err = save_set_into_project(&doc, &tmp.path().join("Mix.als")).unwrap_err();
+    assert!(
+        matches!(err, ProjectDirError::WritePolicyDenied(_)),
+        "expected WritePolicyDenied for unrelated folder, got {err:?}"
+    );
+    assert!(
+        !unrelated.join(PROJECT_INFO_DIR).exists(),
+        "must not mix Ableton Project Info into unrelated folder"
+    );
+    assert!(!unrelated.join("Mix.als").exists());
+
+    // Pre-existing Live Project `<parent>/Jazz Project` is reused cleanly (`created_new_project = false`).
+    let jazz_root = tmp.path().join("Jazz Project");
+    create_project_layout(&jazz_root).expect("jazz layout");
+    let saved = save_set_into_project(&doc, &tmp.path().join("Jazz.als")).expect("reuse Jazz");
+    assert!(!saved.created_new_project);
+    assert_eq!(saved.project_dir.root, jazz_root);
+    assert_eq!(saved.set_path, jazz_root.join("Jazz.als"));
+    assert!(saved.set_path.is_file());
+
+    // Symlink / junction inside a Live Project pointing outside must fail BEFORE creating nested directories.
+    let outside = tmp.path().join("OutsideTarget");
+    fs::create_dir_all(&outside).expect("outside");
+    let escape_link = jazz_root.join("escape_dir");
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(&outside, &escape_link).is_ok();
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_dir(&outside, &escape_link).is_ok()
+        || std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&escape_link)
+            .arg(&outside)
+            .output()
+            .is_ok_and(|o| o.status.success());
+    assert!(linked, "expected symlink or NTFS junction creation");
+    let evil_target = escape_link.join("CreatedInsideEscape/Evil.als");
+    let err = save_set_into_project(&doc, &evil_target).unwrap_err();
+    assert!(matches!(err, ProjectDirError::WritePolicyDenied(_)));
+    assert!(
+        !outside.join("CreatedInsideEscape").exists(),
+        "containment check must run before fs::create_dir_all"
+    );
+}
+
+#[test]
+fn original_simpler_xml_fileref_repair_and_collect() {
+    let tmp = TempDir::new("simpler_xml");
+    let root = tmp.path().join("Simpler Project");
+    create_project_layout(&root).expect("layout");
+
+    // 1. Repair missing <OriginalSimpler><SampleRef><FileRef> inside an AlsDocument.
+    let repaired_wav = root.join("Samples/Processed/simpler_kick.wav");
+    write_tone(&repaired_wav, AudioFileFormat::Wav, 44100);
+    let xml_missing = "<?xml version=\"1.0\"?><Ableton><LiveSet><Tracks/>\
+         <MasterTrack><DeviceChain><Devices>\
+         <OriginalSimpler Id=\"40\"><SampleRef><FileRef>\
+         <Path Value=\"C:/Missing/simpler_kick.wav\"/>\
+         </FileRef></SampleRef></OriginalSimpler>\
+         </Devices></DeviceChain></MasterTrack></LiveSet></Ableton>";
+    let mut doc = AlsDocument::from_xml_named(xml_missing, "SimplerRepair").expect("doc");
+    let mut project = doc.project().clone();
+    let ctx = ProjectContext::for_project(&root);
+    assert_eq!(detect_missing_files_in_document(&doc, &ctx).len(), 1);
+
+    let rep = repair_missing_files_auto(
+        &mut project,
+        Some(&mut doc),
+        &ctx,
+        &AutomaticSearchOptions {
+            search_project: true,
+            ..AutomaticSearchOptions::default()
+        },
+    )
+    .expect("auto repair simpler");
+    assert_eq!(rep.repaired.len(), 1);
+    assert!(
+        detect_missing_files_in_document(&doc, &ctx).is_empty(),
+        "repaired OriginalSimpler FileRef must no longer be missing"
+    );
+    let repaired_xml = doc.to_xml().expect("xml");
+    assert!(
+        repaired_xml.contains("<RelativePath Value=\"Samples/Processed/simpler_kick.wav\""),
+        "expected patched RelativePath in XML:\n{repaired_xml}"
+    );
+    assert!(
+        repaired_xml.contains("<RelativePathType Value=\"3\""),
+        "expected RelativePathType=3 in XML:\n{repaired_xml}"
+    );
+
+    // 2. Collect external <OriginalSimpler><SampleRef><FileRef> via collect_all_and_save.
+    let ext_snare = tmp.path().join("External/simpler_snare.wav");
+    write_tone(&ext_snare, AudioFileFormat::Wav, 44100);
+    let xml_external = format!(
+        "<?xml version=\"1.0\"?><Ableton><LiveSet><Tracks/>\
+         <MasterTrack><DeviceChain><Devices>\
+         <OriginalSimpler Id=\"41\"><SampleRef><FileRef>\
+         <Path Value=\"{}\"/>\
+         </FileRef></SampleRef></OriginalSimpler>\
+         </Devices></DeviceChain></MasterTrack></LiveSet></Ableton>",
+        ext_snare.to_string_lossy()
+    );
+    let mut collect_doc =
+        AlsDocument::from_xml_named(&xml_external, "SimplerCollect").expect("doc");
+    let mut collect_proj = collect_doc.project().clone();
+    let c_rep = collect_all_and_save(
+        &mut collect_proj,
+        Some(&mut collect_doc),
+        &ctx,
+        &CollectAllOptions::default(),
+    )
+    .expect("collect simpler");
+    assert_eq!(c_rep.collected.len(), 1);
+    assert_eq!(c_rep.updated_references, 1);
+    assert!(root.join("Samples/Imported/simpler_snare.wav").is_file());
+    let collected_xml = collect_doc.to_xml().expect("collected xml");
+    assert!(collected_xml.contains("<RelativePath Value=\"Samples/Imported/simpler_snare.wav\""));
+    assert!(collected_xml.contains("<RelativePathType Value=\"3\""));
+
+    // Second pass must see the collected OriginalSimpler sample as InProject.
+    let c_rep2 = collect_all_and_save(
+        &mut collect_proj,
+        Some(&mut collect_doc),
+        &ctx,
+        &CollectAllOptions::all(),
+    )
+    .expect("collect pass 2");
+    assert!(c_rep2.collected.is_empty());
+    assert_eq!(c_rep2.updated_references, 0);
+}
+
+#[test]
+fn relative_path_escape_and_symlink_skip_in_project_ops() {
+    let tmp = TempDir::new("escape_and_symlink");
+    let root = tmp.path().join("Safe Project");
+    create_project_layout(&root).expect("layout");
+    let secret = tmp.path().join("secret.wav");
+    write_tone(&secret, AudioFileFormat::Wav, 44100);
+
+    let clips_dir = root.join("Clips");
+    fs::create_dir_all(&clips_dir).expect("clips");
+
+    // Relative `../../secret.wav` must fail both without and with project_root.
+    let escape_ref = SampleReference {
+        path: String::new(),
+        relative_path: Some("../../secret.wav".to_owned()),
+    };
+    let ctx_none = ProjectContext {
+        project_root: None,
+        set_dir: Some(clips_dir.clone()),
+        ..ProjectContext::default()
+    };
+    assert!(matches!(
+        resolve_sample_reference(&escape_ref, &ctx_none),
+        SampleResolution::Missing { .. }
+    ));
+
+    let ctx_root = ProjectContext {
+        project_root: Some(root.clone()),
+        set_dir: Some(clips_dir),
+        ..ProjectContext::default()
+    };
+    assert!(matches!(
+        resolve_sample_reference(&escape_ref, &ctx_root),
+        SampleResolution::Missing { .. }
+    ));
+
+    // Symlink / junction inside project_root pointing to external directory/file must be skipped by find_unused_files.
+    let real_orphan = root.join("Samples/Imported/real_orphan.wav");
+    write_tone(&real_orphan, AudioFileFormat::Wav, 44100);
+    let outside_dir = tmp.path().join("OutsideSamples");
+    let outside_wav = outside_dir.join("outside_secret.wav");
+    write_tone(&outside_wav, AudioFileFormat::Wav, 44100);
+    let link_dir = root.join("Samples/LinkedOutside");
+    #[cfg(unix)]
+    let linked = std::os::unix::fs::symlink(&outside_dir, &link_dir).is_ok();
+    #[cfg(windows)]
+    let linked = std::os::windows::fs::symlink_dir(&outside_dir, &link_dir).is_ok()
+        || std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&link_dir)
+            .arg(&outside_dir)
+            .output()
+            .is_ok_and(|o| o.status.success());
+    assert!(linked, "expected symlink or NTFS junction creation");
+    let unused = find_unused_files(&root).expect("find unused");
+    assert_eq!(unused.unused_files.len(), 1);
+    assert_eq!(
+        unused.unused_files[0].relative_path,
+        "Samples/Imported/real_orphan.wav"
+    );
+}
+
 // Tiny macro-backed serde::Serializer to verify JSON serialization without extra crates.
 fn to_json<T: Serialize>(value: &T) -> String {
     let mut s = MiniJson(String::new());

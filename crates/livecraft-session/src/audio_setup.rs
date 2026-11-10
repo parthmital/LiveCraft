@@ -7,6 +7,7 @@ use livecraft_engine::driver::{AudioDriver, CpalDriver, DriverConfig, DriverErro
 use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
 use livecraft_engine::output::Playback;
+use livecraft_formats::project_dir::ProjectContext;
 use livecraft_model::ids::TrackId;
 use livecraft_model::model::Project;
 use std::path::Path;
@@ -25,15 +26,16 @@ pub(crate) fn cpal_driver(config: &DriverConfig) -> Result<Box<dyn AudioDriver>,
 }
 
 /// Starts `project` on the output that `factory` builds for `config`, with the MIDI inputs that
-/// `midi` names feeding it.
+/// `midi` names feeding it and `context` resolving relative sample paths.
 fn open_output(
     project: &Project,
     factory: &DriverFactory,
     config: &DriverConfig,
     midi: &MidiPreferences,
+    context: &ProjectContext,
 ) -> Result<Playback, SessionAudioError> {
     let driver = factory(config)?;
-    Playback::open_with_driver(project, driver, &midi_ports(midi))
+    Playback::open_with_driver_in_context(project, driver, &midi_ports(midi), context.clone())
         .map_err(SessionAudioError::Output)
 }
 
@@ -52,12 +54,14 @@ pub(crate) fn open_engine(
     project: &Project,
     factory: &DriverFactory,
     preferences: &Preferences,
+    context: &ProjectContext,
 ) -> Option<Playback> {
     open_output(
         project,
         factory,
         &DriverConfig::from(&preferences.audio),
         &preferences.midi,
+        context,
     )
     .or_else(|error| {
         log::warn!(
@@ -68,6 +72,7 @@ pub(crate) fn open_engine(
             factory,
             &DriverConfig::default(),
             &preferences.midi,
+            context,
         )
     })
         .map_err(|error| log::warn!("No audio output could be opened: {error}"))

@@ -2,19 +2,21 @@ use crate::Edits;
 use crate::arrange::render_arrangement_view;
 use crate::browser::LiveBrowser;
 use crate::devices::render_device_chain;
+use crate::file_manager::{FileManagerTab, FileManagerWindow};
 use crate::pianoroll::render_piano_roll;
 use crate::session::render_session_view;
 use crate::settings::SettingsWindow;
 use crate::style::{LivePalette, apply_live_style};
 use crate::transport::{ViewMode, render_transport_bar};
 use eframe::egui::{self, Color32, Key, Vec2};
-use livecraft_model::ids::TrackId;
-use livecraft_model::model::Project;
+use livecraft_model::edit::EditError;
+use livecraft_model::ids::{ClipId, TrackId};
+use livecraft_model::model::{ClipPayload, Project, TrackType};
 use livecraft_session::commands::device::InsertDevice;
 use livecraft_session::commands::track::{
     CreateAudioTrack, CreateMidiTrack, SetTrackArmed, SetTrackMuted, SetTrackSoloed,
 };
-use livecraft_session::{Command, Session, demo_set};
+use livecraft_session::{Command, Session, SessionFormatError, demo_set};
 use std::path::{Path, PathBuf};
 
 pub struct LiveCraftApp {
@@ -33,6 +35,8 @@ pub struct LiveCraftApp {
     pub browser_visible: bool,
     /// The Settings window (Ctrl + , in Live, manual 2.3).
     pub settings: SettingsWindow,
+    /// M10 File Manager, Save As, Health Report, Pack Install, and export dialogs.
+    pub file_manager: FileManagerWindow,
 }
 
 impl LiveCraftApp {
@@ -41,6 +45,31 @@ impl LiveCraftApp {
             project_path: project_path.map(|p| p.to_path_buf()),
             ..Default::default()
         })
+    }
+
+    /// Creates a UI shell around an existing [`Session`] (used by headless tests).
+    pub fn from_session(session: Session, project_path: Option<PathBuf>) -> Self {
+        let selected_track = session
+            .project()
+            .tracks
+            .first()
+            .map_or(TrackId(0), |track| track.id);
+        Self {
+            session,
+            project_path,
+            view_mode: ViewMode::Session,
+            selected_track,
+            selected_clip: Some((selected_track, 0)),
+            bottom_tab: 0,
+            browser: LiveBrowser::default(),
+            palette: LivePalette::dark(),
+            status_message: "LiveCraft Ready".to_string(),
+            screenshot_path: None,
+            frame_counter: 0,
+            browser_visible: true,
+            settings: SettingsWindow::default(),
+            file_manager: FileManagerWindow::default(),
+        }
     }
 
     pub fn new_with_options(options: crate::GuiOptions) -> Self {
@@ -95,6 +124,7 @@ impl LiveCraftApp {
             frame_counter: 0,
             browser_visible: true,
             settings,
+            file_manager: FileManagerWindow::default(),
         }
     }
 
@@ -105,10 +135,422 @@ impl LiveCraftApp {
         }
     }
 
+    fn save_current_set(&mut self) {
+        let path = self
+            .project_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("Untitled.als"));
+        match self.session.save(&path) {
+            Ok(()) => {
+                self.status_message = format!("Saved to {}", path.display());
+                self.browser.invalidate();
+            }
+            Err(error) => self.status_message = format!("Save failed: {error}"),
+        }
+        self.project_path = Some(path);
+    }
+
+    fn new_empty_set(&mut self) {
+        self.session = Session::open(Project::new_default("Untitled"));
+        self.project_path = None;
+        self.selected_track = self
+            .session
+            .project()
+            .tracks
+            .first()
+            .map_or(TrackId(0), |t| t.id);
+        self.selected_clip = Some((self.selected_track, 0));
+        self.browser.invalidate();
+        self.status_message = "Created new Live Set".to_string();
+    }
+
+    fn open_set_from_path(&mut self, path: &Path) {
+        match Session::open_file(path) {
+            Ok(session) => {
+                self.session = session;
+                self.project_path = Some(path.to_path_buf());
+                self.selected_track = self
+                    .session
+                    .project()
+                    .tracks
+                    .first()
+                    .map_or(TrackId(0), |t| t.id);
+                self.selected_clip = Some((self.selected_track, 0));
+                self.browser.invalidate();
+                let missing = self.session.missing_files().len();
+                self.status_message = if missing > 0 {
+                    format!("Opened {} ({missing} missing file(s))", path.display())
+                } else {
+                    format!("Opened {}", path.display())
+                };
+            }
+            Err(err) => {
+                self.status_message = format!("Failed to open {}: {err}", path.display());
+            }
+        }
+    }
+
+    fn insert_audio_track(&mut self) {
+        let number = self.session.project().tracks.len() + 1;
+        let name = format!("{number}-Audio");
+        self.apply(vec![Box::new(CreateAudioTrack::new(name))]);
+        self.status_message = "Inserted Audio Track".to_string();
+    }
+
+    fn insert_midi_track(&mut self) {
+        let number = self.session.project().tracks.len() + 1;
+        let name = format!("{number}-MIDI");
+        self.apply(vec![Box::new(CreateMidiTrack::new(name))]);
+        self.status_message = "Inserted MIDI Track".to_string();
+    }
+
+    fn find_clip_for_export(&self, midi_only: bool) -> Option<(TrackId, ClipId, String)> {
+        let project = self.session.project();
+        if let Some((t_id, s_idx)) = self.selected_clip
+            && let Some(clip) = project
+                .track(t_id)
+                .and_then(|t| t.clip_slots.get(s_idx))
+                .and_then(|s| s.clip.as_ref())
+            && (!midi_only || matches!(clip.payload, ClipPayload::Midi(_)))
+        {
+            return Some((t_id, clip.id, clip.name.clone()));
+        }
+        if let Some(trk) = project.track(self.selected_track) {
+            for slot in &trk.clip_slots {
+                if let Some(clip) = &slot.clip
+                    && (!midi_only || matches!(clip.payload, ClipPayload::Midi(_)))
+                {
+                    return Some((trk.id, clip.id, clip.name.clone()));
+                }
+            }
+            for arr in &trk.arrangement_clips {
+                if !midi_only || matches!(arr.clip.payload, ClipPayload::Midi(_)) {
+                    return Some((trk.id, arr.clip.id, arr.clip.name.clone()));
+                }
+            }
+        }
+        for trk in &project.tracks {
+            for slot in &trk.clip_slots {
+                if let Some(clip) = &slot.clip
+                    && (!midi_only || matches!(clip.payload, ClipPayload::Midi(_)))
+                {
+                    return Some((trk.id, clip.id, clip.name.clone()));
+                }
+            }
+            for arr in &trk.arrangement_clips {
+                if !midi_only || matches!(arr.clip.payload, ClipPayload::Midi(_)) {
+                    return Some((trk.id, arr.clip.id, arr.clip.name.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    fn open_export_midi_prompt(&mut self, explicit_clip: Option<ClipId>) {
+        if let Some(cid) = explicit_clip
+            && let Some((_, _, name)) = self.find_clip_by_id(cid)
+        {
+            self.file_manager.open_export_midi(cid, &name);
+            return;
+        }
+        if let Some((_, cid, name)) = self.find_clip_for_export(true) {
+            self.file_manager.open_export_midi(cid, &name);
+        } else {
+            self.status_message = "No MIDI clip available to export".to_string();
+        }
+    }
+
+    fn open_export_alc_prompt(&mut self, explicit_clip: Option<ClipId>) {
+        if let Some(cid) = explicit_clip
+            && let Some((tid, _, name)) = self.find_clip_by_id(cid)
+        {
+            self.file_manager.open_export_alc(tid, cid, &name);
+            return;
+        }
+        if let Some((tid, cid, name)) = self.find_clip_for_export(false) {
+            self.file_manager.open_export_alc(tid, cid, &name);
+        } else {
+            self.status_message = "No clip available to export as .alc".to_string();
+        }
+    }
+
+    fn find_clip_by_id(&self, clip_id: ClipId) -> Option<(TrackId, Option<usize>, String)> {
+        for trk in self.session.project().all_tracks() {
+            for (slot_idx, slot) in trk.clip_slots.iter().enumerate() {
+                if let Some(clip) = &slot.clip
+                    && clip.id == clip_id
+                {
+                    return Some((trk.id, Some(slot_idx), clip.name.clone()));
+                }
+            }
+            for arr in &trk.arrangement_clips {
+                if arr.clip.id == clip_id {
+                    return Some((trk.id, None, arr.clip.name.clone()));
+                }
+            }
+        }
+        None
+    }
+
+    fn select_imported_clip(&mut self, clip_id: ClipId) {
+        if let Some((tid, slot_opt, _)) = self.find_clip_by_id(clip_id) {
+            self.selected_track = tid;
+            if let Some(slot_idx) = slot_opt {
+                self.selected_clip = Some((tid, slot_idx));
+            }
+        }
+    }
+
+    fn import_mid_path(&mut self, path: &Path) {
+        let arr_beat = (self.view_mode == ViewMode::Arrangement)
+            .then(|| self.session.status().playhead_beats.max(0.0));
+        let is_midi_track = self
+            .session
+            .project()
+            .track(self.selected_track)
+            .is_some_and(|t| t.track_type == TrackType::Midi);
+        let target = is_midi_track.then_some(self.selected_track);
+        let attempt = self.session.import_midi_file(target, None, arr_beat, path);
+        let res = match attempt {
+            Err(SessionFormatError::InvalidPlacement(_)) if target.is_some() => {
+                self.session.import_midi_file(None, None, arr_beat, path)
+            }
+            other => other,
+        };
+        match res {
+            Ok(clip_id) => {
+                self.select_imported_clip(clip_id);
+                self.status_message = format!("Imported MIDI file: {}", path.display());
+            }
+            Err(err) => {
+                self.status_message = format!("MIDI import failed: {err}");
+            }
+        }
+    }
+
+    fn import_alc_path(&mut self, path: &Path) {
+        let arr_beat = (self.view_mode == ViewMode::Arrangement)
+            .then(|| self.session.status().playhead_beats.max(0.0));
+        let attempt =
+            self.session
+                .import_live_clip(Some(self.selected_track), None, arr_beat, path);
+        let res = match attempt {
+            Err(
+                SessionFormatError::TrackTypeMismatch { .. }
+                | SessionFormatError::InvalidPlacement(_)
+                | SessionFormatError::Edit(
+                    EditError::NoSuchTrack(_)
+                    | EditError::GroupHoldsClips
+                    | EditError::ReturnHoldsClips,
+                ),
+            ) => self.session.import_live_clip(None, None, arr_beat, path),
+            other => other,
+        };
+        match res {
+            Ok(clip_id) => {
+                self.select_imported_clip(clip_id);
+                self.status_message = format!("Imported Live Clip: {}", path.display());
+            }
+            Err(err) => {
+                self.status_message = format!("Live Clip import failed: {err}");
+            }
+        }
+    }
+
+    fn load_adv_path(&mut self, path: &Path) {
+        match self.session.load_device_preset(self.selected_track, path) {
+            Ok(_) => {
+                self.bottom_tab = 0;
+                self.status_message = format!("Loaded device preset: {}", path.display());
+            }
+            Err(err) => {
+                self.status_message = format!("Load .adv failed: {err}");
+            }
+        }
+    }
+
+    fn load_adg_path(&mut self, path: &Path) {
+        match self.session.load_rack_preset(self.selected_track, path) {
+            Ok(ids) => {
+                self.bottom_tab = 0;
+                self.status_message = format!(
+                    "Loaded rack preset ({} device(s)): {}",
+                    ids.len(),
+                    path.display()
+                );
+            }
+            Err(err) => {
+                self.status_message = format!("Load .adg failed: {err}");
+            }
+        }
+    }
+
+    fn handle_dropped_files(&mut self, ctx: &egui::Context) {
+        let dropped = ctx.input(|i| i.raw.dropped_files.clone());
+        for file in dropped {
+            let path = file.path();
+            if path.as_os_str().is_empty() {
+                continue;
+            }
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(str::to_ascii_lowercase);
+            match ext.as_deref() {
+                Some("mid" | "midi") => self.import_mid_path(path),
+                Some("alc") => self.import_alc_path(path),
+                Some("adv") => self.load_adv_path(path),
+                Some("adg") => self.load_adg_path(path),
+                Some("alp") => {
+                    self.file_manager.open_install_pack(Some(path));
+                    self.status_message = format!("Ready to install Pack: {}", path.display());
+                }
+                Some("als") => self.open_set_from_path(path),
+                _ => {
+                    self.status_message = format!("Unsupported dropped file: {}", path.display());
+                }
+            }
+        }
+    }
+
+    fn render_menu_bar(&mut self, ui: &mut egui::Ui) {
+        egui::MenuBar::new().ui(ui, |ui| {
+            ui.menu_button("File", |ui| {
+                if ui.button("New Set").clicked() {
+                    self.new_empty_set();
+                }
+                if ui.button("Save (Ctrl+S)").clicked() {
+                    self.save_current_set();
+                }
+                if ui.button("Save Live Set As... (Ctrl+Shift+S)").clicked() {
+                    let name = self.session.project().name.clone();
+                    self.file_manager
+                        .open_save_as(self.project_path.as_deref(), &name);
+                }
+                if ui.button("Collect All and Save...").clicked() {
+                    self.file_manager
+                        .open_manage_files(FileManagerTab::ExternalFiles);
+                }
+                ui.separator();
+                if ui.button("Import MIDI File...").clicked() {
+                    self.file_manager
+                        .open_import_midi(Some(self.selected_track));
+                }
+                if ui.button("Export MIDI Clip...").clicked() {
+                    self.open_export_midi_prompt(None);
+                }
+                if ui.button("Import Live Clip (.alc)...").clicked() {
+                    self.file_manager.open_import_alc(Some(self.selected_track));
+                }
+                if ui.button("Export Live Clip (.alc)...").clicked() {
+                    self.open_export_alc_prompt(None);
+                }
+                ui.separator();
+                if ui.button("Install Pack...").clicked() {
+                    self.file_manager.open_install_pack(None);
+                }
+            });
+
+            ui.menu_button("Create", |ui| {
+                if ui.button("Insert Audio Track (Ctrl+T)").clicked() {
+                    self.insert_audio_track();
+                }
+                if ui.button("Insert MIDI Track (Ctrl+Shift+T)").clicked() {
+                    self.insert_midi_track();
+                }
+                ui.separator();
+                if ui.button("Load Device Preset (.adv)...").clicked() {
+                    self.file_manager.open_load_adv(self.selected_track);
+                }
+                if ui.button("Load Rack Preset (.adg)...").clicked() {
+                    self.file_manager.open_load_adg(self.selected_track);
+                }
+            });
+
+            ui.menu_button("Manage", |ui| {
+                if ui.button("Manage Files...").clicked() {
+                    self.file_manager
+                        .open_manage_files(FileManagerTab::MissingFiles);
+                }
+                if ui.button("Locate Missing Files...").clicked() {
+                    self.file_manager
+                        .open_manage_files(FileManagerTab::MissingFiles);
+                }
+                if ui.button("Collect All and Save...").clicked() {
+                    self.file_manager
+                        .open_manage_files(FileManagerTab::ExternalFiles);
+                }
+                if ui.button("Find Unused Files...").clicked() {
+                    self.file_manager
+                        .open_manage_files(FileManagerTab::UnusedFiles);
+                }
+                ui.separator();
+                if ui.button("Project Health...").clicked() {
+                    self.file_manager.open_health_report(&self.session);
+                }
+                if ui.button("Install Pack...").clicked() {
+                    self.file_manager.open_install_pack(None);
+                }
+                ui.separator();
+                if ui.button("Settings... (Ctrl+,)").clicked() {
+                    self.settings.show_window();
+                }
+            });
+        });
+    }
+
     fn handle_keyboard_shortcuts(&mut self, ctx: &egui::Context) {
+        let typing = ctx.egui_wants_keyboard_input();
+
         // Ctrl + , -> Settings (docs/keyboard-shortcuts.md)
         if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Comma)) {
             self.settings.show_window();
+        }
+
+        // Ctrl+Shift+S -> Save Live Set As... (must precede Ctrl+S!)
+        if ctx.input(|i| i.modifiers.command && i.modifiers.shift && i.key_pressed(Key::S)) {
+            let name = self.session.project().name.clone();
+            self.file_manager
+                .open_save_as(self.project_path.as_deref(), &name);
+        } else if ctx.input(|i| i.modifiers.command && !i.modifiers.shift && i.key_pressed(Key::S))
+        {
+            // Ctrl+S -> Save
+            self.save_current_set();
+        }
+
+        // Ctrl+T -> Insert Audio Track (Chapter 42.19)
+        if ctx.input(|i| {
+            i.modifiers.command && !i.modifiers.shift && !i.modifiers.alt && i.key_pressed(Key::T)
+        }) {
+            self.insert_audio_track();
+        }
+
+        // Ctrl+Shift+T -> Insert MIDI Track (Chapter 42.19)
+        if ctx.input(|i| {
+            i.modifiers.command && i.modifiers.shift && !i.modifiers.alt && i.key_pressed(Key::T)
+        }) {
+            self.insert_midi_track();
+        }
+
+        // Ctrl+Z -> Undo
+        if !typing
+            && ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Z))
+            && self.session.undo()
+        {
+            self.status_message = "Undo".to_string();
+        }
+
+        // Ctrl+Y -> Redo
+        if !typing && ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Y)) {
+            match self.session.redo() {
+                Ok(true) => self.status_message = "Redo".to_string(),
+                Ok(false) => {}
+                Err(error) => self.status_message = format!("Redo failed: {error}"),
+            }
+        }
+
+        if typing {
+            return;
         }
 
         // Space toggles playback from the insert marker; Shift + Space continues from where playback
@@ -138,26 +580,6 @@ impl LiveCraftApp {
             self.bottom_tab = if self.bottom_tab == 0 { 1 } else { 0 };
         }
 
-        // Ctrl+T -> Insert Audio Track (Chapter 42.19)
-        if ctx.input(|i| {
-            i.modifiers.command && !i.modifiers.shift && !i.modifiers.alt && i.key_pressed(Key::T)
-        }) {
-            let number = self.session.project().tracks.len() + 1;
-            let name = format!("{}-Audio", number);
-            self.apply(vec![Box::new(CreateAudioTrack::new(name))]);
-            self.status_message = "Inserted Audio Track".to_string();
-        }
-
-        // Ctrl+Shift+T -> Insert MIDI Track (Chapter 42.19)
-        if ctx.input(|i| {
-            i.modifiers.command && i.modifiers.shift && !i.modifiers.alt && i.key_pressed(Key::T)
-        }) {
-            let number = self.session.project().tracks.len() + 1;
-            let name = format!("{}-MIDI", number);
-            self.apply(vec![Box::new(CreateMidiTrack::new(name))]);
-            self.status_message = "Inserted MIDI Track".to_string();
-        }
-
         // 0 -> Toggle Mute / Track Activator on selected track (Chapter 42.19)
         if ctx.input(|i| !i.modifiers.command && i.key_pressed(Key::Num0))
             && let Some(trk) = self.session.project().track(self.selected_track)
@@ -185,35 +607,6 @@ impl LiveCraftApp {
             self.status_message = format!("Track {} armed: {}", name, armed);
         }
 
-        // Ctrl+Z -> Undo
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Z)) && self.session.undo() {
-            self.status_message = "Undo".to_string();
-        }
-
-        // Ctrl+Y -> Redo
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::Y)) {
-            match self.session.redo() {
-                Ok(true) => self.status_message = "Redo".to_string(),
-                Ok(false) => {}
-                Err(error) => self.status_message = format!("Redo failed: {error}"),
-            }
-        }
-
-        // Ctrl+S -> Save
-        if ctx.input(|i| i.modifiers.command && i.key_pressed(Key::S)) {
-            let path = self
-                .project_path
-                .clone()
-                .unwrap_or_else(|| PathBuf::from("Untitled.als"));
-            match self.session.save(&path) {
-                Ok(()) => {
-                    self.status_message = format!("Saved to {}", path.display());
-                }
-                Err(error) => self.status_message = format!("Save failed: {error}"),
-            }
-            self.project_path = Some(path);
-        }
-
         // F8 -> Toggle Dark / Light Theme
         if ctx.input(|i| i.key_pressed(Key::F8)) {
             self.palette = if self.palette.is_dark() {
@@ -231,10 +624,9 @@ impl LiveCraftApp {
             );
         }
     }
-}
 
-impl eframe::App for LiveCraftApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    /// Renders one complete UI frame into `ui` (used by `eframe::App::ui` and headless tests).
+    pub fn render_ui(&mut self, ui: &mut egui::Ui) {
         let ctx = &ui.ctx().clone();
         self.frame_counter += 1;
         if let Some(path) = self.screenshot_path.clone() {
@@ -250,6 +642,7 @@ impl eframe::App for LiveCraftApp {
 
         apply_live_style(ctx, &self.palette);
         self.handle_keyboard_shortcuts(ctx);
+        self.handle_dropped_files(ctx);
 
         // Continuous repaint during audio playback
         if self.session.project().transport.is_playing {
@@ -267,9 +660,30 @@ impl eframe::App for LiveCraftApp {
             self.status_message = message;
         }
 
+        let fm_action = self.file_manager.ui(ctx, &mut self.session);
+        if let Some(msg) = fm_action.status_message {
+            self.status_message = msg;
+        }
+        if let Some(new_path) = fm_action.updated_project_path {
+            self.project_path = Some(new_path);
+        }
+        if fm_action.files_modified_on_disk {
+            self.browser.invalidate();
+        }
+        if let Some(set_path) = fm_action.open_set_path {
+            self.open_set_from_path(&set_path);
+        }
+
         // The engine's playhead, meters, and active clips, read without blocking the audio thread
         let status = self.session.status();
         let playhead_beats = status.playhead_beats;
+
+        // Top Menu Bar
+        egui::Panel::top("menu_bar")
+            .exact_size(22.0)
+            .show(ui, |ui| {
+                self.render_menu_bar(ui);
+            });
 
         // Top Transport Panel
         egui::Panel::top("transport_bar")
@@ -323,6 +737,23 @@ impl eframe::App for LiveCraftApp {
                         Vec2::new(18.0, 18.0),
                     );
 
+                    let missing_count = self.session.missing_files().len();
+                    if missing_count > 0 {
+                        let label = format!("Media files are missing ({missing_count}) — Locate");
+                        let btn = egui::Button::new(
+                            egui::RichText::new(label)
+                                .size(10.5)
+                                .strong()
+                                .color(Color32::BLACK),
+                        )
+                        .fill(self.palette.amber)
+                        .corner_radius(egui::CornerRadius::same(2));
+                        if ui.add(btn).clicked() {
+                            self.file_manager
+                                .open_manage_files(FileManagerTab::MissingFiles);
+                        }
+                    }
+
                     ui.label(
                         egui::RichText::new(&self.status_message)
                             .size(10.5)
@@ -352,6 +783,11 @@ impl eframe::App for LiveCraftApp {
 
         // Bottom Detail Panel: Device Chain or Piano Roll (Manual p. 50, 445)
         let mut detail_edits: Edits = Vec::new();
+        let mut save_adv_req = None;
+        let mut save_adg_req = None;
+        let mut export_midi_req = None;
+        let mut save_alc_req = None;
+
         egui::Panel::bottom("detail_panel")
             .exact_size(185.0)
             .resizable(true)
@@ -400,7 +836,10 @@ impl eframe::App for LiveCraftApp {
                 if self.bottom_tab == 0 {
                     // Device Chain View
                     if let Some(trk) = project.track(self.selected_track) {
-                        render_device_chain(ui, trk, &self.palette, &mut detail_edits);
+                        let dev_action =
+                            render_device_chain(ui, trk, &self.palette, &mut detail_edits);
+                        save_adv_req = dev_action.save_device_preset;
+                        save_adg_req = dev_action.save_rack_preset;
                     }
                 } else if let Some((t_id, s_idx)) = self.selected_clip {
                     // Clip View / Piano Roll
@@ -409,7 +848,7 @@ impl eframe::App for LiveCraftApp {
                         .and_then(|trk| trk.clip_slots.get(s_idx))
                         .and_then(|slot| slot.clip.as_ref());
                     if let Some(clip) = slot_clip {
-                        render_piano_roll(
+                        let pr_action = render_piano_roll(
                             ui,
                             clip,
                             &project.scale,
@@ -417,6 +856,8 @@ impl eframe::App for LiveCraftApp {
                             &self.palette,
                             &mut detail_edits,
                         );
+                        export_midi_req = pr_action.export_midi;
+                        save_alc_req = pr_action.save_live_clip;
                     } else {
                         ui.label("Empty slot. Double-click in Session View to create a clip.");
                     }
@@ -425,23 +866,53 @@ impl eframe::App for LiveCraftApp {
                 }
             });
         self.apply(detail_edits);
+        if let Some((tid, did, dname)) = save_adv_req {
+            self.file_manager.open_save_adv(tid, did, &dname);
+        }
+        if let Some(tid) = save_adg_req {
+            let rack_name = self
+                .session
+                .project()
+                .track(tid)
+                .map_or("Rack", |t| t.name.as_str())
+                .to_owned();
+            self.file_manager.open_save_adg(tid, &rack_name);
+        }
+        if let Some(cid) = export_midi_req {
+            self.open_export_midi_prompt(Some(cid));
+        }
+        if let Some(cid) = save_alc_req {
+            self.open_export_alc_prompt(Some(cid));
+        }
 
         // Left Browser Sidebar (toggleable)
         if self.browser_visible {
-            let mut device_request = None;
+            let mut browser_action = crate::browser::BrowserAction::default();
+            let project_context = self.session.project_context().clone();
             egui::Panel::left("browser_panel")
                 .exact_size(180.0)
                 .resizable(true)
                 .show(ui, |ui| {
-                    let action = self.browser.render(ui, &self.palette);
-                    device_request = action.add_device;
+                    browser_action = self.browser.render(ui, &self.palette, &project_context);
                 });
 
-            if let Some((device_type, name)) = device_request {
+            if let Some((device_type, name)) = browser_action.add_device {
                 let command: Box<dyn Command> =
                     Box::new(InsertDevice::new(self.selected_track, device_type, name));
                 self.apply(vec![command]);
                 self.status_message = "Device added to track".to_string();
+            }
+            if let Some(alc_path) = browser_action.import_alc {
+                self.import_alc_path(&alc_path);
+            }
+            if let Some(adv_path) = browser_action.load_adv {
+                self.load_adv_path(&adv_path);
+            }
+            if let Some(adg_path) = browser_action.load_adg {
+                self.load_adg_path(&adg_path);
+            }
+            if let Some(mid_path) = browser_action.import_mid {
+                self.import_mid_path(&mid_path);
             }
         }
 
@@ -502,6 +973,12 @@ impl eframe::App for LiveCraftApp {
                 }
             }
         });
+    }
+}
+
+impl eframe::App for LiveCraftApp {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.render_ui(ui);
     }
 }
 

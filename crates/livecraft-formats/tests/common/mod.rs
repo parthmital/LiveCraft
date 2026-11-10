@@ -81,6 +81,7 @@ pub fn assert_clips_equivalent(a: &Clip, b: &Clip) {
         }
         (ClipPayload::Audio(aa), ClipPayload::Audio(ab)) => {
             assert_eq!(aa.file_path, ab.file_path);
+            assert_eq!(aa.relative_path, ab.relative_path);
             assert_eq!(aa.sample_rate, ab.sample_rate);
             assert_eq!(aa.channels, ab.channels);
             assert_eq!(aa.warp_mode, ab.warp_mode);

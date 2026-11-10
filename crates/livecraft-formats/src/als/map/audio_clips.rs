@@ -31,14 +31,12 @@ pub(super) fn read_audio_clip(
     let file_ref = sample_ref
         .and_then(|sr| tree.child(sr, "FileRef"))
         .or_else(|| tree.child(node, "FileRef"));
-    let file_path = file_ref
-        .and_then(|fr| {
-            child_value_str(tree, fr, "Path")
-                .filter(|s| !s.is_empty())
-                .or_else(|| child_value_str(tree, fr, "RelativePath").filter(|s| !s.is_empty()))
-        })
-        .unwrap_or("")
-        .to_owned();
+    let path_val =
+        file_ref.and_then(|fr| child_value_str(tree, fr, "Path").filter(|s| !s.is_empty()));
+    let rel_val =
+        file_ref.and_then(|fr| child_value_str(tree, fr, "RelativePath").filter(|s| !s.is_empty()));
+    let file_path = path_val.or(rel_val).unwrap_or("").to_owned();
+    let relative_path = rel_val.map(str::to_owned);
 
     let is_warped = parse_child_bool(tree, node, "IsWarped").unwrap_or(true);
     let warp_mode = match parse_child_u64(tree, node, "WarpMode").unwrap_or(0) {
@@ -76,7 +74,7 @@ pub(super) fn read_audio_clip(
 
     let pitch_coarse = parse_child_i64(tree, node, "PitchCoarse").unwrap_or(0) as i32;
     let pitch_fine = parse_child_i64(tree, node, "PitchFine").unwrap_or(0) as i32;
-    let pitch_cents = pitch_coarse * 100 + pitch_fine;
+    let pitch_cents = pitch_coarse.saturating_mul(100).saturating_add(pitch_fine);
 
     let sample_rate = sample_ref
         .and_then(|sr| parse_child_u64(tree, sr, "DefaultSampleRate"))
@@ -105,6 +103,7 @@ pub(super) fn read_audio_clip(
         end_marker_beat: f.end_marker_beat,
         payload: ClipPayload::Audio(AudioClipData {
             file_path,
+            relative_path,
             sample_rate,
             channels,
             warp_mode,
@@ -120,6 +119,16 @@ pub(super) fn read_audio_clip(
     }
 }
 
+fn ensure_audio_fileref(tree: &mut XmlTree, clip_node: XmlNodeId) -> Option<XmlNodeId> {
+    if tree.child(clip_node, "SampleRef").is_none()
+        && let Some(direct) = tree.child(clip_node, "FileRef")
+    {
+        return Some(direct);
+    }
+    tree.ensure_child(clip_node, "SampleRef")
+        .and_then(|sr| tree.ensure_child(sr, "FileRef"))
+}
+
 pub(super) fn patch_audio_clip_payload(
     tree: &mut XmlTree,
     clip_node: XmlNodeId,
@@ -128,10 +137,34 @@ pub(super) fn patch_audio_clip_payload(
     ids: &mut AlsIdAllocator,
 ) {
     if prev.is_none_or(|p| p.file_path != cur.file_path)
-        && let Some(sr) = tree.ensure_child(clip_node, "SampleRef")
-        && let Some(fr) = tree.ensure_child(sr, "FileRef")
+        && let Some(fr) = ensure_audio_fileref(tree, clip_node)
     {
         set_child_value(tree, fr, "Path", &cur.file_path);
+    }
+    if prev.is_none_or(|p| p.relative_path != cur.relative_path) {
+        match &cur.relative_path {
+            Some(rel) => {
+                if let Some(fr) = ensure_audio_fileref(tree, clip_node) {
+                    set_child_value(tree, fr, "RelativePathType", "3");
+                    set_child_value(tree, fr, "RelativePath", rel);
+                }
+            }
+            None => {
+                if prev.is_some_and(|p| p.relative_path.is_some())
+                    && let Some(fr) = tree
+                        .child(clip_node, "SampleRef")
+                        .and_then(|sr| tree.child(sr, "FileRef"))
+                        .or_else(|| tree.child(clip_node, "FileRef"))
+                {
+                    if tree.child(fr, "RelativePath").is_some() {
+                        set_child_value(tree, fr, "RelativePath", "");
+                    }
+                    if tree.child(fr, "RelativePathType").is_some() {
+                        set_child_value(tree, fr, "RelativePathType", "0");
+                    }
+                }
+            }
+        }
     }
     if prev.is_none_or(|p| p.is_warped != cur.is_warped) {
         set_child_value(tree, clip_node, "IsWarped", bool_str(cur.is_warped));

@@ -125,3 +125,15 @@ Earlier undated research (cpal, hound, egui, flate2, quick-xml, clap) is superse
 **Decision:** Adopt `flacenc = "=0.5.1"` and `rusty_mp3 = "=1.0.5"`, and build the AIFF/AIFC writer in-house. All added crates pass `cargo-deny check` (`advisories ok, bans ok, licenses ok, sources ok`).
 
 **Sources:** crates.io JSON API read on 2026-11-10 for `flacenc` (`https://crates.io/api/v1/crates/flacenc`), `rusty_mp3` (`https://crates.io/api/v1/crates/rusty_mp3`), `sha2` (`https://crates.io/api/v1/crates/sha2`), `realfft` (`https://crates.io/api/v1/crates/realfft`), `rubato` (`https://crates.io/api/v1/crates/rubato`), and `symphonia` (`https://crates.io/api/v1/crates/symphonia`).
+
+## Pack Archive Extraction (2026-11-10)
+
+**Tier:** Quick. One bounded choice (safe `.alp` zip archive extraction) for M10.
+
+**Findings:**
+- `zip` `9.1.2` (MIT, `https://github.com/zip-rs/zip2`, already resolved in `Cargo.lock` with `default-features = false, features = ["deflate-flate2"]`) reads ZIP archives in pure Rust over the workspace's existing `flate2` crate without adding C compression libraries or async runtimes.
+- Alternatives: `async_zip` (MIT/Apache-2.0, pulls `tokio`/`futures` async runtime deps that violate DECISIONS D26) and `rc-zip` (MIT/Apache-2.0, smaller ecosystem and fewer stream validation helpers).
+
+**Decision:** Adopt `zip = "=9.1.2"` (`default-features = false, features = ["deflate-flate2"]`) in `livecraft-formats`, paired with strict two-pass preflight validation in `crates/livecraft-formats/src/pack.rs` (rejecting zip-slip `..` traversal, backslashes, drive letters, absolute paths, encrypted entries, symlinks, and entries exceeding 512 MiB / 2 GiB total). Passes `cargo-deny check`.
+
+**Sources:** Local `Cargo.lock` and `cargo metadata` package manifest for `zip` `9.1.2` (`MIT`, `https://github.com/zip-rs/zip2`) verified on 2026-11-10.
