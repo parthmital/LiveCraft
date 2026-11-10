@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<AutomationEnvelope Id="0">
+	<EnvelopeTarget>
+		<PointeeId Value="0" />
+	</EnvelopeTarget>
+	<Automation>
+		<Events>
+			<FloatEvent Id="0" Time="-63072000" Value="0" />
+		</Events>
+		<AutomationTransformViewState>
+			<IsTransformPending Value="false" />
+			<TimeAndValueTransforms />
+		</AutomationTransformViewState>
+	</Automation>
+</AutomationEnvelope>

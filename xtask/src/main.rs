@@ -17,7 +17,7 @@ use std::process::{Command, ExitCode};
 /// plans/livecraft-1.0/reference/TARGET-ARCHITECTURE.md.
 const LAYERS: &[(&str, &[&str])] = &[
     ("livecraft-model", &["livecraft-time"]),
-    ("livecraft-formats", &["livecraft-model"]),
+    ("livecraft-formats", &["livecraft-model", "livecraft-time"]),
     ("livecraft-dsp", &[]),
     (
         "livecraft-devices",

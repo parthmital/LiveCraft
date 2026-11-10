@@ -3,7 +3,8 @@ use livecraft_engine::bouncer::{
     ANALYSIS_FILE_VERSION, ANALYSIS_OVERVIEW_BLOCK_FRAMES, AnalysisFile, DitherMode,
     OfflineBouncer, RenderOptions, RenderReport,
 };
-use livecraft_formats::als::AlsParser;
+use livecraft_formats::als::read::decompress_als_or_xml;
+use livecraft_formats::als::{AlsDocument, AlsParser};
 use livecraft_model::ids::DeviceId;
 use livecraft_model::model::*;
 use std::fmt::Write as _;
@@ -855,4 +856,383 @@ fn cli_render_track_selection_and_stems_command() {
     }
 
     let _ = fs::remove_dir_all(dir);
+}
+
+const UNKNOWN_XML_TEMPLATE: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Ableton MajorVersion="5" MinorVersion="12.0_12117" SchemaChangeCount="10" Creator="LiveCraft Fixture 1.0" Revision="fixture-rev">
+	<LiveSet>
+		<NextPointeeId Value="5000" />
+		<LomId Value="0" />
+		<CustomUnknownRootTag Zebra="last" KeepMe='{"raw": [1, 2, 3]}' Alpha="first" />
+		<!-- Preserve root comment -->
+		<Tracks>
+			<MidiTrack Id="12" SelectedToolPanel="7">
+				<LomId Value="0" />
+				<Name>
+					<EffectiveName Value="1-MIDI" />
+					<UserName Value="" />
+				</Name>
+				<Color Value="19" />
+				<TrackGroupId Value="-1" />
+				<TrackDelay Value="0" />
+				<DeviceChain>
+					<Mixer>
+						<Sends>
+							<TrackSendHolder Id="0">
+								<Send>
+									<Manual Value="0.0003162277571" />
+								</Send>
+							</TrackSendHolder>
+						</Sends>
+						<Speaker>
+							<Manual Value="true" />
+						</Speaker>
+						<SoloSink Value="false" />
+						<Pan>
+							<Manual Value="0" />
+						</Pan>
+						<Volume>
+							<Manual Value="1" />
+						</Volume>
+					</Mixer>
+					<MainSequencer>
+						<ClipSlotList>
+							<ClipSlot Id="0">
+								<ClipSlot>
+									<Value />
+								</ClipSlot>
+								<HasStop Value="true" />
+							</ClipSlot>
+						</ClipSlotList>
+					</MainSequencer>
+					<DeviceChain>
+						<Devices>
+							<Operator Id="300">
+								<UserName Value="Lead Op" />
+								<On>
+									<Manual Value="true" />
+								</On>
+								<FilterCutoff>
+									<Manual Value="2400" />
+								</FilterCutoff>
+							</Operator>
+							<MxDeviceAudioEffect Id="301">
+								<UserName Value="M4L Shimmer" />
+								<On>
+									<Manual Value="true" />
+								</On>
+								<PatcherBlob><![CDATA[<maxpat>{opaque_data}</maxpat>]]></PatcherBlob>
+							</MxDeviceAudioEffect>
+						</Devices>
+					</DeviceChain>
+				</DeviceChain>
+			</MidiTrack>
+		</Tracks>
+		<MainTrack>
+			<Name>
+				<EffectiveName Value="Main" />
+				<UserName Value="" />
+			</Name>
+			<Color Value="4" />
+			<TrackGroupId Value="-1" />
+			<DeviceChain>
+				<Mixer>
+					<Speaker>
+						<Manual Value="true" />
+					</Speaker>
+					<SoloSink Value="false" />
+					<Pan>
+						<Manual Value="0" />
+					</Pan>
+					<Volume>
+						<Manual Value="1" />
+					</Volume>
+					<Tempo>
+						<Manual Value="120" />
+					</Tempo>
+					<TimeSignature>
+						<Manual Value="201" />
+					</TimeSignature>
+				</Mixer>
+				<DeviceChain>
+					<Devices />
+				</DeviceChain>
+			</DeviceChain>
+		</MainTrack>
+		<Scenes>
+			<Scene Id="0">
+				<Name Value="" />
+				<Color Value="-1" />
+			</Scene>
+		</Scenes>
+		<Transport>
+			<LoopOn Value="false" />
+			<LoopStart Value="0" />
+			<LoopLength Value="16" />
+			<CurrentTime Value="0" />
+		</Transport>
+		<GlobalQuantisation Value="4" />
+		<ScaleInformation>
+			<Root Value="0" />
+			<Name Value="0" />
+		</ScaleInformation>
+		<InKey Value="false" />
+		<TuningSystems />
+	</LiveSet>
+</Ableton>
+"#;
+
+#[test]
+fn cli_convert_pretty_xml_roundtrip_preserves_unknowns_and_orders_attrs() {
+    let dir = temp_cli_dir("convert_pretty_xml");
+    let in_als = dir.join("input.als");
+    let pretty_xml = dir.join("pretty.xml");
+    let roundtrip_als = dir.join("roundtrip.als");
+    let re_pretty_xml = dir.join("re_pretty.xml");
+    let json_path = dir.join("exported.json");
+
+    AlsDocument::from_xml(UNKNOWN_XML_TEMPLATE)
+        .expect("parse fixture xml")
+        .save_als(&in_als)
+        .expect("save input.als");
+
+    // 1. .als -> .xml with --pretty-xml
+    let conv_xml = run_livecraft(&[
+        "convert",
+        "--pretty-xml",
+        in_als.to_str().expect("utf8"),
+        pretty_xml.to_str().expect("utf8"),
+    ]);
+    assert!(
+        conv_xml.status.success(),
+        "{}",
+        String::from_utf8_lossy(&conv_xml.stderr)
+    );
+    let xml_text = fs::read_to_string(&pretty_xml).expect("read pretty.xml");
+    // Attributes sorted alphabetically: Alpha, KeepMe, Zebra
+    assert!(
+        xml_text.contains(
+            r#"<CustomUnknownRootTag Alpha="first" KeepMe='{"raw": [1, 2, 3]}' Zebra="last" />"#
+        ),
+        "expected deterministic attribute order in pretty XML:\n{xml_text}"
+    );
+    assert!(xml_text.contains("<!-- Preserve root comment -->"));
+    assert!(xml_text.contains(r#"<TrackDelay Value="0" />"#));
+    assert!(xml_text.contains(r#"<MxDeviceAudioEffect Id="301">"#));
+    assert!(
+        xml_text.contains("<PatcherBlob><![CDATA[<maxpat>{opaque_data}</maxpat>]]></PatcherBlob>")
+    );
+
+    // 2. .xml -> .als preserves unknown XML elements & M4L device
+    let conv_als = run_livecraft(&[
+        "convert",
+        pretty_xml.to_str().expect("utf8"),
+        roundtrip_als.to_str().expect("utf8"),
+    ]);
+    assert!(
+        conv_als.status.success(),
+        "{}",
+        String::from_utf8_lossy(&conv_als.stderr)
+    );
+    let roundtrip_xml = decompress_als_or_xml(&roundtrip_als).expect("decompress roundtrip.als");
+    assert_eq!(roundtrip_xml, xml_text);
+
+    // 3. Re-running --pretty-xml from roundtrip.als is byte-identical
+    let conv_again = run_livecraft(&[
+        "convert",
+        "--pretty-xml",
+        roundtrip_als.to_str().expect("utf8"),
+        re_pretty_xml.to_str().expect("utf8"),
+    ]);
+    assert!(conv_again.status.success());
+    let re_xml_text = fs::read_to_string(&re_pretty_xml).expect("read re_pretty.xml");
+    assert_eq!(re_xml_text, xml_text);
+
+    // 4. .xml -> .json also succeeds
+    let conv_json = run_livecraft(&[
+        "convert",
+        pretty_xml.to_str().expect("utf8"),
+        json_path.to_str().expect("utf8"),
+    ]);
+    assert!(
+        conv_json.status.success(),
+        "{}",
+        String::from_utf8_lossy(&conv_json.stderr)
+    );
+    let proj: Project =
+        serde_json::from_str(&fs::read_to_string(&json_path).expect("read json")).expect("json");
+    assert_eq!(proj.tracks[0].device_chain.len(), 2);
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn cli_diff_reports_tempo_track_clip_note_and_device_param_changes() {
+    let dir = temp_cli_dir("diff_cmd");
+    let path_a = dir.join("a.als");
+    let path_b = dir.join("b.als");
+    let path_b_xml = dir.join("b.xml");
+
+    let mut proj_a = chord_project("DiffA");
+    proj_a.transport.set_bpm(120.0);
+    AlsDocument::from_project(&proj_a)
+        .expect("from_project A")
+        .save_als(&path_a)
+        .expect("save a.als");
+
+    let mut proj_b = proj_a.clone();
+    proj_b.transport.set_bpm(136.0);
+    proj_b.tracks[0].name = "Lead Synth".to_owned();
+    proj_b.tracks[0].volume_db = -5.5;
+    proj_b.tracks[0].device_chain[0].set_param("filter_cutoff", 950.0);
+    if let Some(ref mut clip) = proj_b.tracks[0].clip_slots[0].clip
+        && let ClipPayload::Midi(ref mut m) = clip.payload
+    {
+        m.notes.remove(2); // remove G3
+        m.notes.push(MidiNote::new(72, 2.0, 1.0, 115)); // add C4
+    }
+    let doc_b = AlsDocument::from_project(&proj_b).expect("from_project B");
+    doc_b.save_als(&path_b).expect("save b.als");
+    fs::write(&path_b_xml, doc_b.to_pretty_xml().expect("pretty xml B")).expect("write b.xml");
+
+    // Human-readable diff
+    let text_diff = run_livecraft(&[
+        "diff",
+        path_a.to_str().expect("utf8"),
+        path_b.to_str().expect("utf8"),
+    ]);
+    assert!(
+        text_diff.status.success(),
+        "{}",
+        String::from_utf8_lossy(&text_diff.stderr)
+    );
+    let stdout = String::from_utf8_lossy(&text_diff.stdout);
+    assert!(
+        stdout.contains("120.00 BPM -> 136.00 BPM"),
+        "stdout:\n{stdout}"
+    );
+    assert!(stdout.contains("1-MIDI -> Lead Synth"), "stdout:\n{stdout}");
+    assert!(stdout.contains("-5.50 dB"), "stdout:\n{stdout}");
+    assert!(stdout.contains("+ note C4 @ 2"), "stdout:\n{stdout}");
+    assert!(stdout.contains("- note G3 @ 0"), "stdout:\n{stdout}");
+    assert!(stdout.contains("param filter_cutoff"), "stdout:\n{stdout}");
+
+    // JSON diff (cross-format .als vs .xml)
+    let json_diff = run_livecraft(&[
+        "diff",
+        "--json",
+        path_a.to_str().expect("utf8"),
+        path_b_xml.to_str().expect("utf8"),
+    ]);
+    assert!(
+        json_diff.status.success(),
+        "{}",
+        String::from_utf8_lossy(&json_diff.stderr)
+    );
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&json_diff.stdout).expect("parse diff JSON");
+    assert_eq!(parsed["bpm_changed"], serde_json::json!([120.0, 136.0]));
+    let track_mod = parsed["tracks_modified"]
+        .as_array()
+        .expect("tracks_modified array");
+    assert_eq!(track_mod.len(), 1);
+    assert_eq!(
+        track_mod[0]["renamed"],
+        serde_json::json!(["1-MIDI", "Lead Synth"])
+    );
+    assert_eq!(
+        track_mod[0]["clips_modified"][0]["notes_added"],
+        serde_json::json!([[72, 2.0]])
+    );
+    assert_eq!(
+        track_mod[0]["clips_modified"][0]["notes_removed"],
+        serde_json::json!([[67, 0.0]])
+    );
+    assert_eq!(
+        track_mod[0]["devices_modified"][0]["params_changed"][0]["key"],
+        serde_json::json!("filter_cutoff")
+    );
+
+    // Identical diff reports no changes
+    let same_diff = run_livecraft(&[
+        "diff",
+        path_a.to_str().expect("utf8"),
+        path_a.to_str().expect("utf8"),
+    ]);
+    assert!(same_diff.status.success());
+    assert_eq!(
+        String::from_utf8_lossy(&same_diff.stdout).trim(),
+        "No musical changes."
+    );
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn cli_loads_and_inspects_all_five_fixture_sets() {
+    let manifest = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let root = manifest
+        .parent()
+        .and_then(|p| p.parent())
+        .expect("workspace root");
+    let sets_dir = root.join("fixtures").join("sets");
+
+    let expected_sets = [
+        ("empty.als", 120.0, 4),
+        ("midi_operator.als", 124.0, 4),
+        ("audio_clip.als", 120.0, 4),
+        ("sends_returns_automation.als", 118.0, 4),
+        ("group_tracks.als", 122.0, 5),
+    ];
+
+    for (filename, expected_bpm, expected_tracks) in expected_sets {
+        let path = sets_dir.join(filename);
+        assert!(path.exists(), "missing fixture set: {}", path.display());
+        let path_str = path.to_str().expect("utf8");
+
+        let info = run_livecraft(&["info", path_str]);
+        assert!(
+            info.status.success(),
+            "info failed for {filename}: {}",
+            String::from_utf8_lossy(&info.stderr)
+        );
+        let info_out = String::from_utf8_lossy(&info.stdout);
+        assert!(
+            info_out.contains(&format!("{expected_bpm:.1} BPM")),
+            "info output for {filename} missing BPM:\n{info_out}"
+        );
+
+        let inspect = run_livecraft(&["inspect", path_str, "--devices", "--clips"]);
+        assert!(
+            inspect.status.success(),
+            "inspect failed for {filename}: {}",
+            String::from_utf8_lossy(&inspect.stderr)
+        );
+
+        let inspect_json = run_livecraft(&["inspect", path_str, "--json"]);
+        assert!(
+            inspect_json.status.success(),
+            "inspect --json failed for {filename}: {}",
+            String::from_utf8_lossy(&inspect_json.stderr)
+        );
+        let proj: Project =
+            serde_json::from_slice(&inspect_json.stdout).expect("parse inspect --json");
+        assert!(
+            proj.validate().is_empty(),
+            "{filename} validation errors: {:?}",
+            proj.validate()
+        );
+        assert_eq!(proj.tracks.len(), expected_tracks, "{filename} tracks");
+
+        // Zero-difference XML round-trip check
+        let original_xml = decompress_als_or_xml(&path).expect("decompress fixture");
+        let mut doc = AlsDocument::open(&path).expect("open fixture");
+        let unchanged = doc.project().clone();
+        doc.apply_project(&unchanged).expect("apply unchanged");
+        assert_eq!(
+            doc.to_xml().expect("to_xml"),
+            original_xml,
+            "{filename} zero-diff XML round-trip"
+        );
+    }
 }

@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ReturnTrack Id="0">
+	<LomId Value="0" />
+	<LomIdView Value="0" />
+	<Name>
+		<EffectiveName Value="A-Return" />
+		<UserName Value="" />
+		<Annotation Value="" />
+	</Name>
+	<Color Value="-1" />
+	<AutomationEnvelopes>
+		<Envelopes />
+	</AutomationEnvelopes>
+	<TrackGroupId Value="-1" />
+	<TrackUnfolded Value="false" />
+	<DeviceChain>
+		<AutomationLanes>
+			<AutomationLanes />
+		</AutomationLanes>
+		<AudioInputRouting>
+			<Target Value="AudioIn/None" />
+		</AudioInputRouting>
+		<MidiInputRouting>
+			<Target Value="MidiIn/None" />
+		</MidiInputRouting>
+		<AudioOutputRouting>
+			<Target Value="AudioOut/Main" />
+		</AudioOutputRouting>
+		<MidiOutputRouting>
+			<Target Value="MidiOut/None" />
+		</MidiOutputRouting>
+		<Mixer>
+			<LomId Value="0" />
+			<On>
+				<Manual Value="true" />
+			</On>
+			<Sends />
+			<Speaker>
+				<Manual Value="true" />
+			</Speaker>
+			<SoloSink Value="false" />
+			<PanMode Value="0" />
+			<Pan>
+				<Manual Value="0" />
+			</Pan>
+			<Volume>
+				<Manual Value="1" />
+			</Volume>
+		</Mixer>
+		<DeviceChain>
+			<Devices />
+		</DeviceChain>
+	</DeviceChain>
+</ReturnTrack>

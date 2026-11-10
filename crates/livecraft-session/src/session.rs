@@ -4,6 +4,7 @@
 //! `transaction`, `undo`, `redo`, and `go_to`. After each change the session pushes the new values
 //! to the audio engine, so no front end talks to the engine about the Set.
 
+use crate::audio_setup::{Carried, cpal_driver, load_preferences, midi_ports, open_engine};
 use crate::command::{Command, CommandError, Operation};
 use crate::commands::clip::CreateMidiClip;
 use crate::commands::note::AddNote;
@@ -12,13 +13,13 @@ use crate::history::{HistoryEntry, Transaction, UndoHistory};
 use crate::preferences::{AudioPreferences, MidiPreferences, Preferences, PreferencesError};
 use crate::transport::TransportControl;
 use livecraft_engine::driver::{
-    AudioDriver, CpalDriver, DeviceList, DriverConfig, DriverError, DriverStatus, Latency,
-    NullDriver, list_devices,
+    AudioDriver, DeviceList, DriverConfig, DriverError, DriverStatus, Latency, NullDriver,
+    list_devices,
 };
 use livecraft_engine::executor::EngineCommand;
 use livecraft_engine::midi_io::{MidiPorts, list_midi_ports};
 use livecraft_engine::output::Playback;
-use livecraft_formats::als::{AlsError, AlsParser};
+use livecraft_formats::als::{AlsDocument, AlsError, AlsParser};
 use livecraft_model::ids::{IdAllocator, SceneId, TrackId};
 use livecraft_model::model::{MidiNote, Project};
 use std::path::{Path, PathBuf};
@@ -118,6 +119,8 @@ pub struct Session {
     /// The state handed to the running output when it started. It is carried over again when the
     /// output is replaced before its engine has published a snapshot.
     carried: Option<Carried>,
+    /// Lossless `.als` DOM kept alongside the Set so saves patch only modified nodes.
+    als_doc: Option<AlsDocument>,
 }
 
 impl Session {
@@ -129,7 +132,66 @@ impl Session {
             Box::new(cpal_driver),
             Preferences::default(),
             None,
+            None,
         )
+    }
+
+    /// Opens a Set from a parsed lossless [`AlsDocument`]. The engine, when there is one, was
+    /// started from this Set.
+    pub fn from_als_document(doc: AlsDocument, engine: Option<Playback>) -> Self {
+        let project = doc.project().clone();
+        Self::from_parts(
+            project,
+            engine,
+            Box::new(cpal_driver),
+            Preferences::default(),
+            None,
+            Some(doc),
+        )
+    }
+
+    /// Opens a `.als` file losslessly without starting an audio output (headless).
+    pub fn open_als(path: &Path) -> Result<Self, AlsError> {
+        let doc = AlsDocument::open(path)?;
+        Ok(Self::from_als_document(doc, None))
+    }
+
+    /// Opens a `.als` file losslessly with the audio output and MIDI inputs that the preferences
+    /// file names (manual 5.4.1, 41.2, 2.3), or the default output when that one cannot be opened.
+    pub fn open_file(path: &Path) -> Result<Self, AlsError> {
+        Self::open_als_with_driver(path, Box::new(cpal_driver), Preferences::default_path())
+    }
+
+    /// Opens a `.als` file losslessly with the audio output that `factory` builds for the
+    /// preferences at `prefs_path`.
+    pub fn open_als_with_driver(
+        path: &Path,
+        factory: DriverFactory,
+        prefs_path: Option<PathBuf>,
+    ) -> Result<Self, AlsError> {
+        let doc = AlsDocument::open(path)?;
+        Ok(Self::from_als_with_driver(doc, factory, prefs_path))
+    }
+
+    /// Opens a Set from a parsed lossless [`AlsDocument`] with the audio output that `factory`
+    /// builds for the preferences at `prefs_path`.
+    pub fn from_als_with_driver(
+        doc: AlsDocument,
+        factory: DriverFactory,
+        prefs_path: Option<PathBuf>,
+    ) -> Self {
+        let project = doc.project().clone();
+        Self::with_driver_and_doc(project, factory, prefs_path, Some(doc))
+    }
+
+    /// Attaches or replaces the lossless [`AlsDocument`] used when saving this Set.
+    pub fn attach_als_document(&mut self, doc: AlsDocument) {
+        self.als_doc = Some(doc);
+    }
+
+    /// Returns the lossless [`AlsDocument`] attached to this Set, if any.
+    pub fn als_document(&self) -> Option<&AlsDocument> {
+        self.als_doc.as_ref()
     }
 
     fn from_parts(
@@ -138,6 +200,7 @@ impl Session {
         driver_factory: DriverFactory,
         preferences: Preferences,
         prefs_path: Option<PathBuf>,
+        als_doc: Option<AlsDocument>,
     ) -> Self {
         let ids = project.id_allocator();
         let sent = project.clone();
@@ -155,6 +218,7 @@ impl Session {
             audio_retry: None,
             carried: None,
             transport: TransportControl::default(),
+            als_doc,
         }
     }
 
@@ -173,11 +237,20 @@ impl Session {
         factory: DriverFactory,
         prefs_path: Option<PathBuf>,
     ) -> Self {
+        Self::with_driver_and_doc(project, factory, prefs_path, None)
+    }
+
+    fn with_driver_and_doc(
+        project: Project,
+        factory: DriverFactory,
+        prefs_path: Option<PathBuf>,
+        als_doc: Option<AlsDocument>,
+    ) -> Self {
         let preferences = prefs_path
             .as_deref()
             .map_or_else(Preferences::default, load_preferences);
         let engine = open_engine(&project, &factory, &preferences);
-        Self::from_parts(project, engine, factory, preferences, prefs_path)
+        Self::from_parts(project, engine, factory, preferences, prefs_path, als_doc)
     }
 
     /// The MIDI input and output ports this machine offers, for the settings (manual 2.3).
@@ -337,8 +410,19 @@ impl Session {
     }
 
     /// Saves the Set to a `.als` file (manual 5.4.1) and records it as saved.
+    ///
+    /// When the Set holds an [`AlsDocument`], only modified portions of its XML tree are patched so
+    /// unmodeled XML elements and attributes survive untouched. Otherwise a new document is built
+    /// from the current Set and retained for subsequent saves.
     pub fn save(&mut self, path: &Path) -> Result<(), AlsError> {
-        AlsParser::save_project_to_als(&self.project, path)?;
+        if let Some(ref mut doc) = self.als_doc {
+            doc.apply_project(&self.project)?;
+            doc.save_als(path)?;
+        } else {
+            let doc = AlsDocument::from_project(&self.project)?;
+            doc.save_als(path)?;
+            self.als_doc = Some(doc);
+        }
         self.dirty = false;
         Ok(())
     }
@@ -594,107 +678,5 @@ impl Session {
     /// The Back to Arrangement button (manual 3.7, page 42).
     pub fn back_to_arrangement(&mut self) {
         self.send(EngineCommand::BackToArrangement);
-    }
-}
-
-/// The preferences at `path`, or the defaults when the file cannot be read.
-fn load_preferences(path: &Path) -> Preferences {
-    Preferences::load(path).unwrap_or_else(|error| {
-        log::warn!("The preferences could not be read, so the defaults are used: {error}");
-        Preferences::default()
-    })
-}
-
-/// The driver `Session::open` uses: a `CpalDriver` for the configuration.
-fn cpal_driver(config: &DriverConfig) -> Result<Box<dyn AudioDriver>, DriverError> {
-    Ok(Box::new(CpalDriver::open(config)?))
-}
-
-/// Starts `project` on the output that `factory` builds for `config`, with the MIDI inputs that `midi`
-/// names feeding it.
-fn open_output(
-    project: &Project,
-    factory: &DriverFactory,
-    config: &DriverConfig,
-    midi: &MidiPreferences,
-) -> Result<Playback, SessionAudioError> {
-    let driver = factory(config)?;
-    Playback::open_with_driver(project, driver, &midi_ports(midi))
-        .map_err(SessionAudioError::Output)
-}
-
-/// The MIDI ports that `midi` asks for, among the ports this machine offers.
-fn midi_ports(midi: &MidiPreferences) -> MidiPorts {
-    MidiPorts {
-        inputs: midi.input_ports_to_open(&list_midi_ports().inputs),
-        outputs: midi.output_ports_to_open(),
-    }
-}
-
-/// Opens the output and the MIDI inputs that `preferences` name. When that output cannot be opened, the
-/// default output is tried. The result is `None` when neither opens, and the Set then plays without audio.
-fn open_engine(
-    project: &Project,
-    factory: &DriverFactory,
-    preferences: &Preferences,
-) -> Option<Playback> {
-    open_output(
-        project,
-        factory,
-        &DriverConfig::from(&preferences.audio),
-        &preferences.midi,
-    )
-    .or_else(|error| {
-        log::warn!(
-            "The audio output in the preferences could not be opened, so the default output is used: {error}"
-        );
-        open_output(
-            project,
-            factory,
-            &DriverConfig::default(),
-            &preferences.midi,
-        )
-    })
-        .map_err(|error| log::warn!("No audio output could be opened: {error}"))
-        .ok()
-}
-
-/// The playhead, the transport, and the launched clips of an output, carried over to the next one.
-#[derive(Debug, Clone)]
-struct Carried {
-    playhead: f64,
-    playing: bool,
-    launched: Vec<(TrackId, usize)>,
-}
-
-impl Carried {
-    /// Reads them from the latest snapshot of `playback`, so they are as the audio thread last
-    /// published them. Before the engine has published, they are `pending`, the state it was started
-    /// with.
-    fn read(playback: &mut Playback, project: &Project, pending: Option<Carried>) -> Option<Self> {
-        let snapshot = playback.handle.snapshot();
-        if snapshot.frames == 0 {
-            return pending;
-        }
-        let launched = project
-            .tracks
-            .iter()
-            .take(snapshot.node_count)
-            .zip(&snapshot.nodes)
-            .filter_map(|(track, node)| node.clip.active_slot.map(|slot| (track.id, slot)))
-            .collect();
-        Some(Self {
-            playhead: snapshot.transport.playhead_beats,
-            playing: snapshot.transport.playing,
-            launched,
-        })
-    }
-
-    fn apply(&self, next: &mut Playback) {
-        for &(track, slot) in &self.launched {
-            send_command(next, EngineCommand::TriggerClip { track, slot });
-        }
-        send_command(next, EngineCommand::SetPlayhead(self.playhead));
-        send_command(next, EngineCommand::SetPlaying(self.playing));
     }
 }

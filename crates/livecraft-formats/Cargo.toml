@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 livecraft-model = { path = "../livecraft-model" }
+livecraft-time = { path = "../livecraft-time" }
 quick-xml.workspace = true
 flate2.workspace = true
 thiserror.workspace = true
@@ -20,6 +21,7 @@ rusty_mp3.workspace = true
 
 [dev-dependencies]
 symphonia.workspace = true
+proptest.workspace = true
 
 [lints]
 workspace = true

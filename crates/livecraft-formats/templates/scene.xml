@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Scene Id="0">
+	<Name Value="" />
+	<Annotation Value="" />
+	<Color Value="-1" />
+	<Tempo Value="120" />
+	<IsTempoEnabled Value="false" />
+	<TimeSignatureId Value="201" />
+	<IsTimeSignatureEnabled Value="false" />
+	<LomId Value="0" />
+	<ClipSlotsListWrapper LomId="0" />
+</Scene>

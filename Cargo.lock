@@ -2081,6 +2081,8 @@ dependencies = [
  "flate2",
  "hound",
  "livecraft-model",
+ "livecraft-time",
+ "proptest",
  "quick-xml 0.42.0",
  "rusty_mp3",
  "serde",

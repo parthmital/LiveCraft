@@ -40,7 +40,7 @@ enum CommandAction {
     List,
     /// Run one command on a Live Set and save the result to a .als file
     Run {
-        /// Input .als or .json Live Set
+        /// Input .als, .xml, or .json Live Set
         path: PathBuf,
         /// Command name, as `command list` prints it (for example track.set_volume)
         name: String,
@@ -69,12 +69,12 @@ enum Commands {
     },
     /// Print metadata summary of an Ableton project
     Info {
-        /// Path to .als or .json project
+        /// Path to .als, .xml, or .json project
         path: PathBuf,
     },
     /// Inspect tracks, devices, and clips in detail
     Inspect {
-        /// Path to .als or .json project
+        /// Path to .als, .xml, or .json project
         path: PathBuf,
         /// Show full details in JSON format
         #[arg(long)]
@@ -92,7 +92,7 @@ enum Commands {
     Stems(cli::render::StemsArgs),
     /// Play project in terminal with real-time ASCII VU meters
     Play {
-        /// Path to .als or .json project
+        /// Path to .als, .xml, or .json project
         path: Option<PathBuf>,
         /// Playhead loop duration in seconds (0 for indefinite)
         #[arg(short, long, default_value_t = 0)]
@@ -113,12 +113,25 @@ enum Commands {
         #[arg(short, long, default_value_t = 2.0)]
         duration_sec: f32,
     },
-    /// Convert between Ableton .als (gzipped XML) and JSON
+    /// Convert between Ableton .als (gzipped XML), pretty .xml, and .json
     Convert {
-        /// Input file (.als or .json)
+        /// Input file (.als, .xml, or .json)
         input: PathBuf,
-        /// Output file (.als or .json)
+        /// Output file (.als, .xml, or .json)
         output: PathBuf,
+        /// Write canonical pretty-printed XML with sorted attributes
+        #[arg(long)]
+        pretty_xml: bool,
+    },
+    /// Compare two Live Sets and print a musical diff summary
+    Diff {
+        /// First Live Set (.als, .xml, or .json)
+        a: PathBuf,
+        /// Second Live Set (.als, .xml, or .json)
+        b: PathBuf,
+        /// Print structured diff as JSON
+        #[arg(long)]
+        json: bool,
     },
     /// List the audio hosts and their input and output devices, and the MIDI input and output ports (manual 41.2 and 2.3)
     Devices {
@@ -175,21 +188,7 @@ impl From<CliWaveform> for Waveform {
 }
 
 fn load_project_from_path<P: AsRef<Path>>(path: P) -> anyhow::Result<Project> {
-    let p = path.as_ref();
-    if !p.exists() {
-        anyhow::bail!("File not found: {}", p.display());
-    }
-
-    if let Some(ext) = p.extension().and_then(|s| s.to_str())
-        && ext.eq_ignore_ascii_case("json")
-    {
-        let data = fs::read_to_string(p)?;
-        let proj: Project = serde_json::from_str(&data)?;
-        return Ok(proj);
-    }
-
-    // Default to .als parser
-    AlsParser::load_project(p).map_err(|e| anyhow::anyhow!("ALS load error: {}", e))
+    cli::convert::load_project_from_path(path.as_ref())
 }
 
 fn main() -> anyhow::Result<()> {
@@ -247,10 +246,15 @@ fn main() -> anyhow::Result<()> {
                 args,
                 out,
             } => {
-                let project = load_project_from_path(&path)?;
+                let mut session = if cli::convert::is_json_path(&path) {
+                    let project = load_project_from_path(&path)?;
+                    livecraft_session::Session::new(project, None)
+                } else {
+                    let doc = cli::convert::load_document_from_path(&path)?;
+                    livecraft_session::Session::from_als_document(doc, None)
+                };
                 let arguments: serde_json::Value = serde_json::from_str(&args)?;
                 let command = livecraft_session::commands::registry().build(&name, arguments)?;
-                let mut session = livecraft_session::Session::new(project, None);
                 session.apply(vec![command])?;
                 session.save(&out)?;
                 println!("Ran {name} and saved {}", out.display());
@@ -328,26 +332,15 @@ fn main() -> anyhow::Result<()> {
         }) => {
             run_synth_cli(note, waveform.into(), output, duration_sec)?;
         }
-        Some(Commands::Convert { input, output }) => {
-            let proj = load_project_from_path(&input)?;
-            let out_ext = output.extension().and_then(|s| s.to_str()).unwrap_or("als");
-
-            if out_ext.eq_ignore_ascii_case("json") {
-                let json = serde_json::to_string_pretty(&proj)?;
-                fs::write(&output, json)?;
-                println!(
-                    "Converted '{}' -> JSON: '{}'",
-                    input.display(),
-                    output.display()
-                );
-            } else {
-                AlsParser::save_project_to_als(&proj, &output)?;
-                println!(
-                    "Converted '{}' -> Ableton .als: '{}'",
-                    input.display(),
-                    output.display()
-                );
-            }
+        Some(Commands::Convert {
+            input,
+            output,
+            pretty_xml,
+        }) => {
+            cli::convert::run_convert(&input, &output, pretty_xml)?;
+        }
+        Some(Commands::Diff { a, b, json }) => {
+            cli::convert::run_diff(&a, &b, json)?;
         }
         Some(Commands::Devices { json }) => {
             let devices = livecraft_session::Session::audio_devices();

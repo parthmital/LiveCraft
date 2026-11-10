@@ -14,7 +14,7 @@ use livecraft_session::commands::device::InsertDevice;
 use livecraft_session::commands::track::{
     CreateAudioTrack, CreateMidiTrack, SetTrackArmed, SetTrackMuted, SetTrackSoloed,
 };
-use livecraft_session::{Command, Session, demo_set, load_set};
+use livecraft_session::{Command, Session, demo_set};
 use std::path::{Path, PathBuf};
 
 pub struct LiveCraftApp {
@@ -49,14 +49,17 @@ impl LiveCraftApp {
             _ => LivePalette::dark(),
         };
 
-        let loaded = options
-            .project_path
-            .as_ref()
-            .and_then(|path| load_set(path).ok().map(|project| (project, path.clone())));
-        let (project, project_path) = match loaded {
-            Some((project, path)) => (project, Some(path)),
+        let loaded = options.project_path.as_ref().and_then(|path| {
+            Session::open_file(path)
+                .ok()
+                .map(|session| (session, path.clone()))
+        });
+        let (session, project_path) = match loaded {
+            Some((session, path)) => (session, Some(path)),
             None => (
-                demo_set().unwrap_or_else(|_| Project::new_default("LiveCraft Session")),
+                Session::open(
+                    demo_set().unwrap_or_else(|_| Project::new_default("LiveCraft Session")),
+                ),
                 None,
             ),
         };
@@ -69,13 +72,17 @@ impl LiveCraftApp {
         };
 
         let bottom_tab = options.initial_tab.unwrap_or(0);
-        let selected_track = project.tracks.first().map_or(TrackId(0), |track| track.id);
+        let selected_track = session
+            .project()
+            .tracks
+            .first()
+            .map_or(TrackId(0), |track| track.id);
         let mut settings = SettingsWindow::default();
         if options.open_settings {
             settings.show_window();
         }
         Self {
-            session: Session::open(project),
+            session,
             project_path,
             view_mode,
             selected_track,
@@ -520,5 +527,163 @@ fn save_screenshot_and_exit(path: &std::path::Path, image: &egui::ColorImage) ->
             log::error!("Failed to save screenshot: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    struct TempDirGuard(PathBuf);
+
+    impl TempDirGuard {
+        fn new(label: &str) -> Self {
+            static COUNTER: AtomicU64 = AtomicU64::new(0);
+            let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+            let dir = std::env::temp_dir().join(format!(
+                "livecraft_ui_app_test_{}_{}_{}",
+                label,
+                std::process::id(),
+                id
+            ));
+            std::fs::create_dir_all(&dir).expect("create temp test dir");
+            Self(dir)
+        }
+
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for TempDirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    const SAMPLE_ALS_XML: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<Ableton MajorVersion="5" MinorVersion="12.0_12117" SchemaChangeCount="10" Creator="LiveCraft Test" Revision="rev">
+	<LiveSet>
+		<NextPointeeId Value="5000" />
+		<LomId Value="0" />
+		<CustomUnknownRootTag KeepMe="true" />
+		<Tracks>
+			<MidiTrack Id="7">
+				<LomId Value="0" />
+				<Name>
+					<EffectiveName Value="Lead" />
+					<UserName Value="" />
+				</Name>
+				<Color Value="2" />
+				<CustomTrackUnknown Keep="1" />
+				<DeviceChain>
+					<Mixer>
+						<Speaker><Manual Value="true" /></Speaker>
+						<SoloSink Value="false" />
+						<Pan><Manual Value="0" /></Pan>
+						<Volume><Manual Value="1" /></Volume>
+					</Mixer>
+					<MainSequencer><ClipSlotList /></MainSequencer>
+					<DeviceChain><Devices /></DeviceChain>
+				</DeviceChain>
+			</MidiTrack>
+		</Tracks>
+		<MainTrack Id="8">
+			<Name><EffectiveName Value="Main" /></Name>
+		</MainTrack>
+	</LiveSet>
+</Ableton>"#;
+
+    #[test]
+    fn new_with_options_opens_als_file_and_ctrl_s_preserves_unknown_xml() {
+        let dir = TempDirGuard::new("open_als_ctrl_s");
+        let als_path = dir.path().join("fixture.als");
+        std::fs::write(&als_path, SAMPLE_ALS_XML).expect("write fixture .als");
+
+        let mut app = LiveCraftApp::new_with_options(crate::GuiOptions {
+            project_path: Some(als_path.clone()),
+            ..Default::default()
+        });
+
+        assert_eq!(app.project_path.as_deref(), Some(als_path.as_path()));
+        assert!(app.session.als_document().is_some());
+        assert_eq!(app.selected_track, TrackId(7));
+
+        assert!(!app.session.project().tracks[0].is_muted);
+        app.apply(vec![Box::new(SetTrackMuted::new(TrackId(7), true))]);
+        assert!(
+            app.session.project().tracks[0].is_muted,
+            "expected mute edit to succeed, status: {}",
+            app.status_message
+        );
+
+        let ctx = egui::Context::default();
+        let raw_input = egui::RawInput {
+            events: vec![
+                egui::Event::ModifiersChanged(egui::Modifiers::COMMAND),
+                egui::Event::Key {
+                    key: Key::S,
+                    physical_key: None,
+                    pressed: true,
+                    repeat: false,
+                    modifiers: egui::Modifiers::COMMAND,
+                },
+            ],
+            ..Default::default()
+        };
+        ctx.begin_pass(raw_input);
+        app.handle_keyboard_shortcuts(&ctx);
+        let mut output = ctx.end_pass();
+        output.textures_delta.clear();
+
+        assert_eq!(
+            app.status_message,
+            format!("Saved to {}", als_path.display())
+        );
+
+        let reopened = Session::open_file(&als_path).expect("reopen saved .als");
+        assert!(reopened.project().tracks[0].is_muted);
+        let saved_xml = reopened
+            .als_document()
+            .expect("reopened session has als_document")
+            .to_xml()
+            .expect("serialize reopened als_document");
+        assert!(saved_xml.contains(r#"<CustomUnknownRootTag KeepMe="true" />"#));
+        assert!(saved_xml.contains(r#"<CustomTrackUnknown Keep="1" />"#));
+    }
+
+    #[test]
+    fn new_with_options_falls_back_to_demo_set_when_path_none_or_invalid() {
+        let app_none = LiveCraftApp::new_with_options(crate::GuiOptions::default());
+        assert!(app_none.project_path.is_none());
+        assert!(app_none.session.als_document().is_none());
+        assert_eq!(
+            app_none.selected_track,
+            app_none
+                .session
+                .project()
+                .tracks
+                .first()
+                .map_or(TrackId(0), |track| track.id)
+        );
+
+        let dir = TempDirGuard::new("fallback_invalid");
+        let missing = dir.path().join("missing.als");
+        let app_missing = LiveCraftApp::new_with_options(crate::GuiOptions {
+            project_path: Some(missing),
+            ..Default::default()
+        });
+        assert!(app_missing.project_path.is_none());
+        assert!(app_missing.session.als_document().is_none());
+        assert_eq!(
+            app_missing.selected_track,
+            app_missing
+                .session
+                .project()
+                .tracks
+                .first()
+                .map_or(TrackId(0), |track| track.id)
+        );
     }
 }

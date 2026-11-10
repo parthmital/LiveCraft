@@ -66,7 +66,7 @@ cargo run --bin livecraft -- gui
 Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan's [parity matrix](plans/livecraft-1.0/reference/PARITY-MATRIX.md) tracks each feature.
 
 - Document model (`livecraft-model`): project, tracks (audio, MIDI, group, return, and Main) with group nesting and routing descriptions, typed ids for tracks, clips, scenes, devices, and lanes, `Project::validate` for references and group rules, clip slots, scenes, MIDI and audio clips, arrangement clips with split, duplicate, and trim, automation lanes with linear interpolation, 12 scale types, Scala `.scl` tuning, and a set of MIDI transformations.
-- Live Set files (`livecraft-formats`): reads and writes gzip `.als` XML for the subset of elements the model knows. Unknown elements are dropped on save (see [Known Limitations](#known-limitations)).
+- Live Set files (`livecraft-formats`): lossless `.als` XML tree read, patch, and write (`AlsDocument`), preserving unknown Live elements, attributes, and third-party/M4L placeholders (`DeviceType::Custom`), plus stable pretty XML export (`convert --pretty-xml`) and musical set diff (`diff`).
 - Named, undoable edits (`livecraft-session`): every change to a Live Set is a command with a stable name, which the CLI can run. Undo and redo cover track, clip, note, device, scene, scale, and transport edits. Several edits can form one labelled step, and a drag is one step. The Undo History lists the steps, with undone ones greyed out, and can revert or reapply to any entry (manual 5.4.2).
 - Audio engine (`livecraft-engine`): a real-time engine. The session compiles the Set into a graph and sends it to the audio thread through queues, and the audio thread takes no locks and allocates nothing (checked by the `rt-checks` tests). It has per-track device chains, sends and returns, group track summing, In, Auto, and Off monitoring, note events at their exact sample, device delay compensation, deterministic offline export through `VirtualDriver` (WAV, AIFF/AIFC, FLAC, and 320 kbps CBR MP3, stems, two-pass loop tail wrap, dither, normalize, mono, `rubato` resampling, `.lcanalysis` sidecars, and `.report.json` with SHA-256). The module map is in [ARCHITECTURE.md](ARCHITECTURE.md#module-map).
 - Devices (`livecraft-devices`, built on filters in `livecraft-dsp`): Operator-style 4-operator FM synth, Simpler-style sampler, a 16-pad drum rack, and effects named after EQ Eight, EQ Three, Compressor, Limiter, Gate, Auto Filter, Auto Pan, Chorus, Delay, Reverb, Saturator, Redux, and Utility. These are simplified approximations, not matched to Live's sound or parameter sets.
@@ -85,7 +85,7 @@ Verified in code on 2026-10-27. Fidelity to Live is partial everywhere; the plan
 | `sha2`                | 0.11                    | SHA-256 output digests in `.report.json` render manifests            |
 | `egui`, `eframe`      | 0.37 (wgpu renderer)    | Immediate-mode desktop GUI in `crates/livecraft-ui`                  |
 | `image`               | 0.25 (PNG only)         | Saves `--screenshot` captures                                        |
-| `quick-xml`, `flate2` | 0.42, 1.0               | `.als` XML parsing and gzip in `crates/livecraft-formats/src/als.rs` |
+| `quick-xml`, `flate2` | 0.42, 1.0               | Lossless `.als` XML tree and gzip in `crates/livecraft-formats/src/als/` |
 | `crossbeam-channel`   | 0.5                     | Bounded parameter queue from GUI or CLI to the audio callback        |
 | `clap`                | 4.5                     | CLI argument parsing in `apps/livecraft`                             |
 | `serde`, `serde_json` | 1.0                     | JSON project format and `inspect --json`                             |
@@ -139,7 +139,8 @@ The binary is `livecraft`. Run `livecraft <command> --help` for every option. Wi
 | `livecraft stems <file> [-o ./stems] [-d 8] [-f wav\|aiff\|flac] [--include-returns-main]`                                              | Export each audio-producing track, return, and Main track as a stem                                                               |
 | `livecraft play [file] [-d seconds]`                                                                                              | Play through the default output with ASCII meters                                                                                                                                                 |
 | `livecraft synth [-n 60] [-w saw] [-o out.wav] [-d 2]`                                                                            | Render or play a single test tone                                                                                                                                                                 |
-| `livecraft convert <input> <output>`                                                                                              | Convert between `.als` and `.json`                                                                                                                                                                |
+| `livecraft convert <input> <output> [--pretty-xml]`                                                                                 | Lossless convert between `.als`, pretty-printed `.xml`, and `.json`                                                                                                                               |
+| `livecraft diff <a.als> <b.als> [--json]`                                                                                         | Show musical changes (tempo, tracks, clips, notes, devices, params) between two Live Sets                                                                                                         |
 | `livecraft devices [--json]`                                                                                                      | List the audio hosts and their input and output devices, with sample rates and buffer sizes, and the MIDI input and output ports (`--json` prints them as JSON, with the MIDI ports under `midi`) |
 | `livecraft command list`                                                                                                          | Print the name of every registered command                                                                                                                                                        |
 | `livecraft command run <file> <name> '<json args>' -o <out.als>`                                                                  | Run one command on a Live Set and save the result as `.als`                                                                                                                                       |
@@ -167,7 +168,7 @@ cargo test --workspace
 cargo build --release --workspace
 ```
 
-On 2026-11-10, `cargo xtask ci` passes with 510 tests (livecraft 21, livecraft-model 55, livecraft-formats 12, livecraft-dsp 16, livecraft-devices 65, livecraft-engine 176, livecraft-session 110, livecraft-time 37, livecraft-ui 8, xtask 10, livecraft-testkit 0). `livecraft command list` prints 50 registered commands. One test (`test_parse_real_ableton_template`) only runs its assertions when Ableton Live 12 Suite is installed at the default Windows path. `cargo xtask oracle` compares committed `fixtures/oracle/*.als` renders against owner Live renders when present in `.agent-local/reference/oracle/`.
+On 2026-11-10, `cargo xtask ci` passes with 538 tests (livecraft 25, livecraft-model 55, livecraft-formats 30, livecraft-dsp 16, livecraft-devices 65, livecraft-engine 176, livecraft-session 114, livecraft-time 37, livecraft-ui 10, xtask 10, livecraft-testkit 0). `livecraft command list` prints 50 registered commands. Two tests (`test_parse_real_ableton_template`, `byte_exact_roundtrip_default_live_set_when_present`) only assert against Live's file when Ableton Live 12 Suite is installed at the default Windows path. `cargo xtask oracle` compares committed `fixtures/oracle/*.als` renders against owner Live renders when present in `.agent-local/reference/oracle/`.
 
 ## Troubleshooting
 
@@ -175,14 +176,12 @@ On 2026-11-10, `cargo xtask ci` passes with 510 tests (livecraft 21, livecraft-m
 | ------------------------------------- | ----------------------------------------------- | ------------------------------- | ------------------------------------------------------- |
 | Build fails on Linux with ALSA errors | Missing system headers                          | `pkg-config --libs alsa`        | Install the packages in [Prerequisites](#prerequisites) |
 | `play` or GUI has no sound            | No default output device, or engine failed      | `RUST_LOG=debug livecraft play` | Select a default output device in the OS                |
-| `.als` loses data after `convert`     | Writer only emits elements the model knows      | Compare XML of input and output | Known issue, fixed in the plan's Phase 2                |
 | GUI crashes at start on Windows       | GPU driver problem in the selected wgpu backend | WGPU_BACKEND=gl cargo dev       | Default is DX12; try gl, or update drivers              |
 
 ## Known Limitations
 
 - A WAV clip is decoded in full into memory when its Set is compiled. Disk streaming for long files is planned for M11.
 - Instrument-less MIDI tracks are silent, as in Live (manual pages 55 and 127). Main pan is not applied yet.
-- `.als` round trips are lossy, and only Live 12 sets were tested.
 - Most of Live 12 is missing: warping, recording, routing, racks, automation editing, most devices, plug-in hosting, and MIDI routing choosers per track. The [parity matrix](plans/livecraft-1.0/reference/PARITY-MATRIX.md) has the full list.
 
 ## Contributing

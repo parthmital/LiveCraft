@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<MidiClip Id="0" Time="0">
+	<LomId Value="0" />
+	<Name Value="" />
+	<Annotation Value="" />
+	<Color Value="-1" />
+	<CurrentStart Value="0" />
+	<CurrentEnd Value="4" />
+	<Loop>
+		<LoopStart Value="0" />
+		<LoopEnd Value="4" />
+		<StartRelative Value="0" />
+		<LoopOn Value="true" />
+		<OutMarker Value="4" />
+		<HiddenLoopStart Value="0" />
+		<HiddenLoopEnd Value="4" />
+	</Loop>
+	<TimeSignature>
+		<TimeSignatures>
+			<RemoteableTimeSignature Id="0">
+				<Numerator Value="4" />
+				<Denominator Value="4" />
+				<Time Value="0" />
+			</RemoteableTimeSignature>
+		</TimeSignatures>
+	</TimeSignature>
+	<Notes>
+		<KeyTracks />
+		<PerNoteEventStore>
+			<EventLists />
+		</PerNoteEventStore>
+		<NoteIdGenerator>
+			<NextId Value="1" />
+		</NoteIdGenerator>
+	</Notes>
+	<Envelopes>
+		<Envelopes />
+	</Envelopes>
+</MidiClip>

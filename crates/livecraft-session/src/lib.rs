@@ -3,6 +3,7 @@
 //! Every change to a Live Set is an `Operation`. The GUI, the CLI, and later the control server
 //! dispatch operations by name, and the `UndoHistory` records them so each one can be undone.
 
+mod audio_setup;
 pub mod command;
 pub mod commands;
 mod engine_sync;
