@@ -335,7 +335,7 @@ pub(crate) fn read_track_devices(
 }
 
 #[allow(clippy::too_many_arguments)]
-fn read_single_device(
+pub(crate) fn read_single_device(
     tree: &XmlTree,
     node: XmlNodeId,
     tag: &str,
@@ -414,7 +414,7 @@ fn alloc_dev_id(
     id
 }
 
-fn read_device_name(tree: &XmlTree, node: XmlNodeId) -> Option<String> {
+pub(crate) fn read_device_name(tree: &XmlTree, node: XmlNodeId) -> Option<String> {
     if let Some(u) = child_value_str(tree, node, "UserName")
         && !u.is_empty()
     {
@@ -652,7 +652,12 @@ pub(crate) fn patch_track_devices(
     Ok(())
 }
 
-fn patch_device_node(tree: &mut XmlTree, node: XmlNodeId, prev: Option<&Device>, cur: &Device) {
+pub(crate) fn patch_device_node(
+    tree: &mut XmlTree,
+    node: XmlNodeId,
+    prev: Option<&Device>,
+    cur: &Device,
+) {
     if prev.is_none() {
         if !cur.name.is_empty() {
             append_value_child(tree, node, "UserName", &cur.name);
